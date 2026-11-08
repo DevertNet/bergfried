@@ -19,12 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SessionAPI_ListFiles_FullMethodName     = "/bergfried.v1.SessionAPI/ListFiles"
-	SessionAPI_SearchFiles_FullMethodName   = "/bergfried.v1.SessionAPI/SearchFiles"
-	SessionAPI_RequestFile_FullMethodName   = "/bergfried.v1.SessionAPI/RequestFile"
-	SessionAPI_RequestFolder_FullMethodName = "/bergfried.v1.SessionAPI/RequestFolder"
-	SessionAPI_RequestSSH_FullMethodName    = "/bergfried.v1.SessionAPI/RequestSSH"
-	SessionAPI_SSHAttempt_FullMethodName    = "/bergfried.v1.SessionAPI/SSHAttempt"
+	SessionAPI_ListFiles_FullMethodName      = "/bergfried.v1.SessionAPI/ListFiles"
+	SessionAPI_SearchFiles_FullMethodName    = "/bergfried.v1.SessionAPI/SearchFiles"
+	SessionAPI_RequestFile_FullMethodName    = "/bergfried.v1.SessionAPI/RequestFile"
+	SessionAPI_RequestFolder_FullMethodName  = "/bergfried.v1.SessionAPI/RequestFolder"
+	SessionAPI_RequestSSH_FullMethodName     = "/bergfried.v1.SessionAPI/RequestSSH"
+	SessionAPI_SSHAttempt_FullMethodName     = "/bergfried.v1.SessionAPI/SSHAttempt"
+	SessionAPI_GitPushPrepare_FullMethodName = "/bergfried.v1.SessionAPI/GitPushPrepare"
+	SessionAPI_RequestGitPush_FullMethodName = "/bergfried.v1.SessionAPI/RequestGitPush"
+	SessionAPI_CIStatus_FullMethodName       = "/bergfried.v1.SessionAPI/CIStatus"
+	SessionAPI_CILogs_FullMethodName         = "/bergfried.v1.SessionAPI/CILogs"
+	SessionAPI_CIRerun_FullMethodName        = "/bergfried.v1.SessionAPI/CIRerun"
 )
 
 // SessionAPIClient is the client API for SessionAPI service.
@@ -43,6 +48,13 @@ type SessionAPIClient interface {
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
+	// Git: Der Mac pusht für die VM. Die VM legt ein Bundle in shared/out (GitPushPrepare liefert den Pfad) und fragt an.
+	GitPushPrepare(ctx context.Context, in *GitPushPrepareRequest, opts ...grpc.CallOption) (*GitPushPrepareResult, error)
+	RequestGitPush(ctx context.Context, in *GitPushRequest, opts ...grpc.CallOption) (*GitPushResult, error)
+	// CI (GitHub Actions) über den Mac: Status ohne Rückfrage für selbst gepushte Branches, Logs/Wiederholen nach Bestätigung.
+	CIStatus(ctx context.Context, in *CIStatusRequest, opts ...grpc.CallOption) (*CIStatusResult, error)
+	CILogs(ctx context.Context, in *CILogsRequest, opts ...grpc.CallOption) (*CILogsResult, error)
+	CIRerun(ctx context.Context, in *CIRerunRequest, opts ...grpc.CallOption) (*CIRerunResult, error)
 }
 
 type sessionAPIClient struct {
@@ -113,6 +125,56 @@ func (c *sessionAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest
 	return out, nil
 }
 
+func (c *sessionAPIClient) GitPushPrepare(ctx context.Context, in *GitPushPrepareRequest, opts ...grpc.CallOption) (*GitPushPrepareResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitPushPrepareResult)
+	err := c.cc.Invoke(ctx, SessionAPI_GitPushPrepare_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sessionAPIClient) RequestGitPush(ctx context.Context, in *GitPushRequest, opts ...grpc.CallOption) (*GitPushResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitPushResult)
+	err := c.cc.Invoke(ctx, SessionAPI_RequestGitPush_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sessionAPIClient) CIStatus(ctx context.Context, in *CIStatusRequest, opts ...grpc.CallOption) (*CIStatusResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CIStatusResult)
+	err := c.cc.Invoke(ctx, SessionAPI_CIStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sessionAPIClient) CILogs(ctx context.Context, in *CILogsRequest, opts ...grpc.CallOption) (*CILogsResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CILogsResult)
+	err := c.cc.Invoke(ctx, SessionAPI_CILogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sessionAPIClient) CIRerun(ctx context.Context, in *CIRerunRequest, opts ...grpc.CallOption) (*CIRerunResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CIRerunResult)
+	err := c.cc.Invoke(ctx, SessionAPI_CIRerun_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SessionAPIServer is the server API for SessionAPI service.
 // All implementations must embed UnimplementedSessionAPIServer
 // for forward compatibility.
@@ -129,6 +191,13 @@ type SessionAPIServer interface {
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
+	// Git: Der Mac pusht für die VM. Die VM legt ein Bundle in shared/out (GitPushPrepare liefert den Pfad) und fragt an.
+	GitPushPrepare(context.Context, *GitPushPrepareRequest) (*GitPushPrepareResult, error)
+	RequestGitPush(context.Context, *GitPushRequest) (*GitPushResult, error)
+	// CI (GitHub Actions) über den Mac: Status ohne Rückfrage für selbst gepushte Branches, Logs/Wiederholen nach Bestätigung.
+	CIStatus(context.Context, *CIStatusRequest) (*CIStatusResult, error)
+	CILogs(context.Context, *CILogsRequest) (*CILogsResult, error)
+	CIRerun(context.Context, *CIRerunRequest) (*CIRerunResult, error)
 	mustEmbedUnimplementedSessionAPIServer()
 }
 
@@ -156,6 +225,21 @@ func (UnimplementedSessionAPIServer) RequestSSH(context.Context, *SSHAccessReque
 }
 func (UnimplementedSessionAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method SSHAttempt not implemented")
+}
+func (UnimplementedSessionAPIServer) GitPushPrepare(context.Context, *GitPushPrepareRequest) (*GitPushPrepareResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitPushPrepare not implemented")
+}
+func (UnimplementedSessionAPIServer) RequestGitPush(context.Context, *GitPushRequest) (*GitPushResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestGitPush not implemented")
+}
+func (UnimplementedSessionAPIServer) CIStatus(context.Context, *CIStatusRequest) (*CIStatusResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method CIStatus not implemented")
+}
+func (UnimplementedSessionAPIServer) CILogs(context.Context, *CILogsRequest) (*CILogsResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method CILogs not implemented")
+}
+func (UnimplementedSessionAPIServer) CIRerun(context.Context, *CIRerunRequest) (*CIRerunResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method CIRerun not implemented")
 }
 func (UnimplementedSessionAPIServer) mustEmbedUnimplementedSessionAPIServer() {}
 func (UnimplementedSessionAPIServer) testEmbeddedByValue()                    {}
@@ -286,6 +370,96 @@ func _SessionAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SessionAPI_GitPushPrepare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitPushPrepareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).GitPushPrepare(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_GitPushPrepare_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).GitPushPrepare(ctx, req.(*GitPushPrepareRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SessionAPI_RequestGitPush_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitPushRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).RequestGitPush(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_RequestGitPush_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).RequestGitPush(ctx, req.(*GitPushRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SessionAPI_CIStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CIStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).CIStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_CIStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).CIStatus(ctx, req.(*CIStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SessionAPI_CILogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CILogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).CILogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_CILogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).CILogs(ctx, req.(*CILogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SessionAPI_CIRerun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CIRerunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).CIRerun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_CIRerun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).CIRerun(ctx, req.(*CIRerunRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SessionAPI_ServiceDesc is the grpc.ServiceDesc for SessionAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -316,6 +490,26 @@ var SessionAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SSHAttempt",
 			Handler:    _SessionAPI_SSHAttempt_Handler,
+		},
+		{
+			MethodName: "GitPushPrepare",
+			Handler:    _SessionAPI_GitPushPrepare_Handler,
+		},
+		{
+			MethodName: "RequestGitPush",
+			Handler:    _SessionAPI_RequestGitPush_Handler,
+		},
+		{
+			MethodName: "CIStatus",
+			Handler:    _SessionAPI_CIStatus_Handler,
+		},
+		{
+			MethodName: "CILogs",
+			Handler:    _SessionAPI_CILogs_Handler,
+		},
+		{
+			MethodName: "CIRerun",
+			Handler:    _SessionAPI_CIRerun_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

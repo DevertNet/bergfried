@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS sessions(name TEXT PRIMARY KEY, vm TEXT NOT NULL, rep
 CREATE TABLE IF NOT EXISTS agents(session TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(session,name));
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
 CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS git_pushes(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, repo TEXT NOT NULL, branch TEXT NOT NULL, sha TEXT NOT NULL, pr_url TEXT, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS ci_grants(session TEXT NOT NULL, repo TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(session,repo));
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, session TEXT, agent TEXT, detail TEXT);`)
 	return err
 }
@@ -349,4 +351,63 @@ func (s *Store) SetSeeded(name string) error {
 func (s *Store) DeleteAgent(session, agent string) error {
 	_, err := s.DB.Exec(`DELETE FROM agents WHERE session=? AND name=?`, session, agent)
 	return err
+}
+
+type GitPush struct {
+	ID                   int64
+	Session, Agent, Repo string
+	Branch, SHA, PRURL   string
+	Created              time.Time
+}
+
+func (s *Store) AddPush(p GitPush) error {
+	_, err := s.DB.Exec(`INSERT INTO git_pushes(session,agent,repo,branch,sha,pr_url,created) VALUES(?,?,?,?,?,?,?)`,
+		p.Session, p.Agent, p.Repo, p.Branch, p.SHA, p.PRURL, time.Now().Unix())
+	return err
+}
+
+// Pushes: Pushes einer Session (neueste zuerst); since = 0 für alle.
+func (s *Store) Pushes(session string, since time.Time) ([]GitPush, error) {
+	q := `SELECT id,session,COALESCE(agent,''),repo,branch,sha,COALESCE(pr_url,''),created FROM git_pushes WHERE created>=?`
+	args := []any{since.Unix()}
+	if session != "" {
+		q += ` AND session=?`
+		args = append(args, session)
+	}
+	rows, err := s.DB.Query(q+` ORDER BY id DESC LIMIT 500`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GitPush
+	for rows.Next() {
+		var p GitPush
+		var c int64
+		if err := rows.Scan(&p.ID, &p.Session, &p.Agent, &p.Repo, &p.Branch, &p.SHA, &p.PRURL, &c); err != nil {
+			return nil, err
+		}
+		p.Created = time.Unix(c, 0)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// HasPushed: Hat diese Session den Branch dieses Repos über Bergfried gepusht? (Grundlage für CI-Zugriff.)
+func (s *Store) HasPushed(session, repo, branch string) bool {
+	var n int
+	_ = s.DB.QueryRow(`SELECT COUNT(*) FROM git_pushes WHERE session=? AND repo=? AND branch=?`, session, repo, branch).Scan(&n)
+	return n > 0
+}
+
+func (s *Store) SetCIGrant(session, repo string, expires time.Time) error {
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO ci_grants(session,repo,expires) VALUES(?,?,?)`, session, repo, expires.Unix())
+	return err
+}
+
+func (s *Store) HasCIGrant(session, repo string, now time.Time) bool {
+	var exp int64
+	if err := s.DB.QueryRow(`SELECT expires FROM ci_grants WHERE session=? AND repo=?`, session, repo).Scan(&exp); err != nil {
+		return false
+	}
+	return exp > now.Unix()
 }

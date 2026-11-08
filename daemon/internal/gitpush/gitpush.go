@@ -64,7 +64,11 @@ func New(dir string, c Creds) *Pusher {
 	return &Pusher{Dir: dir, Git: ExecRunner{}, Creds: c, RemoteURL: func(r github.Repo) string { return r.HTTPSURL() }}
 }
 
-type Commit struct{ SHA, Author, Subject string }
+type Commit struct {
+	SHA     string `json:"sha"`
+	Author  string `json:"author"`
+	Subject string `json:"subject"`
+}
 
 type Analysis struct {
 	Repo           string
