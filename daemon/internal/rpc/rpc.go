@@ -16,6 +16,9 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ci"
+	"github.com/DevertNet/bergfried/daemon/internal/github"
+	"github.com/DevertNet/bergfried/daemon/internal/gitpush"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
@@ -65,12 +68,47 @@ type sessionServer struct {
 	session string
 	svc     *access.Service
 	ssh     *broker.Service
+	git     *gitpush.Service
+	ci      *ci.Service
 	st      *store.Store
 }
 
 func (s *sessionServer) SSHAttempt(ctx context.Context, r *pb.SSHAttemptRequest) (*pb.SSHAttemptResult, error) {
 	state, msg := s.ssh.Attempt(ctx, s.session, r.Host, r.Port, r.User, r.Wait)
 	return &pb.SSHAttemptResult{Message: msg, State: state}, nil
+}
+
+func (s *sessionServer) GitPushPrepare(context.Context, *pb.GitPushPrepareRequest) (*pb.GitPushPrepareResult, error) {
+	return &pb.GitPushPrepareResult{OutDir: s.git.OutDir(s.session)}, nil
+}
+
+func (s *sessionServer) RequestGitPush(ctx context.Context, r *pb.GitPushRequest) (*pb.GitPushResult, error) {
+	return s.git.Request(ctx, s.session, s.agent(ctx), gitpush.Input{RemoteURL: r.RemoteUrl, Branch: r.Branch, BundleRel: r.BundleRel, Reason: r.Reason,
+		WantPR: r.WantPr, PRTitle: r.PrTitle, PRBody: r.PrBody})
+}
+
+func (s *sessionServer) CIStatus(ctx context.Context, r *pb.CIStatusRequest) (*pb.CIStatusResult, error) {
+	repo, err := github.ParseRemote(r.RemoteUrl)
+	if err != nil {
+		return &pb.CIStatusResult{State: "none", Message: err.Error()}, nil
+	}
+	return s.ci.Status(ctx, s.session, repo, r.Branch)
+}
+
+func (s *sessionServer) CILogs(ctx context.Context, r *pb.CILogsRequest) (*pb.CILogsResult, error) {
+	repo, err := github.ParseRemote(r.RemoteUrl)
+	if err != nil {
+		return &pb.CILogsResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: err.Error()}, nil
+	}
+	return s.ci.Logs(ctx, s.session, s.agent(ctx), repo, r.JobId)
+}
+
+func (s *sessionServer) CIRerun(ctx context.Context, r *pb.CIRerunRequest) (*pb.CIRerunResult, error) {
+	repo, err := github.ParseRemote(r.RemoteUrl)
+	if err != nil {
+		return &pb.CIRerunResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: err.Error()}, nil
+	}
+	return s.ci.Rerun(ctx, s.session, s.agent(ctx), repo, r.RunId)
 }
 
 func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
@@ -206,6 +244,8 @@ type Daemon struct {
 	St        *store.Store
 	Svc       *access.Service
 	SSH       *broker.Service
+	Git       *gitpush.Service
+	CI        *ci.Service
 	AdminSock string
 	L         lima.Client
 
@@ -260,7 +300,7 @@ func (d *Daemon) startSession(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, st: d.St})
+	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, git: d.Git, ci: d.CI, st: d.St})
 	go g.Serve(l)
 	asock, err := AgentSocket(vm)
 	if err != nil {

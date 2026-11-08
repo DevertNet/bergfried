@@ -18,6 +18,9 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ci"
+	"github.com/DevertNet/bergfried/daemon/internal/github"
+	"github.com/DevertNet/bergfried/daemon/internal/gitpush"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/session"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
@@ -33,10 +36,23 @@ type Server struct {
 	BlocklistFile string
 	Upstream      string
 	Mon           *Monitor
+	Git           *gitpush.Service
+	CI            *ci.Service
+	Watch         *ci.Watcher
+	Keys          TokenStore
+	GHBase        string // nur Tests/Entwicklung: abweichende API-Basis (BERGFRIED_GITHUB_API)
+	LoginFile     string // Datei mit dem GitHub-Login (nicht geheim)
 
 	mu   sync.Mutex
 	jobs map[int64]*Job
 	next int64
+}
+
+// TokenStore: GitHub-Token im Schlüsselbund (Tests: Fake).
+type TokenStore interface {
+	Token() (string, error)
+	Set(token string) error
+	Delete() error
 }
 
 type Job struct {
@@ -101,12 +117,21 @@ func decode(r *http.Request, v any) error {
 }
 
 type agentJ struct {
-	Name     string `json:"name"`
-	Worktree string `json:"worktree"`
-	Window   bool   `json:"window"`
-	RC       bool   `json:"rc"`
-	RCURL    string `json:"rc_url"`
-	RCAction string `json:"rc_action"` // "", "activating", "failed"
+	Name     string    `json:"name"`
+	Worktree string    `json:"worktree"`
+	Window   bool      `json:"window"`
+	RC       bool      `json:"rc"`
+	RCURL    string    `json:"rc_url"`
+	RCAction string    `json:"rc_action"` // "", "activating", "failed"
+	CI       *ciStateJ `json:"ci,omitempty"`
+}
+
+type ciStateJ struct {
+	State  string `json:"state"` // none | pending | success | failure
+	Name   string `json:"name"`
+	URL    string `json:"url"`
+	Branch string `json:"branch"`
+	Repo   string `json:"repo"`
 }
 type sessionJ struct {
 	Name            string   `json:"name"`
@@ -136,18 +161,20 @@ type sshInfoJ struct {
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
-	ID      int64     `json:"id"`
-	Session string    `json:"session"`
-	Agent   string    `json:"agent"`
-	Kind    string    `json:"kind"`
-	Path    string    `json:"path"`
-	Reason  string    `json:"reason"`
-	Status  string    `json:"status"`
-	Created int64     `json:"created_unix"`
-	Bytes   int64     `json:"bytes"`
-	Files   int64     `json:"files"`
-	Large   bool      `json:"large"`
-	SSH     *sshInfoJ `json:"ssh,omitempty"`
+	ID      int64           `json:"id"`
+	Session string          `json:"session"`
+	Agent   string          `json:"agent"`
+	Kind    string          `json:"kind"`
+	Path    string          `json:"path"`
+	Reason  string          `json:"reason"`
+	Status  string          `json:"status"`
+	Created int64           `json:"created_unix"`
+	Bytes   int64           `json:"bytes"`
+	Files   int64           `json:"files"`
+	Large   bool            `json:"large"`
+	SSH     *sshInfoJ       `json:"ssh,omitempty"`
+	Git     *gitpush.Detail `json:"git,omitempty"`
+	CI      *ci.Detail      `json:"ci,omitempty"`
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
@@ -183,6 +210,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
 	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
+	mux.HandleFunc("POST /v1/agents/ci-fix", s.agentCIFix)
+	mux.HandleFunc("POST /v1/git/decide", s.gitDecide)
+	mux.HandleFunc("POST /v1/ci/decide", s.ciDecide)
+	mux.HandleFunc("GET /v1/github", s.githubStatus)
+	mux.HandleFunc("PUT /v1/github/token", s.githubSetToken)
+	mux.HandleFunc("DELETE /v1/github/token", s.githubDelToken)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
 	mux.HandleFunc("POST /v1/import/preview", s.importPreview)
@@ -278,7 +311,13 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		ags, _ := s.M.S.ListAgents(x.Name)
 		for _, a := range ags {
 			as := ps.Agents[a.Name]
-			j.Agents = append(j.Agents, agentJ{a.Name, a.Worktree, as.Window, as.RC, as.URL, as.Action})
+			aj := agentJ{Name: a.Name, Worktree: a.Worktree, Window: as.Window, RC: as.RC, RCURL: as.URL, RCAction: as.Action}
+			if s.Watch != nil {
+				if cs, ok := s.Watch.For(x.Name, a.Name); ok {
+					aj.CI = &ciStateJ{cs.State, cs.Name, cs.URL, cs.Branch, cs.Repo}
+				}
+			}
+			j.Agents = append(j.Agents, aj)
 		}
 		for _, g := range grants {
 			if g.Session == x.Name {
@@ -363,6 +402,125 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		}
 		return err
 	}))
+}
+
+func (s *Server) gitDecide(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ID               int64 `json:"id"`
+		Allow            bool  `json:"allow"`
+		CreatePR         bool  `json:"create_pr"`
+		ConfirmWorkflows bool  `json:"confirm_workflows"`
+		ConfirmSecrets   bool  `json:"confirm_secrets"`
+	}
+	if err := decode(r, &q); err != nil || s.Git == nil {
+		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		return
+	}
+	msg, err := s.Git.Decide(q.ID, gitpush.Decision{Allow: q.Allow, CreatePR: q.CreatePR, ConfirmWorkflows: q.ConfirmWorkflows, ConfirmSecrets: q.ConfirmSecrets})
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"message": msg})
+}
+
+func (s *Server) ciDecide(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ID         int64 `json:"id"`
+		Allow      bool  `json:"allow"`
+		ForSession bool  `json:"for_session"`
+	}
+	if err := decode(r, &q); err != nil || s.CI == nil {
+		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		return
+	}
+	msg, err := s.CI.Decide(q.ID, ci.Decision{Allow: q.Allow, ForSession: q.ForSession})
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"message": msg})
+}
+
+func (s *Server) readLogin() string {
+	if s.LoginFile == "" {
+		return ""
+	}
+	b, _ := os.ReadFile(s.LoginFile)
+	return strings.TrimSpace(string(b))
+}
+
+func (s *Server) githubStatus(w http.ResponseWriter, r *http.Request) {
+	_, err := s.Keys.Token()
+	writeJSON(w, 200, map[string]any{"has_token": err == nil, "login": s.readLogin()})
+}
+
+func (s *Server) githubSetToken(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Token string `json:"token"`
+	}
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	tok := strings.TrimSpace(q.Token)
+	cl := github.New(github.StaticToken(tok))
+	if s.GHBase != "" {
+		cl.Base = s.GHBase
+	}
+	login, err := cl.CurrentUser(r.Context())
+	if err != nil {
+		fail(w, 400, fmt.Errorf("Token ungültig oder ohne Zugriff: %v", err))
+		return
+	}
+	if err := s.Keys.Set(tok); err != nil {
+		fail(w, 500, err)
+		return
+	}
+	if s.LoginFile != "" {
+		_ = os.WriteFile(s.LoginFile, []byte(login+"\n"), 0o600)
+	}
+	_ = s.M.S.Audit("app", "github.token_set", "", "", "login="+login)
+	writeJSON(w, 200, map[string]any{"has_token": true, "login": login})
+}
+
+func (s *Server) githubDelToken(w http.ResponseWriter, r *http.Request) {
+	_ = s.Keys.Delete()
+	if s.LoginFile != "" {
+		_ = os.Remove(s.LoginFile)
+	}
+	_ = s.M.S.Audit("app", "github.token_removed", "", "", "")
+	writeJSON(w, 200, map[string]any{"has_token": false})
+}
+
+// agentCIFix: tippt einen festen Hinweistext in das Agent-Fenster („CI reparieren“) – nur wenn Claude gerade im Leerlauf ist.
+func (s *Server) agentCIFix(w http.ResponseWriter, r *http.Request) {
+	var q nameReq
+	if err := decode(r, &q); err != nil || s.Mon == nil {
+		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		return
+	}
+	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		return
+	}
+	st, ok := s.Mon.Get(q.Session)
+	a := st.Agents[q.Agent]
+	if !ok || !a.Running || !a.Idle {
+		fail(w, 409, fmt.Errorf("Der Agent arbeitet gerade oder wartet auf eine Eingabe – bitte später erneut versuchen"))
+		return
+	}
+	sess, err := s.M.S.GetSession(q.Session)
+	if err != nil {
+		fail(w, 404, err)
+		return
+	}
+	if err := s.M.TypeFixed(r.Context(), sess.VM, q.Agent, "ci-fix"); err != nil {
+		fail(w, 500, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "agent.ci_fix", q.Session, q.Agent, "Hinweis an den Agent gesendet")
+	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
 // agentRCOK: Nutzer bestätigt, dass Remote Control läuft (setzt „nicht aktivierbar“ zurück).
@@ -536,6 +694,18 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	for _, q := range rs {
 		j := requestJ{ID: q.ID, Session: q.Session, Agent: q.Agent, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
 			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
+		switch q.Kind {
+		case "gitpush":
+			var d gitpush.Detail
+			if json.Unmarshal([]byte(q.Extra), &d) == nil {
+				j.Git = &d
+			}
+		case "cilogs", "cirerun":
+			var d ci.Detail
+			if json.Unmarshal([]byte(q.Extra), &d) == nil {
+				j.CI = &d
+			}
+		}
 		if q.Kind == "ssh" && q.Status == "pending" {
 			if info, ok := s.SSH.PendingInfo(q.ID); ok {
 				j.SSH = &sshInfoJ{info.HostKeyFPs, info.Source, info.DefaultKey, info.DefaultUser, info.RequestedUser, info.SuggestedMinutes}

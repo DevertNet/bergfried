@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -17,6 +18,9 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ci"
+	"github.com/DevertNet/bergfried/daemon/internal/github"
+	"github.com/DevertNet/bergfried/daemon/internal/gitpush"
 	"github.com/DevertNet/bergfried/daemon/internal/importer"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
@@ -263,7 +267,32 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
 	}
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	// GitHub: Token im Schlüsselbund; der Mac pusht für die VM und liest CI (siehe docs/DESIGN-GIT.md).
+	kc := github.Keychain{}
+	gh := github.New(kc)
+	if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // nur Entwicklung/Tests: lokaler GitHub-Ersatz
+		gh.Base = v
+	}
+	loginFile := filepath.Join(home, "github-login")
+	creds := func(context.Context) (string, string, error) {
+		tok, err := kc.Token()
+		if err != nil {
+			return "", "", err
+		}
+		user := "x-access-token"
+		if b, e := os.ReadFile(loginFile); e == nil && strings.TrimSpace(string(b)) != "" {
+			user = strings.TrimSpace(string(b))
+		}
+		return user, tok, nil
+	}
+	pusher := gitpush.New(filepath.Join(home, "repos"), creds)
+	if v := os.Getenv("BERGFRIED_GITHUB_GIT"); v != "" { // nur Entwicklung/Tests, z. B. http://127.0.0.1:8099
+		pusher.RemoteURL = func(r github.Repo) string { return strings.TrimSuffix(v, "/") + "/" + r.Owner + "/" + r.Name + ".git" }
+	}
+	gitSvc := gitpush.NewService(m.S, pusher, gh, home)
+	ciSvc := ci.NewService(m.S, gh)
+	watcher := ci.NewWatcher(m.S, gh)
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, Git: gitSvc, CI: ciSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
@@ -271,7 +300,8 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	am.Actor = "app"
 	mon := api.NewMonitor(&am)
 	go mon.Run(ctx)
-	apiSrv := &api.Server{Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	go watcher.Run(ctx)
+	apiSrv := &api.Server{GHBase: os.Getenv("BERGFRIED_GITHUB_API"), Git: gitSvc, CI: ciSvc, Watch: watcher, Keys: kc, LoginFile: loginFile, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)
