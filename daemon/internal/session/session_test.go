@@ -183,7 +183,7 @@ func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
 
 func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
 	g := guidance("/out")
-	if strings.Contains(g, "request_git_push") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Gib das Token nie aus") {
+	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Gib das Token nie aus") {
 		t.Fatal(g)
 	}
 }

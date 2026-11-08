@@ -1,7 +1,7 @@
 # Test: Git und CI mit Session-Token
 
 ## Automatisch
-`make test` (u. a. `ghtoken` mit lokalem GitHub-Ersatz, `ci`, `github`, `session` – Token nur über stdin –, `api` – Token nie in Antworten/Protokoll).
+`make test` (u. a. `ghtoken` mit lokalem GitHub-Ersatz, `github`, `session` – Token nur über stdin –, `api` – Token nie in Antworten/Protokoll).
 
 ## Mechanismus lokal (ohne VM, ohne echtes GitHub)
 Mit `tools/fakegithub` (REST + Git über HTTP, Basic-Auth):
@@ -23,5 +23,5 @@ Danach `fakegithub` beenden und `/private/tmp/bft` löschen. (Belegt am 2026-11-
    Rechte Contents/Pull requests/Actions/Metadata), „Only select repositories“ → nur das Test-Repo, Token einfügen, erstellen.
 2. In der VM (`Shell in der VM`): `git -C ~/work/main push` auf einen Branch, `cat ~/.git-credentials` (0600), `ls -l`.
 3. Weiteres Repo: im Agent `git clone https://github.com/<owner>/<anderes-repo>` → scheitert → Agent ruft `request_github_token` → Karte in „Anfragen“ → bei GitHub das Repo zum Token hinzufügen → „Zugriff prüfen“.
-4. Workflow mit absichtlichem Fehler: `ci_status`, `ci_logs`, `ci_rerun` (ohne Rückfrage).
+4. Workflow mit absichtlichem Fehler: Agent fragt Läufe/Logs per `curl` mit dem Token ab und wiederholt den Job (Actions-Recht prüfen).
 5. Rechte-Namen/Verhalten prüfen und `docs/DESIGN-GIT.md` korrigieren, falls etwas abweicht. Test-Token danach bei GitHub widerrufen.

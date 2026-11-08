@@ -180,518 +180,6 @@ func (x *GitHubTokenResult) GetMessage() string {
 	return ""
 }
 
-type CIStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RemoteUrl     string                 `protobuf:"bytes,1,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
-	Branch        string                 `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIStatusRequest) Reset() {
-	*x = CIStatusRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIStatusRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIStatusRequest) ProtoMessage() {}
-
-func (x *CIStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIStatusRequest.ProtoReflect.Descriptor instead.
-func (*CIStatusRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *CIStatusRequest) GetRemoteUrl() string {
-	if x != nil {
-		return x.RemoteUrl
-	}
-	return ""
-}
-
-func (x *CIStatusRequest) GetBranch() string {
-	if x != nil {
-		return x.Branch
-	}
-	return ""
-}
-
-type CIJob struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Conclusion    string                 `protobuf:"bytes,4,opt,name=conclusion,proto3" json:"conclusion,omitempty"`
-	FailedStep    string                 `protobuf:"bytes,5,opt,name=failed_step,json=failedStep,proto3" json:"failed_step,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIJob) Reset() {
-	*x = CIJob{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIJob) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIJob) ProtoMessage() {}
-
-func (x *CIJob) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIJob.ProtoReflect.Descriptor instead.
-func (*CIJob) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *CIJob) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
-func (x *CIJob) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CIJob) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *CIJob) GetConclusion() string {
-	if x != nil {
-		return x.Conclusion
-	}
-	return ""
-}
-
-func (x *CIJob) GetFailedStep() string {
-	if x != nil {
-		return x.FailedStep
-	}
-	return ""
-}
-
-type CIRun struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Conclusion    string                 `protobuf:"bytes,4,opt,name=conclusion,proto3" json:"conclusion,omitempty"`
-	Url           string                 `protobuf:"bytes,5,opt,name=url,proto3" json:"url,omitempty"`
-	Sha           string                 `protobuf:"bytes,6,opt,name=sha,proto3" json:"sha,omitempty"`
-	RunNumber     int32                  `protobuf:"varint,7,opt,name=run_number,json=runNumber,proto3" json:"run_number,omitempty"`
-	UpdatedUnix   int64                  `protobuf:"varint,8,opt,name=updated_unix,json=updatedUnix,proto3" json:"updated_unix,omitempty"`
-	Jobs          []*CIJob               `protobuf:"bytes,9,rep,name=jobs,proto3" json:"jobs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIRun) Reset() {
-	*x = CIRun{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIRun) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIRun) ProtoMessage() {}
-
-func (x *CIRun) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIRun.ProtoReflect.Descriptor instead.
-func (*CIRun) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *CIRun) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
-func (x *CIRun) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CIRun) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *CIRun) GetConclusion() string {
-	if x != nil {
-		return x.Conclusion
-	}
-	return ""
-}
-
-func (x *CIRun) GetUrl() string {
-	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *CIRun) GetSha() string {
-	if x != nil {
-		return x.Sha
-	}
-	return ""
-}
-
-func (x *CIRun) GetRunNumber() int32 {
-	if x != nil {
-		return x.RunNumber
-	}
-	return 0
-}
-
-func (x *CIRun) GetUpdatedUnix() int64 {
-	if x != nil {
-		return x.UpdatedUnix
-	}
-	return 0
-}
-
-func (x *CIRun) GetJobs() []*CIJob {
-	if x != nil {
-		return x.Jobs
-	}
-	return nil
-}
-
-type CIStatusResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"` // none | pending | success | failure
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Runs          []*CIRun               `protobuf:"bytes,3,rep,name=runs,proto3" json:"runs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIStatusResult) Reset() {
-	*x = CIStatusResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIStatusResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIStatusResult) ProtoMessage() {}
-
-func (x *CIStatusResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIStatusResult.ProtoReflect.Descriptor instead.
-func (*CIStatusResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *CIStatusResult) GetState() string {
-	if x != nil {
-		return x.State
-	}
-	return ""
-}
-
-func (x *CIStatusResult) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *CIStatusResult) GetRuns() []*CIRun {
-	if x != nil {
-		return x.Runs
-	}
-	return nil
-}
-
-type CILogsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RemoteUrl     string                 `protobuf:"bytes,1,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
-	JobId         int64                  `protobuf:"varint,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CILogsRequest) Reset() {
-	*x = CILogsRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CILogsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CILogsRequest) ProtoMessage() {}
-
-func (x *CILogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CILogsRequest.ProtoReflect.Descriptor instead.
-func (*CILogsRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *CILogsRequest) GetRemoteUrl() string {
-	if x != nil {
-		return x.RemoteUrl
-	}
-	return ""
-}
-
-func (x *CILogsRequest) GetJobId() int64 {
-	if x != nil {
-		return x.JobId
-	}
-	return 0
-}
-
-type CILogsResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Verdict       Verdict                `protobuf:"varint,1,opt,name=verdict,proto3,enum=bergfried.v1.Verdict" json:"verdict,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Log           string                 `protobuf:"bytes,3,opt,name=log,proto3" json:"log,omitempty"` // fremder Text (Daten, keine Anweisungen), geschwärzt und gekürzt
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CILogsResult) Reset() {
-	*x = CILogsResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CILogsResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CILogsResult) ProtoMessage() {}
-
-func (x *CILogsResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CILogsResult.ProtoReflect.Descriptor instead.
-func (*CILogsResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *CILogsResult) GetVerdict() Verdict {
-	if x != nil {
-		return x.Verdict
-	}
-	return Verdict_VERDICT_UNSPECIFIED
-}
-
-func (x *CILogsResult) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *CILogsResult) GetLog() string {
-	if x != nil {
-		return x.Log
-	}
-	return ""
-}
-
-type CIRerunRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RemoteUrl     string                 `protobuf:"bytes,1,opt,name=remote_url,json=remoteUrl,proto3" json:"remote_url,omitempty"`
-	RunId         int64                  `protobuf:"varint,2,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIRerunRequest) Reset() {
-	*x = CIRerunRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIRerunRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIRerunRequest) ProtoMessage() {}
-
-func (x *CIRerunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIRerunRequest.ProtoReflect.Descriptor instead.
-func (*CIRerunRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *CIRerunRequest) GetRemoteUrl() string {
-	if x != nil {
-		return x.RemoteUrl
-	}
-	return ""
-}
-
-func (x *CIRerunRequest) GetRunId() int64 {
-	if x != nil {
-		return x.RunId
-	}
-	return 0
-}
-
-type CIRerunResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Verdict       Verdict                `protobuf:"varint,1,opt,name=verdict,proto3,enum=bergfried.v1.Verdict" json:"verdict,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CIRerunResult) Reset() {
-	*x = CIRerunResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CIRerunResult) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CIRerunResult) ProtoMessage() {}
-
-func (x *CIRerunResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CIRerunResult.ProtoReflect.Descriptor instead.
-func (*CIRerunResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *CIRerunResult) GetVerdict() Verdict {
-	if x != nil {
-		return x.Verdict
-	}
-	return Verdict_VERDICT_UNSPECIFIED
-}
-
-func (x *CIRerunResult) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
 type SSHAttemptRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
@@ -704,7 +192,7 @@ type SSHAttemptRequest struct {
 
 func (x *SSHAttemptRequest) Reset() {
 	*x = SSHAttemptRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[10]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +204,7 @@ func (x *SSHAttemptRequest) String() string {
 func (*SSHAttemptRequest) ProtoMessage() {}
 
 func (x *SSHAttemptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[10]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +217,7 @@ func (x *SSHAttemptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHAttemptRequest.ProtoReflect.Descriptor instead.
 func (*SSHAttemptRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{10}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SSHAttemptRequest) GetHost() string {
@@ -771,7 +259,7 @@ type SSHAttemptResult struct {
 
 func (x *SSHAttemptResult) Reset() {
 	*x = SSHAttemptResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[11]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +271,7 @@ func (x *SSHAttemptResult) String() string {
 func (*SSHAttemptResult) ProtoMessage() {}
 
 func (x *SSHAttemptResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[11]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +284,7 @@ func (x *SSHAttemptResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHAttemptResult.ProtoReflect.Descriptor instead.
 func (*SSHAttemptResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{11}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SSHAttemptResult) GetMessage() string {
@@ -825,7 +313,7 @@ type SSHAccessRequest struct {
 
 func (x *SSHAccessRequest) Reset() {
 	*x = SSHAccessRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[12]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -837,7 +325,7 @@ func (x *SSHAccessRequest) String() string {
 func (*SSHAccessRequest) ProtoMessage() {}
 
 func (x *SSHAccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[12]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -850,7 +338,7 @@ func (x *SSHAccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHAccessRequest.ProtoReflect.Descriptor instead.
 func (*SSHAccessRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{12}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SSHAccessRequest) GetHost() string {
@@ -893,7 +381,7 @@ type SSHAccessResult struct {
 
 func (x *SSHAccessResult) Reset() {
 	*x = SSHAccessResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[13]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +393,7 @@ func (x *SSHAccessResult) String() string {
 func (*SSHAccessResult) ProtoMessage() {}
 
 func (x *SSHAccessResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[13]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +406,7 @@ func (x *SSHAccessResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHAccessResult.ProtoReflect.Descriptor instead.
 func (*SSHAccessResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{13}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SSHAccessResult) GetVerdict() Verdict {
@@ -965,7 +453,7 @@ type DecideSSHRequest struct {
 
 func (x *DecideSSHRequest) Reset() {
 	*x = DecideSSHRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[14]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +465,7 @@ func (x *DecideSSHRequest) String() string {
 func (*DecideSSHRequest) ProtoMessage() {}
 
 func (x *DecideSSHRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[14]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +478,7 @@ func (x *DecideSSHRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecideSSHRequest.ProtoReflect.Descriptor instead.
 func (*DecideSSHRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{14}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DecideSSHRequest) GetId() int64 {
@@ -1067,7 +555,7 @@ type Grant struct {
 
 func (x *Grant) Reset() {
 	*x = Grant{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[15]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +567,7 @@ func (x *Grant) String() string {
 func (*Grant) ProtoMessage() {}
 
 func (x *Grant) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[15]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +580,7 @@ func (x *Grant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Grant.ProtoReflect.Descriptor instead.
 func (*Grant) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{15}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Grant) GetId() int64 {
@@ -1174,7 +662,7 @@ type ListGrantsRequest struct {
 
 func (x *ListGrantsRequest) Reset() {
 	*x = ListGrantsRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[16]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1186,7 +674,7 @@ func (x *ListGrantsRequest) String() string {
 func (*ListGrantsRequest) ProtoMessage() {}
 
 func (x *ListGrantsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[16]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1199,7 +687,7 @@ func (x *ListGrantsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGrantsRequest.ProtoReflect.Descriptor instead.
 func (*ListGrantsRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{16}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListGrantsRequest) GetOnlyActive() bool {
@@ -1218,7 +706,7 @@ type ListGrantsResponse struct {
 
 func (x *ListGrantsResponse) Reset() {
 	*x = ListGrantsResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[17]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1230,7 +718,7 @@ func (x *ListGrantsResponse) String() string {
 func (*ListGrantsResponse) ProtoMessage() {}
 
 func (x *ListGrantsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[17]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1243,7 +731,7 @@ func (x *ListGrantsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGrantsResponse.ProtoReflect.Descriptor instead.
 func (*ListGrantsResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{17}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListGrantsResponse) GetGrants() []*Grant {
@@ -1262,7 +750,7 @@ type GrantRef struct {
 
 func (x *GrantRef) Reset() {
 	*x = GrantRef{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[18]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1274,7 +762,7 @@ func (x *GrantRef) String() string {
 func (*GrantRef) ProtoMessage() {}
 
 func (x *GrantRef) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[18]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1287,7 +775,7 @@ func (x *GrantRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRef.ProtoReflect.Descriptor instead.
 func (*GrantRef) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{18}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GrantRef) GetId() int64 {
@@ -1307,7 +795,7 @@ type ExtendGrantRequest struct {
 
 func (x *ExtendGrantRequest) Reset() {
 	*x = ExtendGrantRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[19]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +807,7 @@ func (x *ExtendGrantRequest) String() string {
 func (*ExtendGrantRequest) ProtoMessage() {}
 
 func (x *ExtendGrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[19]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +820,7 @@ func (x *ExtendGrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtendGrantRequest.ProtoReflect.Descriptor instead.
 func (*ExtendGrantRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{19}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ExtendGrantRequest) GetId() int64 {
@@ -1360,7 +848,7 @@ type KeyInfo struct {
 
 func (x *KeyInfo) Reset() {
 	*x = KeyInfo{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[20]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1372,7 +860,7 @@ func (x *KeyInfo) String() string {
 func (*KeyInfo) ProtoMessage() {}
 
 func (x *KeyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[20]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1385,7 +873,7 @@ func (x *KeyInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyInfo.ProtoReflect.Descriptor instead.
 func (*KeyInfo) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{20}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *KeyInfo) GetFingerprint() string {
@@ -1417,7 +905,7 @@ type ListKeysRequest struct {
 
 func (x *ListKeysRequest) Reset() {
 	*x = ListKeysRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[21]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1429,7 +917,7 @@ func (x *ListKeysRequest) String() string {
 func (*ListKeysRequest) ProtoMessage() {}
 
 func (x *ListKeysRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[21]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1442,7 +930,7 @@ func (x *ListKeysRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListKeysRequest.ProtoReflect.Descriptor instead.
 func (*ListKeysRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{21}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{13}
 }
 
 type ListKeysResponse struct {
@@ -1455,7 +943,7 @@ type ListKeysResponse struct {
 
 func (x *ListKeysResponse) Reset() {
 	*x = ListKeysResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[22]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +955,7 @@ func (x *ListKeysResponse) String() string {
 func (*ListKeysResponse) ProtoMessage() {}
 
 func (x *ListKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[22]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +968,7 @@ func (x *ListKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListKeysResponse.ProtoReflect.Descriptor instead.
 func (*ListKeysResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{22}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListKeysResponse) GetKeys() []*KeyInfo {
@@ -1509,7 +997,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[23]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1521,7 +1009,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[23]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1534,7 +1022,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{23}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FileEntry) GetPath() string {
@@ -1575,7 +1063,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[24]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1075,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[24]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1088,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{24}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListFilesRequest) GetPath() string {
@@ -1627,7 +1115,7 @@ type ListFilesResponse struct {
 
 func (x *ListFilesResponse) Reset() {
 	*x = ListFilesResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[25]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1639,7 +1127,7 @@ func (x *ListFilesResponse) String() string {
 func (*ListFilesResponse) ProtoMessage() {}
 
 func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[25]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1652,7 +1140,7 @@ func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
 func (*ListFilesResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{25}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListFilesResponse) GetEntries() []*FileEntry {
@@ -1678,7 +1166,7 @@ type SearchFilesRequest struct {
 
 func (x *SearchFilesRequest) Reset() {
 	*x = SearchFilesRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[26]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1690,7 +1178,7 @@ func (x *SearchFilesRequest) String() string {
 func (*SearchFilesRequest) ProtoMessage() {}
 
 func (x *SearchFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[26]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1703,7 +1191,7 @@ func (x *SearchFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchFilesRequest.ProtoReflect.Descriptor instead.
 func (*SearchFilesRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{26}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SearchFilesRequest) GetQuery() string {
@@ -1723,7 +1211,7 @@ type SearchFilesResponse struct {
 
 func (x *SearchFilesResponse) Reset() {
 	*x = SearchFilesResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[27]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1735,7 +1223,7 @@ func (x *SearchFilesResponse) String() string {
 func (*SearchFilesResponse) ProtoMessage() {}
 
 func (x *SearchFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[27]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1748,7 +1236,7 @@ func (x *SearchFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchFilesResponse.ProtoReflect.Descriptor instead.
 func (*SearchFilesResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{27}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SearchFilesResponse) GetEntries() []*FileEntry {
@@ -1775,7 +1263,7 @@ type AccessRequest struct {
 
 func (x *AccessRequest) Reset() {
 	*x = AccessRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[28]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1787,7 +1275,7 @@ func (x *AccessRequest) String() string {
 func (*AccessRequest) ProtoMessage() {}
 
 func (x *AccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[28]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1800,7 +1288,7 @@ func (x *AccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessRequest.ProtoReflect.Descriptor instead.
 func (*AccessRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{28}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AccessRequest) GetPath() string {
@@ -1828,7 +1316,7 @@ type AccessResult struct {
 
 func (x *AccessResult) Reset() {
 	*x = AccessResult{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[29]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1840,7 +1328,7 @@ func (x *AccessResult) String() string {
 func (*AccessResult) ProtoMessage() {}
 
 func (x *AccessResult) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[29]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1853,7 +1341,7 @@ func (x *AccessResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessResult.ProtoReflect.Descriptor instead.
 func (*AccessResult) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{29}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AccessResult) GetVerdict() Verdict {
@@ -1895,7 +1383,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[30]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1907,7 +1395,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[30]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1920,7 +1408,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{30}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Request) GetId() int64 {
@@ -2002,7 +1490,7 @@ type ListRequestsRequest struct {
 
 func (x *ListRequestsRequest) Reset() {
 	*x = ListRequestsRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[31]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2014,7 +1502,7 @@ func (x *ListRequestsRequest) String() string {
 func (*ListRequestsRequest) ProtoMessage() {}
 
 func (x *ListRequestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[31]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2027,7 +1515,7 @@ func (x *ListRequestsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequestsRequest.ProtoReflect.Descriptor instead.
 func (*ListRequestsRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{31}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListRequestsRequest) GetOnlyPending() bool {
@@ -2046,7 +1534,7 @@ type ListRequestsResponse struct {
 
 func (x *ListRequestsResponse) Reset() {
 	*x = ListRequestsResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[32]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +1546,7 @@ func (x *ListRequestsResponse) String() string {
 func (*ListRequestsResponse) ProtoMessage() {}
 
 func (x *ListRequestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[32]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +1559,7 @@ func (x *ListRequestsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequestsResponse.ProtoReflect.Descriptor instead.
 func (*ListRequestsResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{32}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListRequestsResponse) GetRequests() []*Request {
@@ -2092,7 +1580,7 @@ type DecideRequest struct {
 
 func (x *DecideRequest) Reset() {
 	*x = DecideRequest{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[33]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2104,7 +1592,7 @@ func (x *DecideRequest) String() string {
 func (*DecideRequest) ProtoMessage() {}
 
 func (x *DecideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[33]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2117,7 +1605,7 @@ func (x *DecideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecideRequest.ProtoReflect.Descriptor instead.
 func (*DecideRequest) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{33}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *DecideRequest) GetId() int64 {
@@ -2150,7 +1638,7 @@ type DecideResponse struct {
 
 func (x *DecideResponse) Reset() {
 	*x = DecideResponse{}
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[34]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2162,7 +1650,7 @@ func (x *DecideResponse) String() string {
 func (*DecideResponse) ProtoMessage() {}
 
 func (x *DecideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_bergfried_v1_bergfried_proto_msgTypes[34]
+	mi := &file_bergfried_v1_bergfried_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2175,7 +1663,7 @@ func (x *DecideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecideResponse.ProtoReflect.Descriptor instead.
 func (*DecideResponse) Descriptor() ([]byte, []int) {
-	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{34}
+	return file_bergfried_v1_bergfried_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DecideResponse) GetMessage() string {
@@ -2194,51 +1682,6 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"^\n" +
 	"\x11GitHubTokenResult\x12/\n" +
-	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"H\n" +
-	"\x0fCIStatusRequest\x12\x1d\n" +
-	"\n" +
-	"remote_url\x18\x01 \x01(\tR\tremoteUrl\x12\x16\n" +
-	"\x06branch\x18\x02 \x01(\tR\x06branch\"\x84\x01\n" +
-	"\x05CIJob\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1e\n" +
-	"\n" +
-	"conclusion\x18\x04 \x01(\tR\n" +
-	"conclusion\x12\x1f\n" +
-	"\vfailed_step\x18\x05 \x01(\tR\n" +
-	"failedStep\"\xf2\x01\n" +
-	"\x05CIRun\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1e\n" +
-	"\n" +
-	"conclusion\x18\x04 \x01(\tR\n" +
-	"conclusion\x12\x10\n" +
-	"\x03url\x18\x05 \x01(\tR\x03url\x12\x10\n" +
-	"\x03sha\x18\x06 \x01(\tR\x03sha\x12\x1d\n" +
-	"\n" +
-	"run_number\x18\a \x01(\x05R\trunNumber\x12!\n" +
-	"\fupdated_unix\x18\b \x01(\x03R\vupdatedUnix\x12'\n" +
-	"\x04jobs\x18\t \x03(\v2\x13.bergfried.v1.CIJobR\x04jobs\"i\n" +
-	"\x0eCIStatusResult\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05state\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12'\n" +
-	"\x04runs\x18\x03 \x03(\v2\x13.bergfried.v1.CIRunR\x04runs\"E\n" +
-	"\rCILogsRequest\x12\x1d\n" +
-	"\n" +
-	"remote_url\x18\x01 \x01(\tR\tremoteUrl\x12\x15\n" +
-	"\x06job_id\x18\x02 \x01(\x03R\x05jobId\"k\n" +
-	"\fCILogsResult\x12/\n" +
-	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12\x10\n" +
-	"\x03log\x18\x03 \x01(\tR\x03log\"F\n" +
-	"\x0eCIRerunRequest\x12\x1d\n" +
-	"\n" +
-	"remote_url\x18\x01 \x01(\tR\tremoteUrl\x12\x15\n" +
-	"\x06run_id\x18\x02 \x01(\x03R\x05runId\"Z\n" +
-	"\rCIRerunResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"c\n" +
 	"\x11SSHAttemptRequest\x12\x12\n" +
@@ -2352,7 +1795,7 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\x0fVERDICT_ALLOWED\x10\x01\x12\x12\n" +
 	"\x0eVERDICT_DENIED\x10\x02\x12\x13\n" +
 	"\x0fVERDICT_BLOCKED\x10\x03\x12\x13\n" +
-	"\x0fVERDICT_EXPIRED\x10\x042\x87\x06\n" +
+	"\x0fVERDICT_EXPIRED\x10\x042\xb5\x04\n" +
 	"\n" +
 	"SessionAPI\x12L\n" +
 	"\tListFiles\x12\x1e.bergfried.v1.ListFilesRequest\x1a\x1f.bergfried.v1.ListFilesResponse\x12R\n" +
@@ -2363,10 +1806,7 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"RequestSSH\x12\x1e.bergfried.v1.SSHAccessRequest\x1a\x1d.bergfried.v1.SSHAccessResult\x12M\n" +
 	"\n" +
 	"SSHAttempt\x12\x1f.bergfried.v1.SSHAttemptRequest\x1a\x1e.bergfried.v1.SSHAttemptResult\x12W\n" +
-	"\x12RequestGitHubToken\x12 .bergfried.v1.GitHubTokenRequest\x1a\x1f.bergfried.v1.GitHubTokenResult\x12G\n" +
-	"\bCIStatus\x12\x1d.bergfried.v1.CIStatusRequest\x1a\x1c.bergfried.v1.CIStatusResult\x12A\n" +
-	"\x06CILogs\x12\x1b.bergfried.v1.CILogsRequest\x1a\x1a.bergfried.v1.CILogsResult\x12D\n" +
-	"\aCIRerun\x12\x1c.bergfried.v1.CIRerunRequest\x1a\x1b.bergfried.v1.CIRerunResult2\x9e\x04\n" +
+	"\x12RequestGitHubToken\x12 .bergfried.v1.GitHubTokenRequest\x1a\x1f.bergfried.v1.GitHubTokenResult2\x9e\x04\n" +
 	"\x05Admin\x12U\n" +
 	"\fListRequests\x12!.bergfried.v1.ListRequestsRequest\x1a\".bergfried.v1.ListRequestsResponse\x12C\n" +
 	"\x06Decide\x12\x1b.bergfried.v1.DecideRequest\x1a\x1c.bergfried.v1.DecideResponse\x12I\n" +
@@ -2390,97 +1830,79 @@ func file_bergfried_v1_bergfried_proto_rawDescGZIP() []byte {
 }
 
 var file_bergfried_v1_bergfried_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_bergfried_v1_bergfried_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_bergfried_v1_bergfried_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_bergfried_v1_bergfried_proto_goTypes = []any{
 	(Verdict)(0),                 // 0: bergfried.v1.Verdict
 	(*GitHubTokenRequest)(nil),   // 1: bergfried.v1.GitHubTokenRequest
 	(*GitHubTokenResult)(nil),    // 2: bergfried.v1.GitHubTokenResult
-	(*CIStatusRequest)(nil),      // 3: bergfried.v1.CIStatusRequest
-	(*CIJob)(nil),                // 4: bergfried.v1.CIJob
-	(*CIRun)(nil),                // 5: bergfried.v1.CIRun
-	(*CIStatusResult)(nil),       // 6: bergfried.v1.CIStatusResult
-	(*CILogsRequest)(nil),        // 7: bergfried.v1.CILogsRequest
-	(*CILogsResult)(nil),         // 8: bergfried.v1.CILogsResult
-	(*CIRerunRequest)(nil),       // 9: bergfried.v1.CIRerunRequest
-	(*CIRerunResult)(nil),        // 10: bergfried.v1.CIRerunResult
-	(*SSHAttemptRequest)(nil),    // 11: bergfried.v1.SSHAttemptRequest
-	(*SSHAttemptResult)(nil),     // 12: bergfried.v1.SSHAttemptResult
-	(*SSHAccessRequest)(nil),     // 13: bergfried.v1.SSHAccessRequest
-	(*SSHAccessResult)(nil),      // 14: bergfried.v1.SSHAccessResult
-	(*DecideSSHRequest)(nil),     // 15: bergfried.v1.DecideSSHRequest
-	(*Grant)(nil),                // 16: bergfried.v1.Grant
-	(*ListGrantsRequest)(nil),    // 17: bergfried.v1.ListGrantsRequest
-	(*ListGrantsResponse)(nil),   // 18: bergfried.v1.ListGrantsResponse
-	(*GrantRef)(nil),             // 19: bergfried.v1.GrantRef
-	(*ExtendGrantRequest)(nil),   // 20: bergfried.v1.ExtendGrantRequest
-	(*KeyInfo)(nil),              // 21: bergfried.v1.KeyInfo
-	(*ListKeysRequest)(nil),      // 22: bergfried.v1.ListKeysRequest
-	(*ListKeysResponse)(nil),     // 23: bergfried.v1.ListKeysResponse
-	(*FileEntry)(nil),            // 24: bergfried.v1.FileEntry
-	(*ListFilesRequest)(nil),     // 25: bergfried.v1.ListFilesRequest
-	(*ListFilesResponse)(nil),    // 26: bergfried.v1.ListFilesResponse
-	(*SearchFilesRequest)(nil),   // 27: bergfried.v1.SearchFilesRequest
-	(*SearchFilesResponse)(nil),  // 28: bergfried.v1.SearchFilesResponse
-	(*AccessRequest)(nil),        // 29: bergfried.v1.AccessRequest
-	(*AccessResult)(nil),         // 30: bergfried.v1.AccessResult
-	(*Request)(nil),              // 31: bergfried.v1.Request
-	(*ListRequestsRequest)(nil),  // 32: bergfried.v1.ListRequestsRequest
-	(*ListRequestsResponse)(nil), // 33: bergfried.v1.ListRequestsResponse
-	(*DecideRequest)(nil),        // 34: bergfried.v1.DecideRequest
-	(*DecideResponse)(nil),       // 35: bergfried.v1.DecideResponse
+	(*SSHAttemptRequest)(nil),    // 3: bergfried.v1.SSHAttemptRequest
+	(*SSHAttemptResult)(nil),     // 4: bergfried.v1.SSHAttemptResult
+	(*SSHAccessRequest)(nil),     // 5: bergfried.v1.SSHAccessRequest
+	(*SSHAccessResult)(nil),      // 6: bergfried.v1.SSHAccessResult
+	(*DecideSSHRequest)(nil),     // 7: bergfried.v1.DecideSSHRequest
+	(*Grant)(nil),                // 8: bergfried.v1.Grant
+	(*ListGrantsRequest)(nil),    // 9: bergfried.v1.ListGrantsRequest
+	(*ListGrantsResponse)(nil),   // 10: bergfried.v1.ListGrantsResponse
+	(*GrantRef)(nil),             // 11: bergfried.v1.GrantRef
+	(*ExtendGrantRequest)(nil),   // 12: bergfried.v1.ExtendGrantRequest
+	(*KeyInfo)(nil),              // 13: bergfried.v1.KeyInfo
+	(*ListKeysRequest)(nil),      // 14: bergfried.v1.ListKeysRequest
+	(*ListKeysResponse)(nil),     // 15: bergfried.v1.ListKeysResponse
+	(*FileEntry)(nil),            // 16: bergfried.v1.FileEntry
+	(*ListFilesRequest)(nil),     // 17: bergfried.v1.ListFilesRequest
+	(*ListFilesResponse)(nil),    // 18: bergfried.v1.ListFilesResponse
+	(*SearchFilesRequest)(nil),   // 19: bergfried.v1.SearchFilesRequest
+	(*SearchFilesResponse)(nil),  // 20: bergfried.v1.SearchFilesResponse
+	(*AccessRequest)(nil),        // 21: bergfried.v1.AccessRequest
+	(*AccessResult)(nil),         // 22: bergfried.v1.AccessResult
+	(*Request)(nil),              // 23: bergfried.v1.Request
+	(*ListRequestsRequest)(nil),  // 24: bergfried.v1.ListRequestsRequest
+	(*ListRequestsResponse)(nil), // 25: bergfried.v1.ListRequestsResponse
+	(*DecideRequest)(nil),        // 26: bergfried.v1.DecideRequest
+	(*DecideResponse)(nil),       // 27: bergfried.v1.DecideResponse
 }
 var file_bergfried_v1_bergfried_proto_depIdxs = []int32{
 	0,  // 0: bergfried.v1.GitHubTokenResult.verdict:type_name -> bergfried.v1.Verdict
-	4,  // 1: bergfried.v1.CIRun.jobs:type_name -> bergfried.v1.CIJob
-	5,  // 2: bergfried.v1.CIStatusResult.runs:type_name -> bergfried.v1.CIRun
-	0,  // 3: bergfried.v1.CILogsResult.verdict:type_name -> bergfried.v1.Verdict
-	0,  // 4: bergfried.v1.CIRerunResult.verdict:type_name -> bergfried.v1.Verdict
-	0,  // 5: bergfried.v1.SSHAccessResult.verdict:type_name -> bergfried.v1.Verdict
-	16, // 6: bergfried.v1.ListGrantsResponse.grants:type_name -> bergfried.v1.Grant
-	21, // 7: bergfried.v1.ListKeysResponse.keys:type_name -> bergfried.v1.KeyInfo
-	24, // 8: bergfried.v1.ListFilesResponse.entries:type_name -> bergfried.v1.FileEntry
-	24, // 9: bergfried.v1.SearchFilesResponse.entries:type_name -> bergfried.v1.FileEntry
-	0,  // 10: bergfried.v1.AccessResult.verdict:type_name -> bergfried.v1.Verdict
-	31, // 11: bergfried.v1.ListRequestsResponse.requests:type_name -> bergfried.v1.Request
-	25, // 12: bergfried.v1.SessionAPI.ListFiles:input_type -> bergfried.v1.ListFilesRequest
-	27, // 13: bergfried.v1.SessionAPI.SearchFiles:input_type -> bergfried.v1.SearchFilesRequest
-	29, // 14: bergfried.v1.SessionAPI.RequestFile:input_type -> bergfried.v1.AccessRequest
-	29, // 15: bergfried.v1.SessionAPI.RequestFolder:input_type -> bergfried.v1.AccessRequest
-	13, // 16: bergfried.v1.SessionAPI.RequestSSH:input_type -> bergfried.v1.SSHAccessRequest
-	11, // 17: bergfried.v1.SessionAPI.SSHAttempt:input_type -> bergfried.v1.SSHAttemptRequest
-	1,  // 18: bergfried.v1.SessionAPI.RequestGitHubToken:input_type -> bergfried.v1.GitHubTokenRequest
-	3,  // 19: bergfried.v1.SessionAPI.CIStatus:input_type -> bergfried.v1.CIStatusRequest
-	7,  // 20: bergfried.v1.SessionAPI.CILogs:input_type -> bergfried.v1.CILogsRequest
-	9,  // 21: bergfried.v1.SessionAPI.CIRerun:input_type -> bergfried.v1.CIRerunRequest
-	32, // 22: bergfried.v1.Admin.ListRequests:input_type -> bergfried.v1.ListRequestsRequest
-	34, // 23: bergfried.v1.Admin.Decide:input_type -> bergfried.v1.DecideRequest
-	15, // 24: bergfried.v1.Admin.DecideSSH:input_type -> bergfried.v1.DecideSSHRequest
-	17, // 25: bergfried.v1.Admin.ListGrants:input_type -> bergfried.v1.ListGrantsRequest
-	19, // 26: bergfried.v1.Admin.RevokeGrant:input_type -> bergfried.v1.GrantRef
-	20, // 27: bergfried.v1.Admin.ExtendGrant:input_type -> bergfried.v1.ExtendGrantRequest
-	22, // 28: bergfried.v1.Admin.ListKeys:input_type -> bergfried.v1.ListKeysRequest
-	26, // 29: bergfried.v1.SessionAPI.ListFiles:output_type -> bergfried.v1.ListFilesResponse
-	28, // 30: bergfried.v1.SessionAPI.SearchFiles:output_type -> bergfried.v1.SearchFilesResponse
-	30, // 31: bergfried.v1.SessionAPI.RequestFile:output_type -> bergfried.v1.AccessResult
-	30, // 32: bergfried.v1.SessionAPI.RequestFolder:output_type -> bergfried.v1.AccessResult
-	14, // 33: bergfried.v1.SessionAPI.RequestSSH:output_type -> bergfried.v1.SSHAccessResult
-	12, // 34: bergfried.v1.SessionAPI.SSHAttempt:output_type -> bergfried.v1.SSHAttemptResult
-	2,  // 35: bergfried.v1.SessionAPI.RequestGitHubToken:output_type -> bergfried.v1.GitHubTokenResult
-	6,  // 36: bergfried.v1.SessionAPI.CIStatus:output_type -> bergfried.v1.CIStatusResult
-	8,  // 37: bergfried.v1.SessionAPI.CILogs:output_type -> bergfried.v1.CILogsResult
-	10, // 38: bergfried.v1.SessionAPI.CIRerun:output_type -> bergfried.v1.CIRerunResult
-	33, // 39: bergfried.v1.Admin.ListRequests:output_type -> bergfried.v1.ListRequestsResponse
-	35, // 40: bergfried.v1.Admin.Decide:output_type -> bergfried.v1.DecideResponse
-	35, // 41: bergfried.v1.Admin.DecideSSH:output_type -> bergfried.v1.DecideResponse
-	18, // 42: bergfried.v1.Admin.ListGrants:output_type -> bergfried.v1.ListGrantsResponse
-	35, // 43: bergfried.v1.Admin.RevokeGrant:output_type -> bergfried.v1.DecideResponse
-	35, // 44: bergfried.v1.Admin.ExtendGrant:output_type -> bergfried.v1.DecideResponse
-	23, // 45: bergfried.v1.Admin.ListKeys:output_type -> bergfried.v1.ListKeysResponse
-	29, // [29:46] is the sub-list for method output_type
-	12, // [12:29] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	0,  // 1: bergfried.v1.SSHAccessResult.verdict:type_name -> bergfried.v1.Verdict
+	8,  // 2: bergfried.v1.ListGrantsResponse.grants:type_name -> bergfried.v1.Grant
+	13, // 3: bergfried.v1.ListKeysResponse.keys:type_name -> bergfried.v1.KeyInfo
+	16, // 4: bergfried.v1.ListFilesResponse.entries:type_name -> bergfried.v1.FileEntry
+	16, // 5: bergfried.v1.SearchFilesResponse.entries:type_name -> bergfried.v1.FileEntry
+	0,  // 6: bergfried.v1.AccessResult.verdict:type_name -> bergfried.v1.Verdict
+	23, // 7: bergfried.v1.ListRequestsResponse.requests:type_name -> bergfried.v1.Request
+	17, // 8: bergfried.v1.SessionAPI.ListFiles:input_type -> bergfried.v1.ListFilesRequest
+	19, // 9: bergfried.v1.SessionAPI.SearchFiles:input_type -> bergfried.v1.SearchFilesRequest
+	21, // 10: bergfried.v1.SessionAPI.RequestFile:input_type -> bergfried.v1.AccessRequest
+	21, // 11: bergfried.v1.SessionAPI.RequestFolder:input_type -> bergfried.v1.AccessRequest
+	5,  // 12: bergfried.v1.SessionAPI.RequestSSH:input_type -> bergfried.v1.SSHAccessRequest
+	3,  // 13: bergfried.v1.SessionAPI.SSHAttempt:input_type -> bergfried.v1.SSHAttemptRequest
+	1,  // 14: bergfried.v1.SessionAPI.RequestGitHubToken:input_type -> bergfried.v1.GitHubTokenRequest
+	24, // 15: bergfried.v1.Admin.ListRequests:input_type -> bergfried.v1.ListRequestsRequest
+	26, // 16: bergfried.v1.Admin.Decide:input_type -> bergfried.v1.DecideRequest
+	7,  // 17: bergfried.v1.Admin.DecideSSH:input_type -> bergfried.v1.DecideSSHRequest
+	9,  // 18: bergfried.v1.Admin.ListGrants:input_type -> bergfried.v1.ListGrantsRequest
+	11, // 19: bergfried.v1.Admin.RevokeGrant:input_type -> bergfried.v1.GrantRef
+	12, // 20: bergfried.v1.Admin.ExtendGrant:input_type -> bergfried.v1.ExtendGrantRequest
+	14, // 21: bergfried.v1.Admin.ListKeys:input_type -> bergfried.v1.ListKeysRequest
+	18, // 22: bergfried.v1.SessionAPI.ListFiles:output_type -> bergfried.v1.ListFilesResponse
+	20, // 23: bergfried.v1.SessionAPI.SearchFiles:output_type -> bergfried.v1.SearchFilesResponse
+	22, // 24: bergfried.v1.SessionAPI.RequestFile:output_type -> bergfried.v1.AccessResult
+	22, // 25: bergfried.v1.SessionAPI.RequestFolder:output_type -> bergfried.v1.AccessResult
+	6,  // 26: bergfried.v1.SessionAPI.RequestSSH:output_type -> bergfried.v1.SSHAccessResult
+	4,  // 27: bergfried.v1.SessionAPI.SSHAttempt:output_type -> bergfried.v1.SSHAttemptResult
+	2,  // 28: bergfried.v1.SessionAPI.RequestGitHubToken:output_type -> bergfried.v1.GitHubTokenResult
+	25, // 29: bergfried.v1.Admin.ListRequests:output_type -> bergfried.v1.ListRequestsResponse
+	27, // 30: bergfried.v1.Admin.Decide:output_type -> bergfried.v1.DecideResponse
+	27, // 31: bergfried.v1.Admin.DecideSSH:output_type -> bergfried.v1.DecideResponse
+	10, // 32: bergfried.v1.Admin.ListGrants:output_type -> bergfried.v1.ListGrantsResponse
+	27, // 33: bergfried.v1.Admin.RevokeGrant:output_type -> bergfried.v1.DecideResponse
+	27, // 34: bergfried.v1.Admin.ExtendGrant:output_type -> bergfried.v1.DecideResponse
+	15, // 35: bergfried.v1.Admin.ListKeys:output_type -> bergfried.v1.ListKeysResponse
+	22, // [22:36] is the sub-list for method output_type
+	8,  // [8:22] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_bergfried_v1_bergfried_proto_init() }
@@ -2494,7 +1916,7 @@ func file_bergfried_v1_bergfried_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bergfried_v1_bergfried_proto_rawDesc), len(file_bergfried_v1_bergfried_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   35,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

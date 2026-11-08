@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -145,106 +144,4 @@ func (c *Client) DefaultBranch(ctx context.Context, r Repo) (string, error) {
 		return "", err
 	}
 	return d.DefaultBranch, nil
-}
-
-type Run struct {
-	ID         int64     `json:"id"`
-	Name       string    `json:"name"`
-	Title      string    `json:"display_title"`
-	Status     string    `json:"status"`
-	Conclusion string    `json:"conclusion"`
-	Branch     string    `json:"head_branch"`
-	SHA        string    `json:"head_sha"`
-	URL        string    `json:"html_url"`
-	Event      string    `json:"event"`
-	RunNumber  int       `json:"run_number"`
-	Attempt    int       `json:"run_attempt"`
-	Path       string    `json:"path"`
-	Created    time.Time `json:"created_at"`
-	Updated    time.Time `json:"updated_at"`
-}
-
-func (r Run) Done() bool { return r.Status == "completed" }
-
-// ListRuns: Workflow-Läufe eines Branches, neueste zuerst (GET …/actions/runs?branch=).
-func (c *Client) ListRuns(ctx context.Context, r Repo, branch string) ([]Run, error) {
-	var d struct {
-		Runs []Run `json:"workflow_runs"`
-	}
-	q := url.Values{"branch": {branch}, "per_page": {"20"}}
-	if _, err := c.do(ctx, "GET", "/repos/"+r.String()+"/actions/runs?"+q.Encode(), nil, &d); err != nil {
-		return nil, err
-	}
-	return d.Runs, nil
-}
-
-func (c *Client) GetRun(ctx context.Context, r Repo, id int64) (Run, error) {
-	var run Run
-	_, err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/actions/runs/%d", r, id), nil, &run)
-	return run, err
-}
-
-type Step struct {
-	Name       string `json:"name"`
-	Number     int    `json:"number"`
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion"`
-}
-
-type Job struct {
-	ID         int64  `json:"id"`
-	RunID      int64  `json:"run_id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion"`
-	Branch     string `json:"head_branch"`
-	SHA        string `json:"head_sha"`
-	URL        string `json:"html_url"`
-	Steps      []Step `json:"steps"`
-}
-
-func (c *Client) ListJobs(ctx context.Context, r Repo, runID int64) ([]Job, error) {
-	var d struct {
-		Jobs []Job `json:"jobs"`
-	}
-	if _, err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/actions/runs/%d/jobs?per_page=50", r, runID), nil, &d); err != nil {
-		return nil, err
-	}
-	return d.Jobs, nil
-}
-
-func (c *Client) GetJob(ctx context.Context, r Repo, id int64) (Job, error) {
-	var j Job
-	_, err := c.do(ctx, "GET", fmt.Sprintf("/repos/%s/actions/jobs/%d", r, id), nil, &j)
-	return j, err
-}
-
-// JobLogs lädt das Log eines Jobs (302 auf eine kurzlebige URL; der Authorization-Header wird beim Wechsel der Domain von Go entfernt).
-func (c *Client) JobLogs(ctx context.Context, r Repo, jobID int64, maxBytes int64) (string, error) {
-	tok, err := c.Tokens.Token()
-	if err != nil {
-		return "", err
-	}
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/repos/%s/actions/jobs/%d/logs", c.Base, r, jobID), nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", apiVersion)
-	req.Header.Set("User-Agent", "bergfried")
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", &APIError{resp.StatusCode, truncate(strings.TrimSpace(string(b)), 200)}
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
-	return string(b), err
-}
-
-// RerunFailed wiederholt die fehlgeschlagenen Jobs eines Laufs (POST …/rerun-failed-jobs, 201).
-func (c *Client) RerunFailed(ctx context.Context, r Repo, runID int64) error {
-	_, err := c.do(ctx, "POST", fmt.Sprintf("/repos/%s/actions/runs/%d/rerun-failed-jobs", r, runID), map[string]any{}, nil)
-	return err
 }

@@ -16,9 +16,7 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
-	"github.com/DevertNet/bergfried/daemon/internal/ci"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
-	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
@@ -69,7 +67,6 @@ type sessionServer struct {
 	svc     *access.Service
 	ssh     *broker.Service
 	gh      *ghtoken.Service
-	ci      *ci.Service
 	st      *store.Store
 }
 
@@ -90,30 +87,6 @@ func (s *sessionServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubToke
 		v = pb.Verdict_VERDICT_EXPIRED
 	}
 	return &pb.GitHubTokenResult{Verdict: v, Message: msg}, nil
-}
-
-func (s *sessionServer) CIStatus(ctx context.Context, r *pb.CIStatusRequest) (*pb.CIStatusResult, error) {
-	repo, err := github.ParseRemote(r.RemoteUrl)
-	if err != nil {
-		return &pb.CIStatusResult{State: "none", Message: err.Error()}, nil
-	}
-	return s.ci.Status(ctx, s.session, repo, r.Branch)
-}
-
-func (s *sessionServer) CILogs(ctx context.Context, r *pb.CILogsRequest) (*pb.CILogsResult, error) {
-	repo, err := github.ParseRemote(r.RemoteUrl)
-	if err != nil {
-		return &pb.CILogsResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: err.Error()}, nil
-	}
-	return s.ci.Logs(ctx, s.session, s.agent(ctx), repo, r.JobId)
-}
-
-func (s *sessionServer) CIRerun(ctx context.Context, r *pb.CIRerunRequest) (*pb.CIRerunResult, error) {
-	repo, err := github.ParseRemote(r.RemoteUrl)
-	if err != nil {
-		return &pb.CIRerunResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: err.Error()}, nil
-	}
-	return s.ci.Rerun(ctx, s.session, s.agent(ctx), repo, r.RunId)
 }
 
 func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
@@ -250,7 +223,6 @@ type Daemon struct {
 	Svc       *access.Service
 	SSH       *broker.Service
 	GH        *ghtoken.Service
-	CI        *ci.Service
 	AdminSock string
 	L         lima.Client
 
@@ -305,7 +277,7 @@ func (d *Daemon) startSession(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, ci: d.CI, st: d.St})
+	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, st: d.St})
 	go g.Serve(l)
 	asock, err := AgentSocket(vm)
 	if err != nil {

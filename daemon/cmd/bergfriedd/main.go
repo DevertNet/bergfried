@@ -17,7 +17,6 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
-	"github.com/DevertNet/bergfried/daemon/internal/ci"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/importer"
@@ -266,7 +265,7 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
 	}
-	// GitHub: ein Fine-grained Token pro Session (liegt in der VM, Kopie für CI auf dem Mac; siehe docs/DESIGN-GIT.md).
+	// GitHub: ein Fine-grained Token pro Session (liegt in der VM, Kopie auf dem Mac für Repo-Prüfungen; siehe docs/DESIGN-GIT.md).
 	tokStore := ghtoken.Store{Home: home}
 	mkClient := func(tok string) *github.Client {
 		c := github.New(github.StaticToken(tok))
@@ -275,13 +274,6 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 		}
 		return c
 	}
-	ciSvc := ci.NewService(m.S, func(session string) (*github.Client, error) {
-		t, err := tokStore.Get(session)
-		if err != nil {
-			return nil, err
-		}
-		return mkClient(t), nil
-	})
 	ghSvc := ghtoken.NewService(m.S, tokStore, func(ctx context.Context, session, tok string) error {
 		s, err := m.S.GetSession(session)
 		if err != nil {
@@ -301,7 +293,7 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	}
 	m.SaveToken = tokStore.Set
 	m.DropToken = tokStore.Delete
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, CI: ciSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}

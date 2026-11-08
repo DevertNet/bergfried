@@ -68,7 +68,7 @@ Alles ist auf `main` (GitHub: `DevertNet/bergfried`, privat). `make test` ist gr
 ## Git und CI (kurz)
 **Ein Fine-grained GitHub-Token pro Session**, in der VM (`~/.git-credentials`, `credential.helper store`) für alle Git-Aktionen per HTTPS und für Actions; kein Umbiegen von URLs, kein `gh`.
 Anlegen über vorausgefüllten Link (Repo-Auswahl nur als Hinweis möglich): beim Erstellen einer Session mit Repo (Token Pflicht) oder per Agent-Anfrage `request_github_token` bei `permission denied`.
-CI-Tools (`ci_status`/`ci_logs`/`ci_rerun`) ohne Rückfrage; keine CI-Buttons/-Badge in der App. Der Agent kann das Token lesen und auf jeden Branch pushen – bewusster Kompromiss, siehe [`DESIGN-GIT.md`](DESIGN-GIT.md)
+Keine CI-Tools und keine CI-Oberfläche: der Agent fragt Actions selbst per `curl` mit dem Token ab. Der Agent kann das Token lesen und auf jeden Branch pushen – bewusster Kompromiss, siehe [`DESIGN-GIT.md`](DESIGN-GIT.md)
 (dort auch: mehrere Besitzer/Konten später). Das frühere Mac-Push-Konzept (Bundles, Prüfblatt) ist ausgebaut.
 Testwerkzeug: `tools/fakegithub` (GitHub-Ersatz mit echtem Git-HTTP-Server). Fallstricke aus dem Bau: leere Listen als `null` ausliefern bricht die Swift-Dekodierung
 (`Detail.Normalize`); Namen wie `DB_PASSWORD` entgingen der Schwärzung (`\b` vor „password“ greift nach `_` nicht);
