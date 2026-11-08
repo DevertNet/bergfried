@@ -60,7 +60,11 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	if info.Source != "known_hosts" {
 		warn = "\n\n⚠ Host-Key ist NEU (nicht in deiner known_hosts). Fingerprint:\n" + strings.Join(info.HostKeyFPs, "\n") + "\nNur bestätigen, wenn du ihn kennst."
 	}
-	text := fmt.Sprintf("Session „%s“ / Agent „%s“ möchte per SSH auf %s zugreifen.%s\n\nBegründung (vom Agent, ungeprüft):\n%s", r.Session, r.Agent, r.Path, warn, r.Reason)
+	user := info.RequestedUser
+	if user == "" {
+		user = info.DefaultUser
+	}
+	text := fmt.Sprintf("Session „%s“ / Agent „%s“ möchte per SSH auf %s zugreifen (Benutzer: %s).%s\n\nBegründung (vom Agent, ungeprüft):\n%s", r.Session, r.Agent, r.Path, user, warn, r.Reason)
 	if !ask(text, "Ablehnen", "Weiter …") {
 		no()
 		return
@@ -101,7 +105,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 			kdef = l
 		}
 	}
-	kl, ok := choose(fmt.Sprintf("Mit welchem Key? (Benutzer: %s)", info.DefaultUser), kdef, klabels)
+	kl, ok := choose(fmt.Sprintf("Mit welchem Key? (Benutzer: %s)", user), kdef, klabels)
 	if !ok {
 		no()
 		return
@@ -116,7 +120,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		no()
 		return
 	}
-	_, err = d.Decide(broker.Decision{ID: r.ID, Allow: true, Minutes: minutes, KeyFP: byLabel[kl], User: info.DefaultUser,
+	_, err = d.Decide(broker.Decision{ID: r.ID, Allow: true, Minutes: minutes, KeyFP: byLabel[kl], User: user,
 		AllAgents: strings.HasPrefix(scope, "Alle"), PerConn: strings.HasPrefix(mode, "Jede"), TrustUnknownHost: info.Source != "known_hosts"})
 	if err != nil {
 		d.log("SSH-Dialog #%d: %v", r.ID, err)

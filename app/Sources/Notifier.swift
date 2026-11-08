@@ -22,12 +22,49 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
             UNNotificationCategory(identifier: "OPEN", actions: [open, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "SSH_QUICK", actions: [sshAllow, open, deny], intentIdentifiers: [], options: []),
         ])
-        c.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        c.requestAuthorization(options: [.alert, .sound, .badge]) { granted, err in
+            let msg = "granted=\(granted) error=\(err.map { "\(($0 as NSError).domain) \(($0 as NSError).code): \($0.localizedDescription)" } ?? "none")"
+            NSLog("Bergfried Mitteilungen: %@", msg)
+            Notifier.shared.lastAuth = msg
+            try? msg.write(toFile: NSHomeDirectory() + "/.bergfried/notifications.txt", atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Letztes Ergebnis der Berechtigungsanfrage (für die Diagnose in den Einstellungen).
+    var lastAuth: String = "noch nicht angefragt"
+
+    /// Aktueller Stand laut macOS.
+    func status() async -> String {
+        guard enabled else { return "kein App-Bundle" }
+        let s = await UNUserNotificationCenter.current().notificationSettings()
+        let name: String
+        switch s.authorizationStatus {
+        case .notDetermined: name = "noch nicht entschieden"
+        case .denied: name = "abgelehnt"
+        case .authorized: name = "erlaubt"
+        case .provisional: name = "vorläufig erlaubt"
+        case .ephemeral: name = "temporär erlaubt"
+        @unknown default: name = "unbekannt"
+        }
+        return "\(name) (Banner: \(s.alertSetting == .enabled ? "an" : "aus"), Ton: \(s.soundSetting == .enabled ? "an" : "aus"))"
+    }
+
+    func postTest() {
+        guard enabled else { return }
+        let c = UNMutableNotificationContent()
+        c.title = "Bergfried – Testmitteilung"
+        c.body = "Wenn du das siehst, funktionieren Mitteilungen."
+        c.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(UUID().uuidString)", content: c, trigger: nil)) { err in
+            if let err { NSLog("Bergfried Testmitteilung Fehler: %@", err.localizedDescription) }
+        }
     }
 
     private func clip(_ s: String, _ n: Int) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
 
     func post(_ r: RequestInfo) {
+        // Ausweichen, falls macOS keine Mitteilungen zeigt: Dock-Icon springt (Zähler-Badge setzt das AppModel).
+        DispatchQueue.main.async { NSApp.requestUserAttention(.criticalRequest) }
         guard enabled else { return }
         let c = UNMutableNotificationContent()
         c.userInfo = ["id": r.id]
@@ -66,6 +103,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
                     Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allAgents: false, perConnection: false, trustUnknownHost: false)) }
                 }
             default:
+                m.pane = .requests
                 NSApp.activate(ignoringOtherApps: true)
             }
         }

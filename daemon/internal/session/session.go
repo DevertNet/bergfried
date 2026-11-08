@@ -188,8 +188,24 @@ func McpBin() string {
 	return filepath.Join(filepath.Dir(exe), "bergfried-mcp")
 }
 
-// InstallMCP kopiert bergfried-mcp in die VM und trägt es in Claude Code ein (idempotent).
-func (m *Manager) InstallMCP(ctx context.Context, vm string) error {
+// guidance ist der Hinweistext für Claude in der VM (~/.claude/bergfried.md, per @-Import in ~/.claude/CLAUDE.md).
+func guidance(outDir string) string {
+	return "# Bergfried – Umgebung dieser VM\n\n" +
+		"Du läufst in einer isolierten Bergfried-VM (Linux). \"Mein Computer\", \"mein Mac\", \"meine Dateien\", \"mein Rechner\", " +
+		"\"mein Home\", Dokumente, Downloads und Desktop bezeichnen den **Mac des Nutzers außerhalb dieser VM**. Er ist hier nicht eingebunden.\n\n" +
+		"- **Suchen/Auflisten:** Tools `list_files` und `search_files` (Bergfried-MCP). Nur Namen, Größe, Datum; Pfade relativ zum Home, z. B. `Documents/bericht.pdf`. " +
+		"Nutze diese Tools zuerst und suche Dateien des Nutzers nie mit `find`/`ls` in der VM.\n" +
+		"- **Inhalte holen:** `request_file` / `request_folder` mit kurzer, ehrlicher Begründung. Bei `allowed` liegt eine read-only Kopie unter `vm_path`. " +
+		"`denied`, `blocked` und `expired` respektierst du und umgehst sie nicht.\n" +
+		"- **Server per SSH:** vorher `request_ssh` (host, user falls bekannt, minutes, reason). Danach normal `ssh user@host`. " +
+		"Es gibt keinen Zugriff auf private Schlüssel und kein Agent-Forwarding.\n" +
+		"- **Ergebnisse für den Nutzer:** in `" + outDir + "` ablegen (erscheint auf dem Mac) oder per Git pushen.\n" +
+		"- **Projektcode:** `~/work/main` bzw. `~/work/<agent>`; Docker und Docker Compose stehen zur Verfügung.\n" +
+		"- Sage nie \"ich habe keinen Zugriff auf deinen Computer\", bevor du die Bergfried-Tools versucht hast.\n"
+}
+
+// InstallMCP kopiert bergfried-mcp in die VM, trägt es in Claude Code ein und legt den Hinweistext an (idempotent).
+func (m *Manager) InstallMCP(ctx context.Context, vm, sessionName string) error {
 	bin := McpBin()
 	if _, err := os.Stat(bin); err != nil {
 		return fmt.Errorf("bergfried-mcp nicht gefunden (%s) – `make build` ausführen: %w", bin, err)
@@ -197,11 +213,15 @@ func (m *Manager) InstallMCP(ctx context.Context, vm string) error {
 	if _, err := m.L.R.Run(ctx, "cp", bin, vm+":/tmp/bergfried-mcp"); err != nil {
 		return err
 	}
-	_, err := m.L.Shell(ctx, vm, "bash", "-lc", `set -e
-mkdir -p ~/.local/bin && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
+	outDir := filepath.Join(m.Home, "sessions", sessionName, "shared", "out")
+	b64 := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
+	_, err := m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
+mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
+printf %%s '%s' | base64 -d > ~/.claude/bergfried.md
+grep -qs '^@~/.claude/bergfried.md' ~/.claude/CLAUDE.md || printf '@~/.claude/bergfried.md\n' >> ~/.claude/CLAUDE.md
 export PATH="$HOME/.local/bin:$PATH"
 claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
-claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`)
+claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64))
 	return err
 }
 
@@ -271,7 +291,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 		return err
 	}
 	progress(ctx, "Datei-/SSH-Hilfsprogramm installieren")
-	if err := m.InstallMCP(ctx, vm); err != nil {
+	if err := m.InstallMCP(ctx, vm, name); err != nil {
 		return err
 	}
 	// Basis-SSH-Config (Include) anlegen, noch ohne Freigaben.
@@ -296,6 +316,8 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 		return err
 	}
 	m.audit("session.create", name, "", repo)
+	// "main" sofort eintragen, damit er in der Übersicht gleich erscheint (das Fenster folgt gleich danach).
+	_ = m.S.AddAgent(store.Agent{Session: name, Name: "main", Worktree: "~/work/main", ComposeProject: name + "-main", Created: time.Now()})
 	// Erster Agent startet gleich mit (tmux-Fenster, Worktree/Verzeichnis, Remote Control). Ohne Login wartet er,
 	// der Daemon startet ihn nach dem Login automatisch neu.
 	progress(ctx, "Ersten Agent „main“ starten")
@@ -316,7 +338,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 	progress(ctx, "Hilfsprogramme und Agents werden gestartet")
-	if err := m.InstallMCP(ctx, s.VM); err != nil {
+	if err := m.InstallMCP(ctx, s.VM, name); err != nil {
 		return err
 	}
 	// tmux überlebt keinen VM-Stopp: Agents mit --continue wieder hochfahren.

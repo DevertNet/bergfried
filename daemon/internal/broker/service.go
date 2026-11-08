@@ -35,6 +35,7 @@ type VMHooks interface {
 }
 
 type SSHInfo struct {
+	RequestedUser           string // vom Agent angefragter Benutzer (kann leer sein)
 	HostKeyFPs              []string
 	Source                  string
 	DefaultKey, DefaultUser string
@@ -94,7 +95,7 @@ func clamp(m int) int {
 	return m
 }
 
-func (s *Service) RequestSSH(ctx context.Context, session, agent, host string, minutes int, reason string) (*pb.SSHAccessResult, error) {
+func (s *Service) RequestSSH(ctx context.Context, session, agent, host, user string, minutes int, reason string) (*pb.SSHAccessResult, error) {
 	deny := func(v pb.Verdict, msg string) (*pb.SSHAccessResult, error) {
 		return &pb.SSHAccessResult{Verdict: v, Message: msg}, nil
 	}
@@ -103,6 +104,11 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host string, m
 		return deny(pb.Verdict_VERDICT_DENIED, "Hostname ungültig.")
 	}
 	host = strings.ToLower(host)
+	user = strings.TrimSpace(user)
+	if user != "" && !userRe.MatchString(user) {
+		s.audit("ssh.request_invalid", session, agent, fmt.Sprintf("user=%q", trunc(user, 40)))
+		return deny(pb.Verdict_VERDICT_DENIED, "Benutzername ungültig (erlaubt: a-z, 0-9, _ und -, kleingeschrieben).")
+	}
 	reason = trunc(strings.Map(func(r rune) rune {
 		if r < 32 && r != '\n' || r == 127 {
 			return -1
@@ -115,8 +121,8 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host string, m
 		return deny(pb.Verdict_VERDICT_DENIED, "Host-Key des Ziels nicht ermittelbar (nicht in known_hosts, nicht erreichbar).")
 	}
 	dk, du := s.Hosts.Default(host)
-	info := SSHInfo{HostKeyFPs: fps, Source: source, DefaultKey: dk, DefaultUser: du, SuggestedMinutes: clamp(minutes)}
-	extra, _ := json.Marshal(map[string]any{"fps": fps, "source": source})
+	info := SSHInfo{HostKeyFPs: fps, Source: source, DefaultKey: dk, DefaultUser: du, SuggestedMinutes: clamp(minutes), RequestedUser: user}
+	extra, _ := json.Marshal(map[string]any{"fps": fps, "source": source, "user": user})
 	req := store.Request{Session: session, Agent: agent, Kind: "ssh", Path: host, Reason: reason, Status: "pending", Bytes: int64(info.SuggestedMinutes), Extra: string(extra)}
 	id, err := s.B.St.AddRequest(req)
 	if err != nil {
@@ -128,7 +134,7 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host string, m
 	s.waiters[id] = p
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
-	s.audit("ssh.request_created", session, agent, fmt.Sprintf("id=%d host=%s source=%s hostkeys=%s", id, host, source, strings.Join(fps, ",")))
+	s.audit("ssh.request_created", session, agent, fmt.Sprintf("id=%d host=%s user=%s source=%s hostkeys=%s", id, host, user, source, strings.Join(fps, ",")))
 	if s.Asker != nil {
 		s.Asker.AskSSH(req, info)
 	}
@@ -207,7 +213,11 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if p.info.Source != "known_hosts" && !d.TrustUnknownHost {
 		return "", fmt.Errorf("Host-Key von %s ist neu (%s) – mit --trust-host-key bestätigen", r.Path, strings.Join(p.info.HostKeyFPs, ", "))
 	}
+	// Vorrang: Eingabe des Nutzers, dann Wunsch des Agents, dann Standard des Hosts.
 	user := d.User
+	if user == "" {
+		user = p.info.RequestedUser
+	}
 	if user == "" {
 		user = p.info.DefaultUser
 	}

@@ -133,3 +133,12 @@ func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
 		t.Fatal("Worktree muss entfernt werden")
 	}
 }
+
+func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
+	g := guidance("/Users/x/.bergfried/sessions/shop/shared/out")
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "nie \"ich habe keinen Zugriff"} {
+		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
+			t.Fatalf("Hinweistext enthält %q nicht:\n%s", want, g)
+		}
+	}
+}

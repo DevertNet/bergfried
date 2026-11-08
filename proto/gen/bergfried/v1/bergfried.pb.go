@@ -81,6 +81,7 @@ type SSHAccessRequest struct {
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`        // Hostname, optional mit :port
 	Minutes       int32                  `protobuf:"varint,2,opt,name=minutes,proto3" json:"minutes,omitempty"` // nur ein Vorschlag
 	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	User          string                 `protobuf:"bytes,4,opt,name=user,proto3" json:"user,omitempty"` // Benutzer auf dem Ziel, vom Agent vorgeschlagen (der Nutzer kann ihn ändern)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,6 +133,13 @@ func (x *SSHAccessRequest) GetMinutes() int32 {
 func (x *SSHAccessRequest) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *SSHAccessRequest) GetUser() string {
+	if x != nil {
+		return x.User
 	}
 	return ""
 }
@@ -1444,11 +1452,12 @@ var File_bergfried_v1_bergfried_proto protoreflect.FileDescriptor
 
 const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\n" +
-	"\x1cbergfried/v1/bergfried.proto\x12\fbergfried.v1\"X\n" +
+	"\x1cbergfried/v1/bergfried.proto\x12\fbergfried.v1\"l\n" +
 	"\x10SSHAccessRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x18\n" +
 	"\aminutes\x18\x02 \x01(\x05R\aminutes\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x93\x01\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x12\n" +
+	"\x04user\x18\x04 \x01(\tR\x04user\"\x93\x01\n" +
 	"\x0fSSHAccessResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +

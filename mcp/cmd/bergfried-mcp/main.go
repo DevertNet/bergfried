@@ -98,6 +98,7 @@ func (a *app) folder(ctx context.Context, _ *mcp.CallToolRequest, in reqIn) (*mc
 
 type sshIn struct {
 	Host    string `json:"host" jsonschema:"Zielhost, optional mit :port, z. B. server.example.com"`
+	User    string `json:"user,omitempty" jsonschema:"Benutzername auf dem Zielhost, falls bekannt (kleingeschrieben). Der Nutzer sieht ihn und kann ihn ändern."`
 	Minutes int    `json:"minutes,omitempty" jsonschema:"gewünschte Dauer in Minuten (nur ein Vorschlag, der Nutzer entscheidet)"`
 	Reason  string `json:"reason" jsonschema:"Wofür wird der SSH-Zugriff gebraucht? Wird dem Nutzer angezeigt."`
 }
@@ -109,13 +110,20 @@ type sshOut struct {
 }
 
 func (a *app) ssh(ctx context.Context, _ *mcp.CallToolRequest, in sshIn) (*mcp.CallToolResult, sshOut, error) {
-	r, err := a.c.RequestSSH(a.ctx(ctx), &pb.SSHAccessRequest{Host: in.Host, Minutes: int32(in.Minutes), Reason: in.Reason})
+	r, err := a.c.RequestSSH(a.ctx(ctx), &pb.SSHAccessRequest{Host: in.Host, User: in.User, Minutes: int32(in.Minutes), Reason: in.Reason})
 	if err != nil {
 		return nil, sshOut{}, err
 	}
 	v := res(&pb.AccessResult{Verdict: r.Verdict})
 	return nil, sshOut{Verdict: v.Verdict, Message: r.Message, Expires: r.ExpiresUnix, User: r.User}, nil
 }
+
+// instructions erscheinen im Kontext von Claude Code (MCP-Server-Hinweise).
+const instructions = `Du läufst in einer isolierten Bergfried-VM. "Mein Computer", "mein Mac", "meine Dateien", "mein Rechner", "mein Home", Dokumente, Downloads oder Desktop meinen den Mac des Nutzers AUSSERHALB dieser VM; er ist hier nicht eingebunden.
+Dateien des Nutzers findest du nur mit diesen Tools: list_files und search_files (nur Namen, Größe, Datum; Pfade relativ zum Home). Nutze sie zuerst; suche solche Dateien nie mit find/ls in der VM.
+Inhalte bekommst du nur mit request_file bzw. request_folder (kurze, ehrliche Begründung angeben); nach Zustimmung liegt eine Kopie unter vm_path. Verweigerte oder gesperrte Anfragen respektierst du und umgehst sie nicht.
+Für einen Server per SSH rufst du vorher request_ssh auf (host, user falls bekannt, reason), danach funktioniert ssh user@host während der Freigabe. Es gibt keinen Zugriff auf private Schlüssel.
+Sage nie, du hättest keinen Zugriff auf den Computer des Nutzers, bevor du diese Tools versucht hast.`
 
 func main() {
 	sock := os.Getenv("BERGFRIED_SOCKET")
@@ -128,7 +136,7 @@ func main() {
 	}
 	defer conn.Close()
 	a := &app{c: pb.NewSessionAPIClient(conn)}
-	s := mcp.NewServer(&mcp.Implementation{Name: "bergfried", Version: "0.2.0"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "bergfried", Version: "0.5.0"}, &mcp.ServerOptions{Instructions: instructions})
 	mcp.AddTool(s, &mcp.Tool{Name: "list_files", Description: "Listet Dateinamen, Größe und Änderungsdatum eines Ordners im Home des Nutzers (nur Metadaten, keine Inhalte). Gesperrte Bereiche erscheinen nicht."}, a.list)
 	mcp.AddTool(s, &mcp.Tool{Name: "search_files", Description: "Sucht nach Dateinamen im Home des Nutzers (nur Metadaten)."}, a.search)
 	mcp.AddTool(s, &mcp.Tool{Name: "request_file", Description: "Bittet den Nutzer um eine Datei. Wartet auf dessen Entscheidung (bis zu 10 Minuten). Bei Zustimmung liegt eine Kopie unter vm_path (read-only). Gesperrte Pfade werden ohne Rückfrage abgelehnt."}, a.file)

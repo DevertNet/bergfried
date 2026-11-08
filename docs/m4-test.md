@@ -64,6 +64,20 @@ open app/build/Bergfried.app
   mit Prüfung auf ungepushte/ungesicherte Arbeit und separater Bestätigung; das Verzeichnis von `main` wird nie gelöscht.
 - **VM-Namen:** neue Sessions heißen `bergfried-<name>` (max. 24 Zeichen; `base` ist reserviert). Die Aufräum-Logik löscht nur Basis-VMs mit Hash-Namen.
 
+## Benachrichtigungen, Hinweise für Claude, SSH-Benutzer (Stand 3)
+- **Mitteilungen:** macOS lieferte die Mitteilungen zwar aus, zeigte sie aber mit Stil „Ohne“ (ad-hoc signierte App; die Berechtigungsanfrage
+  schlägt mit `UNErrorDomain 1` fehl). Das lässt sich nur in den Systemeinstellungen ändern. Einstellungen → „Benachrichtigungen bei Anfragen“
+  zeigt den Stand, sendet eine Testmitteilung und öffnet die Systemeinstellungen. **Unabhängig davon** erscheint bei jeder offenen Anfrage ein
+  eigenes Popup-Fenster oben rechts (Erlauben/Ablehnen; SSH und große Ordner öffnen die App), dazu springt das Dock-Symbol und es gibt ein Badge.
+- **Hinweise für Claude (damit „such auf meinem Computer“ über Bergfried läuft):** Beim Erstellen und Starten einer Session legt der Daemon
+  `~/.claude/bergfried.md` in der VM an (per `@`-Import in `~/.claude/CLAUDE.md`; eigener Inhalt dort bleibt erhalten) und der MCP-Server liefert
+  dieselben Hinweise als MCP-Instructions. Sie erklären: „mein Computer/Mac/Dateien“ = Mac außerhalb der VM, erst `list_files`/`search_files`,
+  dann `request_file`, SSH nur über `request_ssh`, Ergebnisse nach `shared/out`. **Bereits laufende Agents** lesen das erst nach einem Neustart
+  (Agent-Menü → Neu starten).
+- **SSH-Benutzer vom Agent:** `request_ssh` hat jetzt den Parameter `user`. Der Dialog füllt das Feld mit dem Wunsch des Agents vor („Vom Agent
+  angefragt“); eine Eingabe des Nutzers hat Vorrang, sonst gilt der Standard des Hosts. Ungültige Namen (Großbuchstaben, Sonderzeichen) werden abgelehnt.
+- **Anzeige:** Agents stehen eingerückt in einer eigenen Fläche mit Führungslinie unter der Session; `main` erscheint sofort mit „wird gestartet …“.
+
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
 - Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).

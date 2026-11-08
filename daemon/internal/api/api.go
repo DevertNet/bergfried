@@ -132,6 +132,7 @@ type sshInfoJ struct {
 	Source           string   `json:"source"`
 	DefaultKey       string   `json:"default_key"`
 	DefaultUser      string   `json:"default_user"`
+	RequestedUser    string   `json:"requested_user"`
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
@@ -517,7 +518,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
 		if q.Kind == "ssh" && q.Status == "pending" {
 			if info, ok := s.SSH.PendingInfo(q.ID); ok {
-				j.SSH = &sshInfoJ{info.HostKeyFPs, info.Source, info.DefaultKey, info.DefaultUser, info.SuggestedMinutes}
+				j.SSH = &sshInfoJ{info.HostKeyFPs, info.Source, info.DefaultKey, info.DefaultUser, info.RequestedUser, info.SuggestedMinutes}
 			}
 		}
 		out = append(out, j)

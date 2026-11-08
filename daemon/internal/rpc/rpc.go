@@ -69,7 +69,7 @@ type sessionServer struct {
 }
 
 func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
-	return s.ssh.RequestSSH(ctx, s.session, s.agent(ctx), r.Host, int(r.Minutes), r.Reason)
+	return s.ssh.RequestSSH(ctx, s.session, s.agent(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
 // agent: Name ohne das "<session>/"-Präfix, das die VM mitschickt.

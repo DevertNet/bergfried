@@ -54,7 +54,7 @@ func TestRequestAllowedCreatesGrantAndExpiryCleansUp(t *testing.T) {
 	hostFP := "SHA256:abc"
 	s, f, h := svcFx(t, "known_hosts", []string{hostFP})
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 30, KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey()), User: "claude"}}
-	res, err := s.RequestSSH(context.Background(), "shop", "main", "Example.com", 15, "deploy")
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "Example.com", "", 15, "deploy")
 	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
 		t.Fatalf("%v %v", res, err)
 	}
@@ -82,13 +82,13 @@ func TestUnknownHostKeyNeedsExplicitTrust(t *testing.T) {
 	ask := &autoAsker{s, Decision{Allow: true, Minutes: 10, KeyFP: fp}}
 	s.Asker = ask
 	s.Timeout = 300 * time.Millisecond
-	res, _ := s.RequestSSH(context.Background(), "shop", "main", "new.example.com", 10, "")
+	res, _ := s.RequestSSH(context.Background(), "shop", "main", "new.example.com", "", 10, "")
 	if res.Verdict == pb.Verdict_VERDICT_ALLOWED {
 		t.Fatal("neuer Host-Key ohne Bestätigung darf nicht freigegeben werden")
 	}
 	ask.d.TrustUnknownHost = true
 	s.Timeout = 2 * time.Second
-	res, _ = s.RequestSSH(context.Background(), "shop", "main", "new.example.com", 10, "")
+	res, _ = s.RequestSSH(context.Background(), "shop", "main", "new.example.com", "", 10, "")
 	if res.Verdict != pb.Verdict_VERDICT_ALLOWED {
 		t.Fatalf("mit Bestätigung muss es gehen: %v", res)
 	}
@@ -97,7 +97,7 @@ func TestUnknownHostKeyNeedsExplicitTrust(t *testing.T) {
 func TestInvalidHostsAndUsersRejected(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	for _, h := range []string{"", "a b", "host;rm", "-oProxyCommand=x", "host\nHost *", "a/../b", "$(id)", strings.Repeat("a", 300)} {
-		res, _ := s.RequestSSH(context.Background(), "shop", "main", h, 5, "")
+		res, _ := s.RequestSSH(context.Background(), "shop", "main", h, "", 5, "")
 		if res.Verdict != pb.Verdict_VERDICT_DENIED {
 			t.Fatalf("%q muss abgelehnt werden", h)
 		}
@@ -105,7 +105,7 @@ func TestInvalidHostsAndUsersRejected(t *testing.T) {
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, User: "root\nHost *"}}
 	s.Timeout = 300 * time.Millisecond
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
+	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
 		t.Fatal("ungültiger Benutzername darf nie in die Config")
 	}
 }
@@ -114,12 +114,12 @@ func TestDecideRejectsBadKeyAndDuration(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: "SHA256:gibtsnicht"}}
 	s.Timeout = 300 * time.Millisecond
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
+	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
 		t.Fatal("Key außerhalb des Upstream-Agents")
 	}
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: MaxMinutes + 1, KeyFP: fp}}
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
+	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
 		t.Fatal("unzulässige Dauer")
 	}
 }
@@ -163,5 +163,38 @@ func TestParseKeyLines(t *testing.T) {
 	got := parseKeyLines([]byte("# Host example.com found: line 3\n" + line + "\n"))
 	if len(got) != 1 || got[0] != ssh.FingerprintSHA256(s.PublicKey()) {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestAgentRequestedUserIsUsedUnlessUserOverrides(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
+	// ohne Eingabe des Nutzers gilt der Wunsch des Agents
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
+	res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "deploy", 5, "")
+	if res.Verdict != pb.Verdict_VERDICT_ALLOWED || res.User != "deploy" {
+		t.Fatalf("%v", res)
+	}
+	// Eingabe des Nutzers hat Vorrang
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, User: "claude"}}
+	res, _ = s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "deploy", 5, "")
+	if res.User != "claude" {
+		t.Fatalf("Nutzer-Eingabe muss gewinnen: %v", res)
+	}
+	// ohne beides: Standard des Hosts
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
+	res, _ = s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, "")
+	if res.User == "" {
+		t.Fatalf("Standard-User erwartet: %v", res)
+	}
+}
+
+func TestInvalidRequestedUserRejected(t *testing.T) {
+	s, _, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	for _, u := range []string{"Root", "root\nHost *", "a b", "-oProxyCommand=x", "$(id)", "x;y"} {
+		res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", u, 5, "")
+		if res.Verdict != pb.Verdict_VERDICT_DENIED {
+			t.Fatalf("%q muss abgelehnt werden", u)
+		}
 	}
 }

@@ -46,6 +46,7 @@ struct SSHInfo: Codable, Hashable {
     var source: String
     var defaultKey: String
     var defaultUser: String
+    var requestedUser: String
     var suggestedMinutes: Int
 }
 

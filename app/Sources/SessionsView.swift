@@ -93,14 +93,21 @@ struct SessionRow: View {
             }.font(.caption).foregroundStyle(.secondary)
             if s.probeError != nil, s.running { Text("Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).").font(.caption).foregroundStyle(.secondary) }
             if !s.agents.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Agents (\(s.agents.count))").font(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 3)
-                    ForEach(s.agents, id: \.name) { a in
-                        Divider()
-                        AgentRow(s: s, a: a)
+                // Agents gehören zur Session: eingerückt, mit Führungslinie und eigener Fläche.
+                HStack(alignment: .top, spacing: 0) {
+                    RoundedRectangle(cornerRadius: 1).fill(Color.accentColor.opacity(0.5)).frame(width: 3).padding(.leading, 4)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Label("Agents (\(s.agents.count))", systemImage: "person.2.fill").font(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 4)
+                        ForEach(Array(s.agents.enumerated()), id: \.element.name) { i, a in
+                            if i > 0 { Divider() }
+                            AgentRow(s: s, a: a)
+                        }
                     }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.leading, 10)
                 }
-                .padding(.top, 4)
+                .padding(.leading, 22).padding(.top, 4)
             }
         }.padding(.vertical, 4)
     }
@@ -153,6 +160,7 @@ struct AgentRow: View {
 
     var state: (color: Color, text: String) {
         if a.rc { return (.green, "Remote Control aktiv") }
+        if !a.window && sessionBusy { return (.orange, "wird gestartet …") }
         if s.claudeLoggedIn == false { return (.orange, "wartet auf Claude-Login") }
         if a.rcAction == "failed" { return (.red, "RC nicht aktivierbar – bitte neu starten") }
         if a.rcAction == "activating" { return (.orange, "aktiviere Remote Control …") }
@@ -162,6 +170,8 @@ struct AgentRow: View {
     }
 
     var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(a.name)") })?.value }
+    /// Für die Session läuft gerade ein Job (Erstellen, Starten, Agent hinzufügen …).
+    var sessionBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
 
     var body: some View {
         HStack(spacing: 10) {

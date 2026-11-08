@@ -107,7 +107,7 @@ func (s *Store) DeleteSession(name string) error {
 	return err
 }
 func (s *Store) AddAgent(a Agent) error {
-	_, err := s.DB.Exec(`INSERT INTO agents(session,name,worktree,compose_project,created) VALUES(?,?,?,?,?)`, a.Session, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix())
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO agents(session,name,worktree,compose_project,created) VALUES(?,?,?,?,?)`, a.Session, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix())
 	return err
 }
 func (s *Store) ListAgents(session string) ([]Agent, error) {

@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import Combine
+import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -10,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var sessions: [SessionInfo] = []
     @Published var requests: [RequestInfo] = []   // offene
     @Published var grants: [GrantInfo] = []       // aktive SSH-Freigaben
+    @Published var pane: Pane? = .sessions
     @Published var banner: String?
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
 
@@ -17,11 +20,18 @@ final class AppModel: ObservableObject {
     private var started = false
     private var notified = Set<Int64>()
     private var firstLoad = true
+    private var bag = Set<AnyCancellable>()
 
     func start() {
         guard !started else { return }
         started = true
         Notifier.shared.setup(model: self)
+        // Popup-Fenster und Dock-Badge folgen den offenen Anfragen.
+        $requests.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] reqs in
+            guard let self else { return }
+            NSApp.dockTile.badgeLabel = reqs.isEmpty ? nil : "\(reqs.count)"
+            PopupController.shared.update(model: self, requests: reqs)
+        }.store(in: &bag)
         Task { [weak self] in
             while let self {
                 await self.refresh()

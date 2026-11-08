@@ -31,6 +31,7 @@ message SSHAccessRequest {
   string host = 1;       // Hostname, optional mit :port
   int32 minutes = 2;     // nur ein Vorschlag
   string reason = 3;
+  string user = 4;       // Benutzer auf dem Ziel, vom Agent vorgeschlagen (der Nutzer kann ihn ändern)
 }
 message SSHAccessResult {
   Verdict verdict = 1;

@@ -141,8 +141,17 @@ struct SSHDecisionSheet: View {
                 ForEach(keys) { Text("\($0.comment.isEmpty ? $0.type : $0.comment) – \($0.fingerprint.suffix(12))").tag($0.fingerprint) }
             }
             if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption) }
-            TextField("Benutzer auf dem Ziel", text: $user)
-            Toggle("Für alle Agents der Session (sonst nur Anzeige für diesen Agent)", isOn: $allAgents)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Benutzer").frame(width: 80, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    TextField("", text: $user).textFieldStyle(.roundedBorder)
+                    if let ru = r.ssh?.requestedUser, !ru.isEmpty {
+                        Text(ru == user ? "Vom Agent angefragt." : "Vom Agent angefragt: \(ru)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Toggle("Für alle Agents der Session", isOn: $allAgents)
+            Text("Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Session.").font(.caption).foregroundStyle(.secondary)
             Toggle("Jede Verbindung einzeln bestätigen", isOn: $perConn)
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
@@ -159,9 +168,10 @@ struct SSHDecisionSheet: View {
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 520)
+        .padding(20).frame(width: 580)
         .task {
-            user = r.ssh?.defaultUser ?? "claude"
+            // Vorrang: Wunsch des Agents, dann Standard des Hosts
+            if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
             minutes = [15, 60, 240, 1440].last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 15) }) ?? 15
             if let resp: KeysResponse = try? await model.api.get("/v1/ssh/keys") {
                 keys = resp.keys; keyErr = resp.error

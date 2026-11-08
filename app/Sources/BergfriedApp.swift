@@ -9,11 +9,10 @@ enum Pane: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @Local private var pane: Pane? = .sessions
 
     var body: some View {
         NavigationSplitView {
-            List(Pane.allCases, selection: $pane) { p in
+            List(Pane.allCases, selection: $model.pane) { p in
                 HStack {
                     Label(p.rawValue, systemImage: p.icon)
                     if p == .requests && model.pendingCount > 0 { Spacer(); Text("\(model.pendingCount)").font(.caption.bold()).padding(.horizontal, 6).background(.red, in: Capsule()).foregroundStyle(.white) }
@@ -29,13 +28,13 @@ struct ContentView: View {
                     HStack { Text(b).textSelection(.enabled); Spacer(); Button("Schließen") { model.banner = nil } }
                         .padding(8).background(.orange.opacity(0.2))
                 }
-                switch pane ?? .sessions {
+                switch model.pane ?? .sessions {
                 case .sessions: SessionsView()
                 case .requests: RequestsView()
                 case .audit: AuditView()
                 case .settings: SettingsView()
                 }
-            }.navigationTitle((pane ?? .sessions).rawValue)
+            }.navigationTitle((model.pane ?? .sessions).rawValue)
         }
     }
 }
