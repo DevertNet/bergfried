@@ -1,6 +1,7 @@
 package lima
 
 import (
+	"os"
 	"context"
 	"strings"
 	"testing"
@@ -40,5 +41,22 @@ func TestList(t *testing.T) {
 	l, err := Client{f}.List(context.Background())
 	if err != nil || len(l) != 2 || l[0].Status != "Running" {
 		t.Fatalf("%v %v", l, err)
+	}
+}
+
+func TestRepinHostKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("LIMA_HOME", home)
+	d := home + "/vm1"
+	_ = os.MkdirAll(d, 0o755)
+	_ = os.WriteFile(d+"/ssh.known_hosts", []byte("x"), 0o600)
+	if err := RepinHostKey("vm1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(d + "/ssh.known_hosts"); err == nil {
+		t.Fatal("Datei muss weg sein")
+	}
+	if err := RepinHostKey("vm1"); err != nil {
+		t.Fatal("zweiter Aufruf darf nicht scheitern")
 	}
 }

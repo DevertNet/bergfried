@@ -3,6 +3,8 @@ package lima
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -82,4 +84,30 @@ func (c Client) List(ctx context.Context) ([]Instance, error) {
 		res = append(res, i)
 	}
 	return res, nil
+}
+
+// InstanceDir liefert das Lima-Verzeichnis einer Instanz (LIMA_HOME beachtet).
+func InstanceDir(name string) (string, error) {
+	home := os.Getenv("LIMA_HOME")
+	if home == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		home = filepath.Join(h, ".lima")
+	}
+	return filepath.Join(home, name), nil
+}
+
+// RepinHostKey löscht den von Lima gepinnten SSH-Host-Key, damit er nach bewusster
+// Neuerzeugung der Guest-Keys beim nächsten Start neu gepinnt wird.
+func RepinHostKey(name string) error {
+	d, err := InstanceDir(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(d, "ssh.known_hosts")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
