@@ -22,8 +22,13 @@ message SSHAttemptRequest {
   string host = 1;
   string port = 2;
   string user = 3;
+  bool wait = 4;         // true: blockiert, bis die Anfrage entschieden ist (interaktives ssh)
 }
-message SSHAttemptResult { string message = 1; }
+message SSHAttemptResult {
+  string message = 1;
+  // ignored | granted (aktive Freigabe) | pending | cooldown | allowed | denied | aborted
+  string state = 2;
+}
 
 // Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
 service Admin {

@@ -81,6 +81,7 @@ type SSHAttemptRequest struct {
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
 	Port          string                 `protobuf:"bytes,2,opt,name=port,proto3" json:"port,omitempty"`
 	User          string                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	Wait          bool                   `protobuf:"varint,4,opt,name=wait,proto3" json:"wait,omitempty"` // true: blockiert, bis die Anfrage entschieden ist (interaktives ssh)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -136,9 +137,18 @@ func (x *SSHAttemptRequest) GetUser() string {
 	return ""
 }
 
+func (x *SSHAttemptRequest) GetWait() bool {
+	if x != nil {
+		return x.Wait
+	}
+	return false
+}
+
 type SSHAttemptResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	// ignored | granted (aktive Freigabe) | pending | cooldown | allowed | denied | aborted
+	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -176,6 +186,13 @@ func (*SSHAttemptResult) Descriptor() ([]byte, []int) {
 func (x *SSHAttemptResult) GetMessage() string {
 	if x != nil {
 		return x.Message
+	}
+	return ""
+}
+
+func (x *SSHAttemptResult) GetState() string {
+	if x != nil {
+		return x.State
 	}
 	return ""
 }
@@ -1556,13 +1573,15 @@ var File_bergfried_v1_bergfried_proto protoreflect.FileDescriptor
 
 const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\n" +
-	"\x1cbergfried/v1/bergfried.proto\x12\fbergfried.v1\"O\n" +
+	"\x1cbergfried/v1/bergfried.proto\x12\fbergfried.v1\"c\n" +
 	"\x11SSHAttemptRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\tR\x04port\x12\x12\n" +
-	"\x04user\x18\x03 \x01(\tR\x04user\",\n" +
+	"\x04user\x18\x03 \x01(\tR\x04user\x12\x12\n" +
+	"\x04wait\x18\x04 \x01(\bR\x04wait\"B\n" +
 	"\x10SSHAttemptResult\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"l\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\"l\n" +
 	"\x10SSHAccessRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x18\n" +
 	"\aminutes\x18\x02 \x01(\x05R\aminutes\x12\x16\n" +

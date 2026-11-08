@@ -223,7 +223,7 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 		return n
 	}
 	// ohne Freigabe: Anfrage entsteht, ssh bleibt unberührt
-	if msg := s.Attempt("shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "angefragt") {
+	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "angefragt") {
 		t.Fatalf("%q", msg)
 	}
 	waitFor(t, "offene Anfrage", func() bool { return pending() == 1 })
@@ -232,7 +232,7 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 		t.Fatalf("%+v", rs[0])
 	}
 	// zweiter Versuch: keine zweite Anfrage
-	if msg := s.Attempt("shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "bereits angefragt") {
+	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "bereits angefragt") {
 		t.Fatalf("%q", msg)
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -245,11 +245,11 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 	}
 	waitFor(t, "Anfrage erledigt", func() bool { return pending() == 0 })
 	time.Sleep(100 * time.Millisecond)
-	if msg := s.Attempt("shop", "srv.example.com", "22", ""); !strings.Contains(msg, "kürzlich nicht erteilt") {
+	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "kürzlich nicht erteilt") {
 		t.Fatalf("Abkühlzeit erwartet: %q", msg)
 	}
 	f.now = f.now.Add(AttemptCooldown + time.Second)
-	if msg := s.Attempt("shop", "srv.example.com", "22", ""); !strings.Contains(msg, "angefragt") {
+	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "angefragt") {
 		t.Fatalf("nach der Abkühlzeit wieder anfragen: %q", msg)
 	}
 	waitFor(t, "neue Anfrage", func() bool { return pending() == 1 })
@@ -258,20 +258,106 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 func TestAttemptIgnoresGrantedAndInvalid(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	f.grant(t, "shop", 10, false) // Host "srv"
-	if msg := s.Attempt("shop", "srv", "22", ""); msg != "" {
+	if msg := att(s, "shop", "srv", "22", ""); msg != "" {
 		t.Fatalf("bei aktiver Freigabe nichts melden: %q", msg)
 	}
 	for _, h := range []string{"", "a b", "host;rm", "$(id)", "-oProxyCommand=x"} {
-		if msg := s.Attempt("shop", h, "22", "x"); msg != "" {
+		if msg := att(s, "shop", h, "22", "x"); msg != "" {
 			t.Fatalf("%q: %q", h, msg)
 		}
 	}
 	// anderer Port ergibt anderen Host-Eintrag
-	if msg := s.Attempt("shop", "srv", "2222", "claude"); !strings.Contains(msg, "srv:2222") {
+	if msg := att(s, "shop", "srv", "2222", "claude"); !strings.Contains(msg, "srv:2222") {
 		t.Fatalf("%q", msg)
 	}
 	// ungültiger Benutzer wird verworfen, die Anfrage entsteht trotzdem
-	if msg := s.Attempt("other", "ok.example.com", "22", "Root\nx"); !strings.Contains(msg, "angefragt") {
+	if msg := att(s, "other", "ok.example.com", "22", "Root\nx"); !strings.Contains(msg, "angefragt") {
 		t.Fatalf("%q", msg)
+	}
+}
+
+func att(s *Service, session, host, port, user string) string {
+	_, m := s.Attempt(context.Background(), session, host, port, user, false)
+	return m
+}
+
+func TestAttemptWaitReturnsDecision(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
+	run := func(d Decision) (string, string) {
+		s.Asker = &autoAsker{s, d}
+		return s.Attempt(context.Background(), "wait", "w.example.com", "22", "", true)
+	}
+	st, msg := run(Decision{Allow: true, Minutes: 5, KeyFP: fp})
+	if st != "allowed" || !strings.Contains(msg, "erteilt") {
+		t.Fatalf("%s %q", st, msg)
+	}
+	// aktive Freigabe: sofort granted, ohne zu warten
+	if st, _ := s.Attempt(context.Background(), "wait", "w.example.com", "22", "", true); st != "granted" {
+		t.Fatalf("granted erwartet, bekam %s", st)
+	}
+	// Ablehnung
+	s2, _, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	s2.Asker = &autoAsker{s2, Decision{Allow: false}}
+	if st, msg := s2.Attempt(context.Background(), "wait", "d.example.com", "22", "", true); st != "denied" || !strings.Contains(msg, "nicht erteilt") {
+		t.Fatalf("%s %q", st, msg)
+	}
+}
+
+func TestAttemptWaitAbortAndSharedWaiters(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	s.Asker = silentAsker2{}
+	s.Timeout = 5 * time.Second
+	// Abbruch (Strg-C) beendet nur das Warten, die Anfrage bleibt offen
+	ctx, cancel := context.WithCancel(context.Background())
+	res := make(chan string, 1)
+	go func() { st, _ := s.Attempt(ctx, "wait", "a.example.com", "22", "", true); res <- st }()
+	waitFor(t, "offene Anfrage", func() bool {
+		rs, _ := f.b.St.ListRequests(true, 10)
+		return len(rs) == 1
+	})
+	cancel()
+	if st := <-res; st != "aborted" {
+		t.Fatalf("%s", st)
+	}
+	rs, _ := f.b.St.ListRequests(true, 10)
+	if len(rs) != 1 {
+		t.Fatal("Anfrage muss offen bleiben")
+	}
+	// zwei Wartende teilen sich dieselbe Anfrage und bekommen dieselbe Antwort
+	out := make(chan string, 2)
+	for i := 0; i < 2; i++ {
+		go func() { st, _ := s.Attempt(context.Background(), "wait", "a.example.com", "22", "", true); out <- st }()
+	}
+	time.Sleep(100 * time.Millisecond)
+	if rs, _ = f.b.St.ListRequests(true, 10); len(rs) != 1 {
+		t.Fatalf("keine zweite Anfrage erwartet: %d", len(rs))
+	}
+	if _, err := s.DecideSSH(Decision{ID: rs[0].ID, Allow: false}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if st := <-out; st != "denied" {
+			t.Fatalf("%s", st)
+		}
+	}
+}
+
+type silentAsker2 struct{}
+
+func (silentAsker2) AskSSH(store.Request, SSHInfo) {}
+
+func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, PerConn: true}}
+	s.Timeout = 300 * time.Millisecond
+	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
+		t.Fatal("ohne ConfirmEach darf keine Einzelbestätigungs-Freigabe entstehen")
+	}
+	f.b.ConfirmEach = func(store.SSHGrant, string) bool { return true }
+	s.Timeout = 2 * time.Second
+	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("mit ConfirmEach muss es gehen: %v", res)
 	}
 }

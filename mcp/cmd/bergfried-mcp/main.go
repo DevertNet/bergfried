@@ -128,6 +128,8 @@ Sage nie, du hättest keinen Zugriff auf den Computer des Nutzers, bevor du dies
 
 // sshHook läuft als `Match exec` aus /etc/ssh/ssh_config.d bei jedem ssh-Start in der VM. Es meldet den Versuch dem Daemon
 // (der bei Bedarf eine Anfrage in der App anlegt) und endet IMMER mit Status 1, damit der Match nie greift und ssh unverändert weiterläuft.
+// Läuft ssh in einem echten Terminal (stderr ist ein TTY), wartet der Hook, bis die Anfrage entschieden ist; danach verbindet ssh
+// (mit Freigabe) bzw. scheitert (ohne). BERGFRIED_SSH_WAIT=1 erzwingt, =0 verhindert das Warten.
 func sshHook(args []string) {
 	defer os.Exit(1)
 	if len(args) < 3 {
@@ -142,11 +144,39 @@ func sshHook(args []string) {
 		return
 	}
 	defer conn.Close()
+	c := pb.NewSessionAPIClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	r, err := pb.NewSessionAPIClient(conn).SSHAttempt(ctx, &pb.SSHAttemptRequest{Host: args[0], Port: args[1], User: args[2]})
-	if err == nil && r.Message != "" {
-		fmt.Fprintln(os.Stderr, r.Message)
+	r, err := c.SSHAttempt(ctx, &pb.SSHAttemptRequest{Host: args[0], Port: args[1], User: args[2]})
+	cancel()
+	if err != nil {
+		return
+	}
+	interactive := false
+	if fi, e := os.Stderr.Stat(); e == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		interactive = true
+	}
+	switch os.Getenv("BERGFRIED_SSH_WAIT") {
+	case "1":
+		interactive = true
+	case "0":
+		interactive = false
+	}
+	if r.State != "pending" || !interactive {
+		if r.Message != "" {
+			fmt.Fprintln(os.Stderr, r.Message)
+		}
+		return
+	}
+	shown := args[0]
+	if args[1] != "" && args[1] != "22" {
+		shown += ":" + args[1]
+	}
+	fmt.Fprintf(os.Stderr, "Bergfried: SSH-Freigabe für %s angefragt – warte auf Bestätigung in der App … (Strg-C bricht ab)\n", shown)
+	wctx, wcancel := context.WithTimeout(context.Background(), 11*time.Minute)
+	defer wcancel()
+	w, err := c.SSHAttempt(wctx, &pb.SSHAttemptRequest{Host: args[0], Port: args[1], User: args[2], Wait: true})
+	if err == nil && w.Message != "" {
+		fmt.Fprintln(os.Stderr, w.Message)
 	}
 }
 

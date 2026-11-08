@@ -8,7 +8,6 @@ struct SettingsView: View {
     @Local private var daemonInstalled = DaemonController.installed
     @Local private var termChoice = Terminal.choice
     @Local private var notifStatus = "wird geprüft …"
-    @Local private var popupOn = PopupController.enabled
     @Local private var tpl: TemplateInfo?
     @Local private var tplText = ""
     @Local private var tplMsg: String?
@@ -55,9 +54,7 @@ struct SettingsView: View {
                     }
                     Button("Status aktualisieren") { Task { notifStatus = await Notifier.shared.status() } }
                 }
-                Text("Erscheinen keine Banner: In den Systemeinstellungen → Mitteilungen → Bergfried den Mitteilungsstil auf „Banner“ oder „Hinweise“ stellen und Mitteilungen erlauben. Eine ad-hoc signierte App kann macOS die Berechtigung verweigern; dann hilft das Popup unten.").font(.caption).foregroundStyle(.secondary)
-                Toggle("Popup-Fenster bei neuen Anfragen (unabhängig von macOS-Mitteilungen)", isOn: $popupOn)
-                    .onChange(of: popupOn) { _, v in UserDefaults.standard.set(v, forKey: PopupController.key); PopupController.shared.update(model: model, requests: model.requests) }
+                Text("Erscheinen keine Banner: In den Systemeinstellungen → Mitteilungen → Bergfried den Mitteilungsstil auf „Banner“ oder „Hinweise“ stellen und Mitteilungen erlauben.").font(.caption).foregroundStyle(.secondary)
                 Text("Zusätzlich springt das Dock-Symbol, und das Menüleisten-Symbol sowie das Dock-Badge zeigen die Zahl offener Anfragen.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Terminal") {

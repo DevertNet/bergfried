@@ -68,7 +68,7 @@ open app/build/Bergfried.app
 - **Mitteilungen:** macOS lieferte die Mitteilungen zwar aus, zeigte sie aber mit Stil „Ohne“ (ad-hoc signierte App; die Berechtigungsanfrage
   schlägt mit `UNErrorDomain 1` fehl). Das lässt sich nur in den Systemeinstellungen ändern. Einstellungen → „Benachrichtigungen bei Anfragen“
   zeigt den Stand, sendet eine Testmitteilung und öffnet die Systemeinstellungen. **Unabhängig davon** erscheint bei jeder offenen Anfrage ein
-  eigenes Popup-Fenster oben rechts (Erlauben/Ablehnen; SSH und große Ordner öffnen die App), dazu springt das Dock-Symbol und es gibt ein Badge.
+  Dock-Badge, springendes Dock-Symbol und ein Zähler in der Menüleiste. (Das zwischenzeitlich gebaute eigene Popup-Fenster wurde auf Wunsch wieder entfernt.)
 - **Hinweise für Claude (damit „such auf meinem Computer“ über Bergfried läuft):** Beim Erstellen und Starten einer Session legt der Daemon
   `~/.claude/bergfried.md` in der VM an (per `@`-Import in `~/.claude/CLAUDE.md`; eigener Inhalt dort bleibt erhalten) und der MCP-Server liefert
   dieselben Hinweise als MCP-Instructions. Sie erklären: „mein Computer/Mac/Dateien“ = Mac außerhalb der VM, erst `list_files`/`search_files`,
@@ -91,6 +91,13 @@ open app/build/Bergfried.app
 - **Mitteilungs-Berechtigung:** Der Auslöser ist `requestAuthorization` beim App-Start. Die frühere Kennung war bei macOS als „abgelehnt“
   gespeichert, dann fragt macOS nie wieder. Die App nutzt deshalb die Bundle-ID `de.einfach123.bergfried`; beim ersten Start erscheint
   die macOS-Abfrage „Bergfried möchte Mitteilungen senden“ (mit „Erlauben“ bestätigen). Der Stand steht in den Einstellungen.
+
+## Interaktives SSH (Stand 5)
+- Läuft `ssh` in der VM in einem **echten Terminal**, wartet es nach der Meldung „… warte auf Bestätigung in der App … (Strg-C bricht ab)“, bis die
+  Anfrage entschieden ist: bei Freigabe verbindet es danach sofort, bei Ablehnung scheitert es mit „nicht erteilt“. Ohne Terminal (Skripte, Agents)
+  wartet es nicht, sondern meldet nur „angefragt … danach wiederholen“. `BERGFRIED_SSH_WAIT=1|0` erzwingt/verhindert das Warten. Strg-C beendet nur das Warten,
+  die Anfrage bleibt offen. Mehrere gleichzeitige `ssh` auf denselben Host teilen sich eine Anfrage.
+- „Jede Verbindung einzeln bestätigen“ ist in der App deaktiviert (nur im macOS-Dialog-Modus möglich); der Daemon lehnt die Option sonst ab.
 
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.

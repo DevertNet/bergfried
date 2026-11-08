@@ -26,11 +26,10 @@ final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         Notifier.shared.setup(model: self)
-        // Popup-Fenster und Dock-Badge folgen den offenen Anfragen.
+        // Dock-Badge folgt den offenen Anfragen.
         $requests.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] reqs in
             guard let self else { return }
             NSApp.dockTile.badgeLabel = reqs.isEmpty ? nil : "\(reqs.count)"
-            PopupController.shared.update(model: self, requests: reqs)
         }.store(in: &bag)
         Task { [weak self] in
             while let self {

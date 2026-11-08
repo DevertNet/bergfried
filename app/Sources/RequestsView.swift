@@ -152,7 +152,7 @@ struct SSHDecisionSheet: View {
             }
             Toggle("Für alle Agents der Session", isOn: $allAgents)
             Text("Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Session.").font(.caption).foregroundStyle(.secondary)
-            Toggle("Jede Verbindung einzeln bestätigen", isOn: $perConn)
+            Toggle("Jede Verbindung einzeln bestätigen (in der App noch nicht verfügbar)", isOn: $perConn).disabled(true)
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
                 Spacer()

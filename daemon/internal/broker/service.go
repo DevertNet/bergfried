@@ -71,9 +71,9 @@ type Service struct {
 
 	mu      sync.Mutex
 	waiters map[int64]*pending
-	open    map[int64]string     // aktive Grants -> Session (für Ablauf-Erkennung)
-	cool    map[string]time.Time // Session|Host -> frühestens wieder anfragen (nach Ablehnung/Ablauf)
-	attempt map[string]bool      // Session|Host -> Anfrage läuft (Hintergrund-Goroutine aktiv)
+	open    map[int64]string         // aktive Grants -> Session (für Ablauf-Erkennung)
+	cool    map[string]time.Time     // Session|Host -> frühestens wieder anfragen (nach Ablehnung/Ablauf)
+	attempt map[string]*attemptState // Session|Host -> laufende Anfrage (Hintergrund-Goroutine aktiv)
 }
 
 // AttemptCooldown: nach einem abgelehnten oder abgelaufenen Versuch wird derselbe Host eine Weile nicht erneut gemeldet.
@@ -81,7 +81,7 @@ const AttemptCooldown = 60 * time.Second
 
 func NewService(b *Broker, r HostKeyResolver, h VMHooks, a SSHAsker, hc *HostConfig) *Service {
 	return &Service{B: b, Resolve: r, Hooks: h, Asker: a, Hosts: hc, Timeout: 10 * time.Minute,
-		waiters: map[int64]*pending{}, open: map[int64]string{}, cool: map[string]time.Time{}, attempt: map[string]bool{}}
+		waiters: map[int64]*pending{}, open: map[int64]string{}, cool: map[string]time.Time{}, attempt: map[string]*attemptState{}}
 }
 
 func (s *Service) audit(event, session, agent, detail string) {
@@ -214,6 +214,10 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	}
 	if d.Minutes < 1 || d.Minutes > MaxMinutes {
 		return "", fmt.Errorf("Dauer muss 1..%d Minuten sein", MaxMinutes)
+	}
+	if d.PerConn && s.B.ConfirmEach == nil {
+		// Ohne Bestätigungsweg würde jede Verbindung abgelehnt (Freigabe wäre wertlos).
+		return "", errors.New("„jede Verbindung einzeln bestätigen“ ist ohne macOS-Dialog (serve ohne --no-dialog) noch nicht verfügbar")
 	}
 	if p.info.Source != "known_hosts" && !d.TrustUnknownHost {
 		return "", fmt.Errorf("Host-Key von %s ist neu (%s) – mit --trust-host-key bestätigen", r.Path, strings.Join(p.info.HostKeyFPs, ", "))
@@ -486,15 +490,23 @@ func (s *Service) PendingInfo(id int64) (SSHInfo, bool) {
 	return p.info, true
 }
 
+type attemptState struct {
+	done    chan struct{}
+	verdict pb.Verdict
+	expires int64
+}
+
 // Attempt wird vom ssh-Hook der VM aufgerufen, wenn dort ein ssh-Befehl startet. Gibt es für den Host keine aktive Freigabe
-// und keine offene Anfrage, wird (im Hintergrund) eine Anfrage in der App angelegt. Der ssh-Aufruf selbst bleibt unberührt.
-func (s *Service) Attempt(session, host, port, user string) string {
+// und keine offene Anfrage, wird im Hintergrund eine Anfrage in der App angelegt. Der ssh-Aufruf selbst bleibt unberührt.
+// Mit wait=true blockiert der Aufruf, bis die Anfrage entschieden ist (interaktives ssh wartet dann auf die Freigabe);
+// ctx bricht das Warten ab (z. B. Strg-C), die Anfrage selbst bleibt offen.
+func (s *Service) Attempt(ctx context.Context, session, host, port, user string, wait bool) (state, msg string) {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if port != "" && port != "22" {
 		host += ":" + port
 	}
 	if !hostRe.MatchString(host) {
-		return ""
+		return "ignored", ""
 	}
 	if user != "" && !userRe.MatchString(user) {
 		user = ""
@@ -502,32 +514,56 @@ func (s *Service) Attempt(session, host, port, user string) string {
 	// aktive Freigabe vorhanden? Dann nichts tun.
 	for _, g := range s.B.active(session) {
 		if g.Host == host {
-			return ""
+			return "granted", ""
 		}
 	}
 	key := session + "|" + host
 	s.mu.Lock()
-	if s.attempt[key] {
-		s.mu.Unlock()
-		return "Bergfried: SSH-Freigabe für " + host + " ist bereits angefragt – bitte in der App bestätigen."
-	}
-	if until, ok := s.cool[key]; ok && s.B.now().Before(until) {
-		s.mu.Unlock()
-		return "Bergfried: SSH-Freigabe für " + host + " wurde kürzlich nicht erteilt."
-	}
-	s.attempt[key] = true
-	s.mu.Unlock()
-	go func() {
-		res, err := s.RequestSSH(context.Background(), session, "terminal", host, user, 15, "SSH-Verbindungsversuch in der VM (ssh "+host+")")
-		s.mu.Lock()
-		delete(s.attempt, key)
-		if err != nil || res == nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
-			s.cool[key] = s.B.now().Add(AttemptCooldown)
-		} else {
-			delete(s.cool, key)
+	st := s.attempt[key]
+	started := false
+	if st == nil {
+		if until, ok := s.cool[key]; ok && s.B.now().Before(until) {
+			s.mu.Unlock()
+			return "cooldown", "Bergfried: SSH-Freigabe für " + host + " wurde kürzlich nicht erteilt."
 		}
-		s.mu.Unlock()
-	}()
-	s.audit("ssh.attempt", session, "terminal", fmt.Sprintf("host=%s user=%s", host, user))
-	return "Bergfried: SSH-Freigabe für " + host + " angefragt – bitte in der App bestätigen, danach den Befehl wiederholen."
+		st = &attemptState{done: make(chan struct{})}
+		s.attempt[key] = st
+		started = true
+	}
+	s.mu.Unlock()
+	if started {
+		go func() {
+			res, err := s.RequestSSH(context.Background(), session, "terminal", host, user, 15, "SSH-Verbindungsversuch in der VM (ssh "+host+")")
+			s.mu.Lock()
+			delete(s.attempt, key)
+			if err != nil || res == nil {
+				st.verdict = pb.Verdict_VERDICT_DENIED
+			} else {
+				st.verdict, st.expires = res.Verdict, res.ExpiresUnix
+			}
+			if st.verdict != pb.Verdict_VERDICT_ALLOWED {
+				s.cool[key] = s.B.now().Add(AttemptCooldown)
+			} else {
+				delete(s.cool, key)
+			}
+			s.mu.Unlock()
+			close(st.done)
+		}()
+		s.audit("ssh.attempt", session, "terminal", fmt.Sprintf("host=%s user=%s wait=%v", host, user, wait))
+	}
+	if !wait {
+		if started {
+			return "pending", "Bergfried: SSH-Freigabe für " + host + " angefragt – bitte in der App bestätigen, danach den Befehl wiederholen."
+		}
+		return "pending", "Bergfried: SSH-Freigabe für " + host + " ist bereits angefragt – bitte in der App bestätigen."
+	}
+	select {
+	case <-st.done:
+		if st.verdict == pb.Verdict_VERDICT_ALLOWED {
+			return "allowed", "Bergfried: SSH-Freigabe für " + host + " erteilt – verbinde …"
+		}
+		return "denied", "Bergfried: SSH-Freigabe für " + host + " nicht erteilt."
+	case <-ctx.Done():
+		return "aborted", ""
+	}
 }
