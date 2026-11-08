@@ -1,0 +1,23 @@
+# Secrets – niemals einchecken
+.env
+.env.*
+*.pem
+*.key
+*.token
+secrets/
+
+# Go
+/bin/
+*.test
+*.out
+
+# macOS / Xcode
+.DS_Store
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Lokale Daten
+*.db
+*.sqlite
+*.log
