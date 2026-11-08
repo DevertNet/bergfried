@@ -24,6 +24,7 @@ const (
 	SessionAPI_RequestFile_FullMethodName   = "/bergfried.v1.SessionAPI/RequestFile"
 	SessionAPI_RequestFolder_FullMethodName = "/bergfried.v1.SessionAPI/RequestFolder"
 	SessionAPI_RequestSSH_FullMethodName    = "/bergfried.v1.SessionAPI/RequestSSH"
+	SessionAPI_SSHAttempt_FullMethodName    = "/bergfried.v1.SessionAPI/SSHAttempt"
 )
 
 // SessionAPIClient is the client API for SessionAPI service.
@@ -40,6 +41,8 @@ type SessionAPIClient interface {
 	RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
 	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
+	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
 }
 
 type sessionAPIClient struct {
@@ -100,6 +103,16 @@ func (c *sessionAPIClient) RequestSSH(ctx context.Context, in *SSHAccessRequest,
 	return out, nil
 }
 
+func (c *sessionAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SSHAttemptResult)
+	err := c.cc.Invoke(ctx, SessionAPI_SSHAttempt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SessionAPIServer is the server API for SessionAPI service.
 // All implementations must embed UnimplementedSessionAPIServer
 // for forward compatibility.
@@ -114,6 +127,8 @@ type SessionAPIServer interface {
 	RequestFolder(context.Context, *AccessRequest) (*AccessResult, error)
 	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
+	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
 	mustEmbedUnimplementedSessionAPIServer()
 }
 
@@ -138,6 +153,9 @@ func (UnimplementedSessionAPIServer) RequestFolder(context.Context, *AccessReque
 }
 func (UnimplementedSessionAPIServer) RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestSSH not implemented")
+}
+func (UnimplementedSessionAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method SSHAttempt not implemented")
 }
 func (UnimplementedSessionAPIServer) mustEmbedUnimplementedSessionAPIServer() {}
 func (UnimplementedSessionAPIServer) testEmbeddedByValue()                    {}
@@ -250,6 +268,24 @@ func _SessionAPI_RequestSSH_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SessionAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SSHAttemptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).SSHAttempt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_SSHAttempt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).SSHAttempt(ctx, req.(*SSHAttemptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SessionAPI_ServiceDesc is the grpc.ServiceDesc for SessionAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -276,6 +312,10 @@ var SessionAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestSSH",
 			Handler:    _SessionAPI_RequestSSH_Handler,
+		},
+		{
+			MethodName: "SSHAttempt",
+			Handler:    _SessionAPI_SSHAttempt_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

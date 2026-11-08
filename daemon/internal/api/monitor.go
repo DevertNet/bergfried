@@ -90,20 +90,21 @@ type SessionState struct {
 type Monitor struct {
 	M *session.Manager
 
-	mu       sync.Mutex
-	state    map[string]*SessionState
-	inflight map[string]bool
-	hold     map[string]int       // Sessions mit laufendem Job: nicht abfragen
-	failures map[string]int       // aufeinanderfolgende Abfragefehler
-	norc     map[string]int       // Prüfungen ohne RC je Agent
-	attempts map[string]int       // Aktivierungsversuche je Agent
-	last     map[string]time.Time // letzter Versuch je Agent
-	actions  map[string]string    // Anzeige-Stand je Agent
+	mu        sync.Mutex
+	state     map[string]*SessionState
+	inflight  map[string]bool
+	hold      map[string]int       // Sessions mit laufendem Job: nicht abfragen
+	failures  map[string]int       // aufeinanderfolgende Abfragefehler
+	norc      map[string]int       // Prüfungen ohne RC je Agent
+	attempts  map[string]int       // Aktivierungsversuche je Agent
+	last      map[string]time.Time // letzter Versuch je Agent
+	actions   map[string]string    // Anzeige-Stand je Agent
+	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
 }
 
 func NewMonitor(m *session.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SessionState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}}
 }
 
 // Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Session nicht abgefragt.
@@ -239,6 +240,25 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		return
 	}
 	mo.failures[name] = 0
+	needInstall := !mo.installed[name]
+	if needInstall {
+		mo.installed[name] = true
+	}
+	if needInstall {
+		// Laufende VMs bekommen einmal je Daemon-Start die aktuelle Fassung (MCP-Server, ssh-Hook, Hinweistext).
+		go func() {
+			ictx, icancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer icancel()
+			if err := mo.M.InstallMCP(ictx, vm, name); err != nil {
+				fmt.Fprintln(os.Stderr, "Aktualisierung der VM", name, ":", err)
+				mo.mu.Lock()
+				delete(mo.installed, name)
+				mo.mu.Unlock()
+				return
+			}
+			_ = mo.M.S.Audit("daemon", "vm.refresh", name, "", "MCP, ssh-Hook, Hinweistext")
+		}()
+	}
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
 	// Nur registrierte Agents zählen (kein tmux-Standardfenster "bash"/"shell"); fehlende Fenster gelten als "kein Fenster".

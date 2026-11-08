@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -125,7 +126,35 @@ Inhalte bekommst du nur mit request_file bzw. request_folder (kurze, ehrliche Be
 Für einen Server per SSH rufst du vorher request_ssh auf (host, user falls bekannt, reason), danach funktioniert ssh user@host während der Freigabe. Es gibt keinen Zugriff auf private Schlüssel.
 Sage nie, du hättest keinen Zugriff auf den Computer des Nutzers, bevor du diese Tools versucht hast.`
 
+// sshHook läuft als `Match exec` aus /etc/ssh/ssh_config.d bei jedem ssh-Start in der VM. Es meldet den Versuch dem Daemon
+// (der bei Bedarf eine Anfrage in der App anlegt) und endet IMMER mit Status 1, damit der Match nie greift und ssh unverändert weiterläuft.
+func sshHook(args []string) {
+	defer os.Exit(1)
+	if len(args) < 3 {
+		return
+	}
+	sock := os.Getenv("BERGFRIED_SOCKET")
+	if sock == "" {
+		sock = fmt.Sprintf("/run/user/%d/bergfried.sock", os.Getuid())
+	}
+	conn, err := grpc.NewClient("unix://"+sock, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	r, err := pb.NewSessionAPIClient(conn).SSHAttempt(ctx, &pb.SSHAttemptRequest{Host: args[0], Port: args[1], User: args[2]})
+	if err == nil && r.Message != "" {
+		fmt.Fprintln(os.Stderr, r.Message)
+	}
+}
+
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "ssh-hook" {
+		sshHook(os.Args[2:])
+		return
+	}
 	sock := os.Getenv("BERGFRIED_SOCKET")
 	if sock == "" {
 		sock = fmt.Sprintf("/run/user/%d/bergfried.sock", os.Getuid())

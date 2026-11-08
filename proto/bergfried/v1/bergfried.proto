@@ -14,7 +14,16 @@ service SessionAPI {
   rpc RequestFolder(AccessRequest) returns (AccessResult);
   // SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
   rpc RequestSSH(SSHAccessRequest) returns (SSHAccessResult);
+  // Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+  rpc SSHAttempt(SSHAttemptRequest) returns (SSHAttemptResult);
 }
+
+message SSHAttemptRequest {
+  string host = 1;
+  string port = 2;
+  string user = 3;
+}
+message SSHAttemptResult { string message = 1; }
 
 // Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
 service Admin {

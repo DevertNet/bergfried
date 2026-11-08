@@ -68,6 +68,10 @@ type sessionServer struct {
 	st      *store.Store
 }
 
+func (s *sessionServer) SSHAttempt(_ context.Context, r *pb.SSHAttemptRequest) (*pb.SSHAttemptResult, error) {
+	return &pb.SSHAttemptResult{Message: s.ssh.Attempt(s.session, r.Host, r.Port, r.User)}, nil
+}
+
 func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
 	return s.ssh.RequestSSH(ctx, s.session, s.agent(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }

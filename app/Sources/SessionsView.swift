@@ -139,9 +139,13 @@ struct SessionRow: View {
             Button("Stoppen") { Task { report(await model.runJob("stop-\(s.name)", "Stoppt …", "/v1/sessions/stop", NameBody(name: s.name))) } }
             Button("Agent +", action: addAgent)
             Menu {
-                Button("tmux in \(Terminal.appName) öffnen") { report(Terminal.attach(vm: s.vm)) }
-                Button("Claude-Login in \(Terminal.appName) (einmal pro VM)") { report(Terminal.login(vm: s.vm)) }
-            } label: { Label(Terminal.appName, systemImage: "terminal") }
+                Button("Shell in der VM (\(Terminal.appName))") { report(Terminal.shell(vm: s.vm)) }
+                Button("SSH-Befehl kopieren") {
+                    if let c = Terminal.sshCommand(vm: s.vm) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
+                }
+                Divider()
+                Button("Claude-Login (einmal pro VM)") { report(Terminal.login(vm: s.vm)) }
+            } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
             Button("Starten") { Task { report(await model.runJob("start-\(s.name)", "Startet …", "/v1/sessions/start", NameBody(name: s.name))) } }
         }
@@ -188,6 +192,9 @@ struct AgentRow: View {
                 if a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
                     Button { NSWorkspace.shared.open(url) } label: { Label("RC-Link öffnen", systemImage: "arrow.up.right.square") }.controlSize(.small)
                 }
+                Button { if let e = Terminal.attach(vm: s.vm, agent: a.name) { model.setBanner(e) } } label: { Label("\(Terminal.appName): Claude-Fenster", systemImage: "terminal") }
+                    .controlSize(.small).disabled(!s.running || !a.window)
+                    .help("Öffnet das tmux-Fenster dieses Agents in \(Terminal.appName)")
                 Menu {
                     if a.rc, !a.rcUrl.isEmpty {
                         Button("Link kopieren") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
@@ -196,7 +203,7 @@ struct AgentRow: View {
                     Button("Neu starten") {
                         Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
                     }.disabled(!s.running)
-                    Button("tmux in \(Terminal.appName) öffnen") { if let e = Terminal.attach(vm: s.vm) { model.setBanner(e) } }.disabled(!s.running)
+
                     Divider()
                     Button("Entfernen …", role: .destructive) { removeOpen = true }.disabled(!s.running)
                 } label: { Image(systemName: "ellipsis.circle") }

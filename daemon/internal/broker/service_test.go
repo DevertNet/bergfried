@@ -198,3 +198,80 @@ func TestInvalidRequestedUserRejected(t *testing.T) {
 		}
 	}
 }
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		if cond() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("Zeitüberschreitung: %s", what)
+}
+
+func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	pending := func() int {
+		rs, _ := f.b.St.ListRequests(true, 50)
+		n := 0
+		for _, r := range rs {
+			if r.Kind == "ssh" && r.Path == "srv.example.com" {
+				n++
+			}
+		}
+		return n
+	}
+	// ohne Freigabe: Anfrage entsteht, ssh bleibt unberührt
+	if msg := s.Attempt("shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "angefragt") {
+		t.Fatalf("%q", msg)
+	}
+	waitFor(t, "offene Anfrage", func() bool { return pending() == 1 })
+	rs, _ := f.b.St.ListRequests(true, 5)
+	if rs[0].Agent != "terminal" || !strings.Contains(rs[0].Reason, "Verbindungsversuch") {
+		t.Fatalf("%+v", rs[0])
+	}
+	// zweiter Versuch: keine zweite Anfrage
+	if msg := s.Attempt("shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "bereits angefragt") {
+		t.Fatalf("%q", msg)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if pending() != 1 {
+		t.Fatal("Duplikat")
+	}
+	// ablehnen -> Abkühlzeit
+	if _, err := s.DecideSSH(Decision{ID: rs[0].ID, Allow: false}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Anfrage erledigt", func() bool { return pending() == 0 })
+	time.Sleep(100 * time.Millisecond)
+	if msg := s.Attempt("shop", "srv.example.com", "22", ""); !strings.Contains(msg, "kürzlich nicht erteilt") {
+		t.Fatalf("Abkühlzeit erwartet: %q", msg)
+	}
+	f.now = f.now.Add(AttemptCooldown + time.Second)
+	if msg := s.Attempt("shop", "srv.example.com", "22", ""); !strings.Contains(msg, "angefragt") {
+		t.Fatalf("nach der Abkühlzeit wieder anfragen: %q", msg)
+	}
+	waitFor(t, "neue Anfrage", func() bool { return pending() == 1 })
+}
+
+func TestAttemptIgnoresGrantedAndInvalid(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	f.grant(t, "shop", 10, false) // Host "srv"
+	if msg := s.Attempt("shop", "srv", "22", ""); msg != "" {
+		t.Fatalf("bei aktiver Freigabe nichts melden: %q", msg)
+	}
+	for _, h := range []string{"", "a b", "host;rm", "$(id)", "-oProxyCommand=x"} {
+		if msg := s.Attempt("shop", h, "22", "x"); msg != "" {
+			t.Fatalf("%q: %q", h, msg)
+		}
+	}
+	// anderer Port ergibt anderen Host-Eintrag
+	if msg := s.Attempt("shop", "srv", "2222", "claude"); !strings.Contains(msg, "srv:2222") {
+		t.Fatalf("%q", msg)
+	}
+	// ungültiger Benutzer wird verworfen, die Anfrage entsteht trotzdem
+	if msg := s.Attempt("other", "ok.example.com", "22", "Root\nx"); !strings.Contains(msg, "angefragt") {
+		t.Fatalf("%q", msg)
+	}
+}

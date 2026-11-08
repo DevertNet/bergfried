@@ -78,6 +78,20 @@ open app/build/Bergfried.app
   angefragt“); eine Eingabe des Nutzers hat Vorrang, sonst gilt der Standard des Hosts. Ungültige Namen (Großbuchstaben, Sonderzeichen) werden abgelehnt.
 - **Anzeige:** Agents stehen eingerückt in einer eigenen Fläche mit Führungslinie unter der Session; `main` erscheint sofort mit „wird gestartet …“.
 
+## SSH-Versuche im Terminal, Shell, Mitteilungs-Berechtigung (Stand 4)
+- **`ssh` im Terminal löst eine Anfrage aus:** In jeder VM liegt `/etc/ssh/ssh_config.d/51-bergfried-hook.conf` (root-eigen) mit einem
+  `Match exec`, das bei jedem ssh-Start `bergfried-mcp ssh-hook <host> <port> <user>` aufruft. Der Hook meldet den Versuch dem Daemon, der –
+  falls es keine aktive Freigabe und keine offene Anfrage für den Host gibt – im Hintergrund eine Anfrage anlegt (Quelle „terminal“, Benutzer
+  aus dem Befehl). `ssh` selbst läuft unverändert weiter und wird abgelehnt; im Terminal steht: „SSH-Freigabe für … angefragt – bitte in der App
+  bestätigen, danach den Befehl wiederholen.“ Nach einer Ablehnung wird derselbe Host 60 s lang nicht erneut gemeldet. Laufende VMs bekommen den
+  Hook einmal je Daemon-Start nachgezogen (`vm.refresh` im Protokoll).
+- **Shell/SSH in die VM:** Session-Zeile → „Shell / SSH“: normale Shell (`limactl shell`) in iTerm/Terminal, „SSH-Befehl kopieren“
+  (`ssh -F ~/.lima/<vm>/ssh.config lima-<vm>`, auch für VS Code Remote-SSH nutzbar). Den Claude-Login gibt es dort ebenfalls.
+- **Terminal-Button pro Agent:** In der Agent-Zeile öffnet „iTerm: Claude-Fenster“ das tmux-Fenster genau dieses Agents.
+- **Mitteilungs-Berechtigung:** Der Auslöser ist `requestAuthorization` beim App-Start. Die frühere Kennung war bei macOS als „abgelehnt“
+  gespeichert, dann fragt macOS nie wieder. Die App nutzt deshalb die Bundle-ID `de.einfach123.bergfried.control`; beim ersten Start erscheint
+  die macOS-Abfrage „Bergfried möchte Mitteilungen senden“ (mit „Erlauben“ bestätigen). Der Stand steht in den Einstellungen.
+
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
 - Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).

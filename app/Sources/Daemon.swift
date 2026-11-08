@@ -74,15 +74,17 @@ enum Terminal {
         ["/opt/homebrew/bin/limactl", "/usr/local/bin/limactl"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "limactl"
     }
 
-    /// Öffnet die gewählte Terminal-App mit einem Befehl in der VM. Statt AppleScript (braucht Automations-Rechte und
+    static let vmRe = #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#
+    static let agentRe = #"^[a-z][a-z0-9-]{0,30}$"#
+
+    /// Öffnet die gewählte Terminal-App mit einer Zeile. Statt AppleScript (braucht Automations-Rechte und
     /// scheitert still) wird eine temporäre .command-Datei mit `open -a` gestartet; sie löscht sich selbst.
-    /// Der VM-Name wird streng geprüft. Liefert eine Fehlermeldung oder nil.
+    /// VM- und Agent-Namen werden streng geprüft. Liefert eine Fehlermeldung oder nil.
     @discardableResult
-    static func open(vm: String, inner: String, waitKey: Bool = false) -> String? {
-        guard vm.range(of: #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#, options: .regularExpression) != nil else { return "Ungültiger VM-Name" }
+    static func openLine(_ line: String, waitKey: Bool = false) -> String? {
         let dir = NSHomeDirectory() + "/.bergfried/tmp"
         let file = dir + "/cmd-\(UUID().uuidString).command"
-        var body = "#!/bin/zsh\nrm -f \"$0\"\n\(limactl) shell \(vm) -- \(inner)\n"
+        var body = "#!/bin/zsh\nrm -f \"$0\"\n\(line)\n"
         if waitKey { body += "echo\nread -k 1 -s \"?Beliebige Taste zum Schließen …\"\n" }
         do {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -103,9 +105,28 @@ enum Terminal {
         return nil
     }
 
-    static func attach(vm: String) -> String? { open(vm: vm, inner: "bash -lc 'tmux attach -t bf || tmux new -s bf'") }
+    private static func checked(_ vm: String) -> Bool { vm.range(of: vmRe, options: .regularExpression) != nil }
+
+    /// Normale Shell in der VM (nicht das Claude-Fenster).
+    static func shell(vm: String) -> String? {
+        guard checked(vm) else { return "Ungültiger VM-Name" }
+        return openLine("\(limactl) shell \(vm)")
+    }
+
+    /// tmux der VM, direkt im Fenster dieses Agents.
+    static func attach(vm: String, agent: String) -> String? {
+        guard checked(vm), agent.range(of: agentRe, options: .regularExpression) != nil else { return "Ungültiger Name" }
+        return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(agent) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
+    }
 
     static func login(vm: String) -> String? {
-        open(vm: vm, inner: "bash -lc 'claude auth login; echo; echo \"Fertig. Die Agents starten automatisch neu (Status in der App).\"'", waitKey: true)
+        guard checked(vm) else { return "Ungültiger VM-Name" }
+        return openLine("\(limactl) shell \(vm) -- bash -lc 'claude auth login; echo; echo \"Fertig. Die Agents starten automatisch neu (Status in der App).\"'", waitKey: true)
+    }
+
+    /// SSH-Befehl für externe Werkzeuge (Terminal, VS Code Remote-SSH): nutzt die von Lima gepflegte ssh.config.
+    static func sshCommand(vm: String) -> String? {
+        guard checked(vm) else { return nil }
+        return "ssh -F ~/.lima/\(vm)/ssh.config lima-\(vm)"
     }
 }

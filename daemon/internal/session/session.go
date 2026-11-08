@@ -216,9 +216,13 @@ func (m *Manager) InstallMCP(ctx context.Context, vm, sessionName string) error 
 	outDir := filepath.Join(m.Home, "sessions", sessionName, "shared", "out")
 	b64 := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
 	_, err := m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
-mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
+mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp.new && mv -f ~/.local/bin/bergfried-mcp.new ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
 printf %%s '%s' | base64 -d > ~/.claude/bergfried.md
 grep -qs '^@~/.claude/bergfried.md' ~/.claude/CLAUDE.md || printf '@~/.claude/bergfried.md\n' >> ~/.claude/CLAUDE.md
+# ssh-Hook: meldet jeden ssh-Start in der VM an den Daemon (Anfrage in der App); systemweit, root-eigen
+sudo install -m755 -o root -g root ~/.local/bin/bergfried-mcp /usr/local/bin/bergfried-mcp.new && sudo mv -f /usr/local/bin/bergfried-mcp.new /usr/local/bin/bergfried-mcp
+sudo mkdir -p /etc/ssh/ssh_config.d
+printf '%%s\n' '# Von Bergfried verwaltet: meldet SSH-Versuche (Anfrage in der App), ändert nichts am ssh-Aufruf.' 'Match exec "/usr/local/bin/bergfried-mcp ssh-hook %%h %%p %%r"' 'Match all' | sudo tee /etc/ssh/ssh_config.d/51-bergfried-hook.conf >/dev/null
 export PATH="$HOME/.local/bin:$PATH"
 claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
 claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64))

@@ -26,7 +26,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
             let msg = "granted=\(granted) error=\(err.map { "\(($0 as NSError).domain) \(($0 as NSError).code): \($0.localizedDescription)" } ?? "none")"
             NSLog("Bergfried Mitteilungen: %@", msg)
             Notifier.shared.lastAuth = msg
-            try? msg.write(toFile: NSHomeDirectory() + "/.bergfried/notifications.txt", atomically: true, encoding: .utf8)
+            Task {
+                let st = await Notifier.shared.status()
+                try? "\(msg)\nstatus: \(st)\n".write(toFile: NSHomeDirectory() + "/.bergfried/notifications.txt", atomically: true, encoding: .utf8)
+            }
         }
     }
 
