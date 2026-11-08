@@ -22,3 +22,4 @@ xcuserdata/
 *.sqlite
 *.log
 app/build/
+app/icon/AppIcon.iconset/

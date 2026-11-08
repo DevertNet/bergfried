@@ -13,6 +13,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
  <key>CFBundleIdentifier</key><string>de.einfach123.bergfried.app</string>
+ <key>CFBundleIconFile</key><string>AppIcon</string>
  <key>CFBundleName</key><string>Bergfried</string>
  <key>CFBundleExecutable</key><string>Bergfried</string>
  <key>CFBundlePackageType</key><string>APPL</string>
@@ -23,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
  <key>NSAppleEventsUsageDescription</key><string>Bergfried öffnet Terminal-Fenster für Sessions.</string>
 </dict></plist>
 PLIST
+cp icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 for f in bin/bergfriedd bin/bergfried-mcp vm/bergfried.yaml; do
   [ -f "$ROOT/$f" ] && cp "$ROOT/$f" "$APP/Contents/Resources/" || echo "WARNUNG: $f fehlt (make build?)"
 done
