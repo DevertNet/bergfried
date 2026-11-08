@@ -39,3 +39,26 @@ func TestPermsAndRoundtrip(t *testing.T) {
 		t.Fatal("Agents müssen mitgelöscht werden")
 	}
 }
+
+func TestSeededAndDeleteAgent(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.AddSession(Session{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now()})
+	if s.Seeded("a") {
+		t.Fatal("neue Session ist zunächst nicht markiert")
+	}
+	if !s.Seeded("unbekannt") {
+		t.Fatal("unbekannte Session: nie automatisch anlegen")
+	}
+	_ = s.SetSeeded("a")
+	if !s.Seeded("a") {
+		t.Fatal("markiert")
+	}
+	_ = s.AddAgent(Agent{Session: "a", Name: "x", Worktree: "/w", ComposeProject: "a-x", Created: time.Now()})
+	_ = s.DeleteAgent("a", "x")
+	if ag, _ := s.ListAgents("a"); len(ag) != 0 {
+		t.Fatal("Agent muss weg sein")
+	}
+}

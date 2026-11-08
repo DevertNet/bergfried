@@ -23,21 +23,22 @@ if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
     p=$(tmux capture-pane -p -J -t "bf:$w" -S -60 2>/dev/null)
     rc=0; echo "$p" | grep -qE 'remote-control is active|/rc active' && rc=1
-    th=0; echo "$p" | grep -q 'Choose the text style' && th=1
-    cmd=$(tmux display-message -p -t "bf:$w" '#{pane_current_command}' 2>/dev/null)
+    th=0; echo "$p" | grep -qE 'Choose the text style|Press Enter to continue' && th=1
+    tty=$(tmux display-message -p -t "bf:$w" '#{pane_tty}' 2>/dev/null)
+    run=0; ps -t "${tty#/dev/}" -o comm= 2>/dev/null | grep -qx claude && run=1
     idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && idle=1
     ask=0; echo "$p" | grep -q 'Enable Remote Control' && ask=1
     url=$(echo "$p" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_]+' | tail -1)
-    echo "win=$w rc=$rc theme=$th cmd=$cmd idle=$idle ask=$ask url=$url"
+    echo "win=$w rc=$rc theme=$th run=$run idle=$idle ask=$ask url=$url"
   done
 fi`
 
 type AgentState struct {
 	Window, RC, Theme bool
 	Idle, Ask         bool
-	Cmd               string
+	Running           bool // Prozess "claude" läuft im Fenster
 	URL               string
-	Action            string // "", "activating", "failed" – Stand der automatischen RC-Aktivierung
+	Action            string // "", "activating", "failed", "waiting" – Stand der automatischen RC-Aktivierung
 }
 
 type rcAction int
@@ -56,16 +57,8 @@ const (
 	rcRetryAfter  = 20 * time.Second
 )
 
-func isShell(cmd string) bool {
-	switch cmd {
-	case "bash", "zsh", "sh", "dash", "fish":
-		return true
-	}
-	return false
-}
-
 // decideRC entscheidet, wie ein Agent ohne aktive Remote Control wieder in Gang gebracht wird.
-// Reihenfolge: offene Rückfrage beantworten, Shell (Claude läuft nicht) neu starten,
+// Reihenfolge: offene Rückfrage beantworten, Claude läuft nicht (nur Shell) neu starten,
 // bei leerem Eingabefeld /remote-control tippen; nach rcMaxAttempts aufgeben.
 func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 	if a.Ask {
@@ -77,7 +70,7 @@ func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 	if sinceLast < rcRetryAfter {
 		return rcNone
 	}
-	if isShell(a.Cmd) {
+	if !a.Running {
 		return rcRestart
 	}
 	if a.Idle {
@@ -150,6 +143,10 @@ func (mo *Monitor) Get(name string) (SessionState, bool) {
 	for k, v := range s.Agents {
 		if !v.RC {
 			v.Action = mo.actions[name+"/"+k]
+			// Läuft, ist aber weder im Leerlauf noch aktiv: vermutlich wartet Claude auf eine Eingabe.
+			if v.Action == "" && v.Running && !v.Idle && mo.norc[name+"/"+k] >= 8 {
+				v.Action = "waiting"
+			}
 		}
 		cp.Agents[k] = v
 	}
@@ -203,8 +200,8 @@ func parseProbe(out string) SessionState {
 					a.RC = v == "1"
 				case "theme":
 					a.Theme = v == "1"
-				case "cmd":
-					a.Cmd = v
+				case "run":
+					a.Running = v == "1"
 				case "idle":
 					a.Idle = v == "1"
 				case "ask":
@@ -244,6 +241,28 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.failures[name] = 0
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
+	// Nur registrierte Agents zählen (kein tmux-Standardfenster "bash"/"shell"); fehlende Fenster gelten als "kein Fenster".
+	registered, _ := mo.M.S.ListAgents(name)
+	regSet := map[string]bool{}
+	for _, a := range registered {
+		regSet[a.Name] = true
+	}
+	for w := range st.Agents {
+		if !regSet[w] {
+			delete(st.Agents, w)
+		}
+	}
+	// Ältere Sessions ohne Agent bekommen einmalig den ersten Agent "main".
+	if !mo.M.S.Seeded(name) {
+		if len(registered) == 0 && st.LoggedIn != nil {
+			if err := mo.M.AgentAdd(cctx, name, "main"); err != nil {
+				fmt.Fprintln(os.Stderr, "Erster Agent:", err)
+			} else {
+				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "Session hatte keinen Agent")
+			}
+		}
+		_ = mo.M.S.SetSeeded(name)
+	}
 	var wasLoggedIn *bool
 	if prev != nil {
 		wasLoggedIn = prev.LoggedIn
@@ -268,7 +287,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	}
 	for w, a := range st.Agents {
 		key := name + "/" + w
-		// Erststart-Frage (Theme) mit der Vorauswahl bestätigen.
+		// Onboarding-Fragen (Theme, "Press Enter to continue") mit Enter bestätigen.
 		if a.Theme {
 			_ = mo.M.PressEnter(cctx, vm, w)
 			continue

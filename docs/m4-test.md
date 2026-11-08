@@ -30,7 +30,7 @@ open app/build/Bergfried.app
   Der Ordner wird **kopiert** (nicht gemountet) nach `~/work/main` der VM: nur unterhalb des Homes, nie das Home selbst, nie gesperrte Pfade;
   ohne `.env`/Schlüssel/Symlinks/`node_modules`/Caches; Zugangsdaten in `.git/config` werden entfernt. Vorschau zeigt Dateien und Größe vorab.
   Ergebnisse kommen per `git push` oder über `shared/out` zurück.
-- **Wo liegen Sessions?** VM-Platte `~/.lima/bf-<name>`, Austausch `~/.bergfried/sessions/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
+- **Wo liegen Sessions?** VM-Platte `~/.lima/bergfried-<name>` (ältere Sessions behalten `bf-<name>`), Austausch `~/.bergfried/sessions/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
 - **Icon:** `app/icon/make-icon.swift` zeichnet es, `app/icon/AppIcon.icns` liegt im Repo.
 
 ## Statusanzeige und Login
@@ -52,6 +52,17 @@ open app/build/Bergfried.app
   offene Rückfrage „Enable Remote Control?“ → mit `y` beantworten; Claude läuft nicht (nur Shell) → Agent neu starten;
   Claude im Leerlauf → `/remote-control` eintippen. Je Agent höchstens 3 Versuche (Abstand 20 s), danach „RC nicht aktivierbar – neu starten“.
   Alles steht im Protokoll (`agent.rc_enable`). Ein Agent, der gerade arbeitet, wird nicht gestört.
+
+## Agents, erster Agent und RC-Automatik (Stand 2)
+- **Erster Agent:** Eine neue Session startet automatisch den Agent `main` (tmux-Fenster, Remote Control). Ältere Sessions ohne Agent bekommen
+  `main` einmalig nachträglich (danach nie wieder automatisch – auch nicht, wenn du alle Agents entfernst).
+- **Login → RC:** Nach dem Login erkennt der Daemon „eingeloggt“ und startet die Agents neu; Onboarding-Fragen (Theme,
+  „Press Enter to continue“) bestätigt er mit Enter. Wartet Claude auf etwas anderes, zeigt die App „wartet vermutlich auf eine Eingabe – tmux öffnen“.
+- **Nur registrierte Agents** werden überwacht (kein tmux-Standardfenster „bash“); „läuft Claude?“ wird über den Prozess erkannt, nicht über die Shell.
+- **Agents anzeigen/entfernen:** Je Agent eine Zeile mit Status, Verzeichnis, „RC-Link öffnen“ und Menü (Link kopieren, Neu starten, tmux, Entfernen …).
+  Entfernen: „nur Agent beenden“ (Verzeichnis bleibt) oder „Agent und Verzeichnis löschen“ (Worktree, Branch `agent/<name>`, Docker-Stack) –
+  mit Prüfung auf ungepushte/ungesicherte Arbeit und separater Bestätigung; das Verzeichnis von `main` wird nie gelöscht.
+- **VM-Namen:** neue Sessions heißen `bergfried-<name>` (max. 24 Zeichen; `base` ist reserviert). Die Aufräum-Logik löscht nur Basis-VMs mit Hash-Namen.
 
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.

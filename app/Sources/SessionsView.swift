@@ -93,7 +93,14 @@ struct SessionRow: View {
             }.font(.caption).foregroundStyle(.secondary)
             if s.probeError != nil, s.running { Text("Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).").font(.caption).foregroundStyle(.secondary) }
             if !s.agents.isEmpty {
-                HStack(spacing: 8) { ForEach(s.agents, id: \.name) { a in AgentChip(s: s, a: a) } }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Agents (\(s.agents.count))").font(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 3)
+                    ForEach(s.agents, id: \.name) { a in
+                        Divider()
+                        AgentRow(s: s, a: a)
+                    }
+                }
+                .padding(.top, 4)
             }
         }.padding(.vertical, 4)
     }
@@ -137,42 +144,100 @@ struct SessionRow: View {
     func report(_ e: String?) { if let e { model.setBanner(e) } }
 }
 
-struct AgentChip: View {
+struct AgentRow: View {
     @EnvironmentObject var model: AppModel
     let s: SessionInfo
     let a: AgentInfo
+    @Local private var removeOpen = false
+    @Local private var forceMsg: String?
 
     var state: (color: Color, text: String) {
-        if a.rc { return (.green, "RC aktiv") }
-        if s.claudeLoggedIn == false { return (.orange, "wartet auf Login") }
-        if a.rcAction == "failed" { return (.red, "RC nicht aktivierbar – neu starten") }
-        if a.rcAction == "activating" { return (.orange, "aktiviere RC …") }
-        if !a.window { return (.gray, "kein Fenster") }
-        return (.orange, "RC startet …")
+        if a.rc { return (.green, "Remote Control aktiv") }
+        if s.claudeLoggedIn == false { return (.orange, "wartet auf Claude-Login") }
+        if a.rcAction == "failed" { return (.red, "RC nicht aktivierbar – bitte neu starten") }
+        if a.rcAction == "activating" { return (.orange, "aktiviere Remote Control …") }
+        if a.rcAction == "waiting" { return (.orange, "Claude wartet vermutlich auf eine Eingabe – tmux öffnen") }
+        if !a.window { return (.gray, "kein tmux-Fenster") }
+        return (.orange, "Remote Control startet …")
     }
 
+    var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(a.name)") })?.value }
+
     var body: some View {
-        Menu {
-            if a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
-                Button("Remote-Control-Link öffnen") { NSWorkspace.shared.open(url) }
-                Button("Link kopieren") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
-                Divider()
-            }
-            Button("Agent neu starten") {
-                Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "Agent \(a.name) startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
-            }
-            Button("tmux in \(Terminal.appName) öffnen") { if let e = Terminal.attach(vm: s.vm) { model.setBanner(e) } }
-        } label: {
-            HStack(spacing: 5) {
-                Circle().fill(state.color).frame(width: 8, height: 8)
-                Text(a.name).font(.caption.bold())
+        HStack(spacing: 10) {
+            Circle().fill(state.color).frame(width: 9, height: 9)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(a.name).font(.callout.bold())
                 Text(state.text).font(.caption).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(state.color.opacity(0.14), in: Capsule())
+            Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            if let b = busy {
+                ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary)
+            } else {
+                if a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
+                    Button { NSWorkspace.shared.open(url) } label: { Label("RC-Link öffnen", systemImage: "arrow.up.right.square") }.controlSize(.small)
+                }
+                Menu {
+                    if a.rc, !a.rcUrl.isEmpty {
+                        Button("Link kopieren") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
+                        Divider()
+                    }
+                    Button("Neu starten") {
+                        Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
+                    }.disabled(!s.running)
+                    Button("tmux in \(Terminal.appName) öffnen") { if let e = Terminal.attach(vm: s.vm) { model.setBanner(e) } }.disabled(!s.running)
+                    Divider()
+                    Button("Entfernen …", role: .destructive) { removeOpen = true }.disabled(!s.running)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).fixedSize()
+            }
         }
-        .menuStyle(.borderlessButton).fixedSize()
-        .disabled(!s.running)
+        .padding(.vertical, 5)
+        .sheet(isPresented: $removeOpen) { RemoveAgentSheet(s: s, a: a, onForce: { msg in forceMsg = msg }) }
+        .alert("Ungesicherte Arbeit im Agent-Verzeichnis", isPresented: Binding(get: { forceMsg != nil }, set: { if !$0 { forceMsg = nil } })) {
+            Button("Trotzdem löschen", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
+            Button("Abbrechen", role: .cancel) {}
+        } message: { Text(forceMsg ?? "") }
+    }
+
+    func remove(deleteDir: Bool, force: Bool) async {
+        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(session: s.name, agent: a.name, deleteDir: deleteDir, force: force))
+        if let err { model.setBanner(err) }
+    }
+}
+
+struct RemoveAgentSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let s: SessionInfo
+    let a: AgentInfo
+    let onForce: (String) -> Void
+    @Local private var deleteDir = false
+
+    var body: some View {
+        Form {
+            Text("Agent „\(a.name)“ entfernen").font(.headline)
+            Text("Das tmux-Fenster mit Claude (und seine Remote-Control-Session) wird beendet.").font(.callout)
+            Picker("", selection: $deleteDir) {
+                Text("Nur den Agent beenden – das Verzeichnis \(a.worktree) bleibt erhalten").tag(false)
+                if a.name != "main" { Text("Agent beenden und sein Verzeichnis löschen (Git-Worktree samt Branch agent/\(a.name), Docker-Stack \(s.name)-\(a.name))").tag(true) }
+            }.pickerStyle(.radioGroup).labelsHidden()
+            if a.name == "main" { Text("Das Hauptverzeichnis „main“ wird nie gelöscht.").font(.caption).foregroundStyle(.secondary) }
+            if deleteDir { Text("Vorher wird auf ungepushte Commits und ungesicherte Änderungen geprüft.").font(.caption).foregroundStyle(.secondary) }
+            HStack {
+                Spacer()
+                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Entfernen", role: .destructive) {
+                    let dd = deleteDir
+                    dismiss()
+                    Task {
+                        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(session: s.name, agent: a.name, deleteDir: dd, force: false))
+                        if let err { if err.contains("ungesicherte Arbeit") { onForce(err) } else { model.setBanner(err) } }
+                    }
+                }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(20).frame(width: 520)
     }
 }
 
@@ -185,13 +250,13 @@ struct CreateSessionSheet: View {
     @Local private var folder = ""
     @Local private var preview: ImportPreview?
     @Local private var previewError: String?
-    var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil }
+    var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,23}$"#, options: .regularExpression) != nil && name != "base" && !name.hasPrefix("base-") }
     var sourceOK: Bool { source != 2 || (preview != nil && previewError == nil) }
 
     var body: some View {
         Form {
             Text("Neue Session").font(.headline)
-            TextField("Name (a–z, 0–9, -)", text: $name)
+            TextField("Name (a–z, 0–9, -; max. 24 Zeichen)", text: $name)
             Picker("Quelle für den Code", selection: $source) {
                 Text("Leer starten").tag(0)
                 Text("Git-Repo klonen").tag(1)
@@ -209,7 +274,7 @@ struct CreateSessionSheet: View {
                 Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Ergebnisse kommen per git push oder über shared/out zurück.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Text("Wo liegt die Session? Die VM-Platte liegt unter ~/.lima/bf-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
+            Text("Wo liegt die Session? Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

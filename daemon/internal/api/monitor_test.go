@@ -37,9 +37,9 @@ win=api rc=0 theme=1 url=
 }
 
 func TestDecideRC(t *testing.T) {
-	idle := AgentState{Window: true, Cmd: "claude", Idle: true}
-	busy := AgentState{Window: true, Cmd: "claude"}
-	shell := AgentState{Window: true, Cmd: "bash"}
+	idle := AgentState{Window: true, Running: true, Idle: true}
+	busy := AgentState{Window: true, Running: true}
+	shell := AgentState{Window: true, Running: false}
 	cases := []struct {
 		name     string
 		a        AgentState
@@ -47,7 +47,7 @@ func TestDecideRC(t *testing.T) {
 		since    time.Duration
 		want     rcAction
 	}{
-		{"Rückfrage beantworten", AgentState{Ask: true, Cmd: "claude"}, 0, 0, rcAnswerYes},
+		{"Rückfrage beantworten", AgentState{Ask: true, Running: true}, 0, 0, rcAnswerYes},
 		{"Claude im Leerlauf: /remote-control", idle, 0, time.Hour, rcSlash},
 		{"Claude beschäftigt: nicht stören", busy, 0, time.Hour, rcNone},
 		{"Shell: Agent neu starten", shell, 0, time.Hour, rcRestart},
@@ -64,11 +64,11 @@ func TestDecideRC(t *testing.T) {
 }
 
 func TestParseProbeNewFields(t *testing.T) {
-	st := parseProbe("login=true\nwin=main rc=0 theme=0 cmd=claude idle=1 ask=0 url=\nwin=x rc=0 theme=0 cmd=bash idle=0 ask=1 url=\n")
-	if a := st.Agents["main"]; a.Cmd != "claude" || !a.Idle || a.Ask {
+	st := parseProbe("login=true\nwin=main rc=0 theme=0 run=1 idle=1 ask=0 url=\nwin=x rc=0 theme=0 run=0 idle=0 ask=1 url=\n")
+	if a := st.Agents["main"]; !a.Running || !a.Idle || a.Ask {
 		t.Fatalf("%+v", a)
 	}
-	if a := st.Agents["x"]; a.Cmd != "bash" || a.Idle || !a.Ask {
+	if a := st.Agents["x"]; a.Running || a.Idle || !a.Ask {
 		t.Fatalf("%+v", a)
 	}
 }

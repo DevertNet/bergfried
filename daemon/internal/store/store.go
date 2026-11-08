@@ -56,6 +56,7 @@ func (s *Store) migrate() error {
 	defer func() {
 		// Migration älterer DBs (Spalte extra); Fehler "duplicate column" ist erwartet.
 		_, _ = s.DB.Exec(`ALTER TABLE requests ADD COLUMN extra TEXT`)
+		_, _ = s.DB.Exec(`ALTER TABLE sessions ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0`)
 	}()
 	_, err := s.DB.Exec(`
 CREATE TABLE IF NOT EXISTS sessions(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL);
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGE
 }
 
 func (s *Store) AddSession(x Session) error {
-	_, err := s.DB.Exec(`INSERT INTO sessions VALUES(?,?,?,?,?)`, x.Name, x.VM, x.Repo, x.TemplateVersion, x.Created.Unix())
+	_, err := s.DB.Exec(`INSERT INTO sessions(name,vm,repo,template_version,created) VALUES(?,?,?,?,?)`, x.Name, x.VM, x.Repo, x.TemplateVersion, x.Created.Unix())
 	return err
 }
 func (s *Store) GetSession(name string) (Session, error) {
@@ -106,7 +107,7 @@ func (s *Store) DeleteSession(name string) error {
 	return err
 }
 func (s *Store) AddAgent(a Agent) error {
-	_, err := s.DB.Exec(`INSERT INTO agents VALUES(?,?,?,?,?)`, a.Session, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix())
+	_, err := s.DB.Exec(`INSERT INTO agents(session,name,worktree,compose_project,created) VALUES(?,?,?,?,?)`, a.Session, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix())
 	return err
 }
 func (s *Store) ListAgents(session string) ([]Agent, error) {
@@ -329,4 +330,23 @@ func (s *Store) AuditSearch(limit int, q string) ([]AuditEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// Seeded: Der erste Agent ("main") wurde für die Session bereits angelegt. Danach wird nie wieder automatisch einer erzeugt.
+func (s *Store) Seeded(name string) bool {
+	var v int
+	if err := s.DB.QueryRow(`SELECT seeded FROM sessions WHERE name=?`, name).Scan(&v); err != nil {
+		return true // im Zweifel nichts automatisch anlegen
+	}
+	return v == 1
+}
+
+func (s *Store) SetSeeded(name string) error {
+	_, err := s.DB.Exec(`UPDATE sessions SET seeded=1 WHERE name=?`, name)
+	return err
+}
+
+func (s *Store) DeleteAgent(session, agent string) error {
+	_, err := s.DB.Exec(`DELETE FROM agents WHERE session=? AND name=?`, session, agent)
+	return err
 }

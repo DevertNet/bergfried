@@ -128,5 +128,6 @@ struct TemplateInfo: Codable {
     var warnings: [String]
 }
 struct AgentBody: Encodable { var session: String; var agent: String }
+struct AgentRemoveBody: Encodable { var session: String; var agent: String; var deleteDir: Bool; var force: Bool }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }

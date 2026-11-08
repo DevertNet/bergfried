@@ -180,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sessions/delete", s.simple("session.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
+	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
 	mux.HandleFunc("POST /v1/import/preview", s.importPreview)
@@ -307,7 +308,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if err := session.ValidName(q.Name); err != nil {
+	if err := session.ValidSessionName(q.Name); err != nil {
 		fail(w, 400, err)
 		return
 	}
@@ -357,6 +358,30 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		if s.Mon != nil {
 			s.Mon.ResetAgent(q.Session, q.Agent)
 			s.Mon.Poke(q.Session)
+		}
+		return err
+	}))
+}
+
+func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Session   string `json:"session"`
+		Agent     string `json:"agent"`
+		DeleteDir bool   `json:"delete_dir"`
+		Force     bool   `json:"force"`
+	}
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		return
+	}
+	writeJSON(w, 202, s.jobFor("agent.remove", q.Session, func(ctx context.Context) error {
+		err := s.M.AgentRemove(ctx, q.Session, q.Agent, q.DeleteDir, q.Force)
+		if err == nil && s.Mon != nil {
+			s.Mon.ResetAgent(q.Session, q.Agent)
 		}
 		return err
 	}))

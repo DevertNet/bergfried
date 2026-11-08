@@ -23,6 +23,12 @@ const (
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 
+// newSessionRe: Namen neuer Sessions (kürzer, damit Socket-Pfade unter dem Unix-Limit bleiben).
+var newSessionRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
+
+// baseVMRe erkennt ausschließlich echte Basis-VMs (Hash oder alte vN-Namen) – für das Aufräumen.
+var baseVMRe = regexp.MustCompile(`^bergfried-base-([0-9a-f]{8}|v[0-9]+)$`)
+
 type progressKey struct{}
 
 // WithProgress hängt einen Fortschritts-Callback an den Kontext (für Job-Anzeige in der App).
@@ -88,7 +94,19 @@ func ValidName(n string) error {
 	return nil
 }
 
-func VMName(session string) string { return "bf-" + session }
+// VMName: Name der Lima-VM einer neuen Session. (Bestehende Sessions behalten den Namen aus der Datenbank.)
+func VMName(session string) string { return "bergfried-" + session }
+
+// ValidSessionName gilt für NEUE Sessions; "base" ist reserviert (Kollision mit Basis-VMs).
+func ValidSessionName(n string) error {
+	if !newSessionRe.MatchString(n) {
+		return fmt.Errorf("ungültiger Name %q (erlaubt: a-z, 0-9, -; max. 24 Zeichen, mit Buchstabe beginnen)", n)
+	}
+	if n == "base" || strings.HasPrefix(n, "base-") {
+		return fmt.Errorf("Name %q ist reserviert", n)
+	}
+	return nil
+}
 
 func (m *Manager) audit(event, session, agent, detail string) {
 	if err := m.S.Audit(m.Actor, event, session, agent, detail); err != nil {
@@ -140,7 +158,7 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
 	// Ältere Basis-VMs aufräumen (Sessions sind unabhängige Klone).
 	if vms, err := m.L.List(ctx); err == nil {
 		for _, v := range vms {
-			if strings.HasPrefix(v.Name, "bergfried-base-") && v.Name != base {
+			if baseVMRe.MatchString(v.Name) && v.Name != base {
 				if err := m.L.Delete(ctx, v.Name); err == nil {
 					m.audit("base.remove_old", "", "", v.Name)
 				}
@@ -204,7 +222,7 @@ func (m *Manager) importFolder(ctx context.Context, vm, path string) (files, byt
 }
 
 func (m *Manager) Create(ctx context.Context, name, repo, importPath string) error {
-	if err := ValidName(name); err != nil {
+	if err := ValidSessionName(name); err != nil {
 		return err
 	}
 	if repo != "" && importPath != "" {
@@ -278,6 +296,13 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 		return err
 	}
 	m.audit("session.create", name, "", repo)
+	// Erster Agent startet gleich mit (tmux-Fenster, Worktree/Verzeichnis, Remote Control). Ohne Login wartet er,
+	// der Daemon startet ihn nach dem Login automatisch neu.
+	progress(ctx, "Ersten Agent „main“ starten")
+	if err := m.AgentAdd(ctx, name, "main"); err != nil {
+		return fmt.Errorf("Session erstellt, aber Agent main konnte nicht gestartet werden: %w", err)
+	}
+	_ = m.S.SetSeeded(name)
 	return nil
 }
 
@@ -485,4 +510,68 @@ func (m *Manager) TypeLine(ctx context.Context, vm, agent, text string) error {
 	}
 	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s -l '%s' && tmux send-keys -t %s:%s Enter", tmuxSession, agent, text, tmuxSession, agent))
 	return err
+}
+
+// ErrAgentDirty: im Agent-Verzeichnis liegt ungesicherte Arbeit.
+type ErrAgentDirty struct{ Report string }
+
+func (e ErrAgentDirty) Error() string {
+	return "ungesicherte Arbeit im Agent-Verzeichnis:\n" + e.Report + "\n(mit „Trotzdem löschen“ verwerfen)"
+}
+
+const agentCheck = `d=~/work/%[1]s
+[ -d "$d" ] || exit 0
+if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+  s=$(git -C "$d" status --porcelain -- . ':!NOTES.md' 2>/dev/null)
+  u=$(git -C "$d" log --branches="agent/%[1]s" --not --remotes --oneline 2>/dev/null | head -20)
+  [ -z "$s$u" ] || { echo "$s"; echo "$u"; }
+else
+  n=$(find "$d" -type f ! -name NOTES.md 2>/dev/null | head -5)
+  [ -z "$n" ] || echo "$n"
+fi`
+
+const agentDelete = `d=~/work/%[1]s
+if [ -d ~/work/main/.git ] && git -C ~/work/main worktree list | grep -q " $d "; then
+  git -C ~/work/main worktree remove --force "$d" || true
+  git -C ~/work/main branch -D "agent/%[1]s" >/dev/null 2>&1 || true
+else
+  rm -rf "$d"
+fi
+docker compose -p "%[2]s" down --remove-orphans >/dev/null 2>&1 || true`
+
+// AgentRemove beendet einen Agent (tmux-Fenster, Eintrag). Mit deleteDir wird zusätzlich sein Verzeichnis/Worktree gelöscht –
+// nach Prüfung auf ungesicherte Arbeit (force überspringt sie). Das Verzeichnis von "main" wird nie gelöscht.
+func (m *Manager) AgentRemove(ctx context.Context, session, agent string, deleteDir, force bool) error {
+	if err := ValidName(agent); err != nil {
+		return err
+	}
+	s, err := m.S.GetSession(session)
+	if err != nil {
+		return err
+	}
+	if deleteDir && agent == "main" {
+		return fmt.Errorf("das Hauptverzeichnis „main“ wird nicht gelöscht (nur der Agent kann beendet werden)")
+	}
+	if deleteDir && !force {
+		out, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(agentCheck, agent))
+		if err != nil {
+			return fmt.Errorf("Prüfung fehlgeschlagen (nichts gelöscht): %w", err)
+		}
+		if r := strings.TrimSpace(string(out)); r != "" {
+			return ErrAgentDirty{Report: r}
+		}
+	}
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf("tmux kill-window -t %s:%s 2>/dev/null || true", tmuxSession, agent)); err != nil {
+		return err
+	}
+	if deleteDir {
+		if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(agentDelete, agent, session+"-"+agent)); err != nil {
+			return err
+		}
+	}
+	if err := m.S.DeleteAgent(session, agent); err != nil {
+		return err
+	}
+	m.audit("agent.remove", session, agent, fmt.Sprintf("delete_dir=%v force=%v", deleteDir, force))
+	return nil
 }

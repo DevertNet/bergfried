@@ -79,7 +79,7 @@ enum Terminal {
     /// Der VM-Name wird streng geprüft. Liefert eine Fehlermeldung oder nil.
     @discardableResult
     static func open(vm: String, inner: String, waitKey: Bool = false) -> String? {
-        guard vm.range(of: #"^bf-[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil else { return "Ungültiger VM-Name" }
+        guard vm.range(of: #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#, options: .regularExpression) != nil else { return "Ungültiger VM-Name" }
         let dir = NSHomeDirectory() + "/.bergfried/tmp"
         let file = dir + "/cmd-\(UUID().uuidString).command"
         var body = "#!/bin/zsh\nrm -f \"$0\"\n\(limactl) shell \(vm) -- \(inner)\n"
