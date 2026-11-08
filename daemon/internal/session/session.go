@@ -3,6 +3,7 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,8 +16,8 @@ import (
 )
 
 const (
-	TemplateVersion = 2
-	BaseName        = "bergfried-base-v2"
+	TemplateVersion = 3
+	BaseName        = "bergfried-base-v3"
 	tmuxSession     = "bf"
 )
 
@@ -166,6 +167,10 @@ func (m *Manager) Create(ctx context.Context, name, repo string) error {
 	if err := m.InstallMCP(ctx, vm); err != nil {
 		return err
 	}
+	// Basis-SSH-Config (Include) anlegen, noch ohne Freigaben.
+	if err := (Hooks{M: m, Render: func([]store.SSHGrant) string { return "# Von Bergfried verwaltet\n" }}).applyDirect(ctx, vm); err != nil {
+		return fmt.Errorf("SSH-Config: %w", err)
+	}
 	if repo != "" {
 		if _, err := m.L.Shell(ctx, vm, "git", "clone", repo, "work/main"); err != nil {
 			return fmt.Errorf("git clone: %w", err)
@@ -289,4 +294,52 @@ if [ -d ~/work/main/.git ] && [ %[1]q != main ]; then git -C ~/work/main worktre
 	}
 	m.audit("agent.add", session, agent, "")
 	return nil
+}
+
+// Hooks: VM-seitige Wirkung der SSH-Freigaben (für broker.VMHooks).
+type Hooks struct {
+	M *Manager
+	// Render erzeugt den Konfig-Text aus aktiven Freigaben.
+	Render func([]store.SSHGrant) string
+}
+
+const applyScript = `set -e
+umask 077
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+printf %%s '%s' | base64 -d > ~/.ssh/bergfried.conf
+if ! grep -qs '^Include ~/.ssh/bergfried.conf' ~/.ssh/config; then
+  { printf 'Include ~/.ssh/bergfried.conf\n'; cat ~/.ssh/config 2>/dev/null || true; } > ~/.ssh/config.new
+  mv ~/.ssh/config.new ~/.ssh/config
+fi
+chmod 600 ~/.ssh/config ~/.ssh/bergfried.conf`
+
+func (h Hooks) vm(session string) (string, error) {
+	s, err := h.M.S.GetSession(session)
+	return s.VM, err
+}
+
+func (h Hooks) applyDirect(ctx context.Context, vm string) error {
+	b64 := base64.StdEncoding.EncodeToString([]byte(h.Render(nil)))
+	_, err := h.M.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf(applyScript, b64))
+	return err
+}
+
+func (h Hooks) Apply(ctx context.Context, session string, active []store.SSHGrant) error {
+	vm, err := h.vm(session)
+	if err != nil {
+		return err
+	}
+	b64 := base64.StdEncoding.EncodeToString([]byte(h.Render(active)))
+	_, err = h.M.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf(applyScript, b64))
+	return err
+}
+
+// KillSSH beendet laufende ssh-Prozesse in der VM (Ablauf/Entzug).
+func (h Hooks) KillSSH(ctx context.Context, session string) error {
+	vm, err := h.vm(session)
+	if err != nil {
+		return err
+	}
+	_, err = h.M.L.Shell(ctx, vm, "bash", "-c", "pkill -x ssh || true")
+	return err
 }

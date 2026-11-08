@@ -96,6 +96,27 @@ func (a *app) folder(ctx context.Context, _ *mcp.CallToolRequest, in reqIn) (*mc
 	return nil, res(r), nil
 }
 
+type sshIn struct {
+	Host    string `json:"host" jsonschema:"Zielhost, optional mit :port, z. B. server.example.com"`
+	Minutes int    `json:"minutes,omitempty" jsonschema:"gewünschte Dauer in Minuten (nur ein Vorschlag, der Nutzer entscheidet)"`
+	Reason  string `json:"reason" jsonschema:"Wofür wird der SSH-Zugriff gebraucht? Wird dem Nutzer angezeigt."`
+}
+type sshOut struct {
+	Verdict string `json:"verdict"`
+	Message string `json:"message"`
+	Expires int64  `json:"expires_unix,omitempty"`
+	User    string `json:"user,omitempty"`
+}
+
+func (a *app) ssh(ctx context.Context, _ *mcp.CallToolRequest, in sshIn) (*mcp.CallToolResult, sshOut, error) {
+	r, err := a.c.RequestSSH(a.ctx(ctx), &pb.SSHAccessRequest{Host: in.Host, Minutes: int32(in.Minutes), Reason: in.Reason})
+	if err != nil {
+		return nil, sshOut{}, err
+	}
+	v := res(&pb.AccessResult{Verdict: r.Verdict})
+	return nil, sshOut{Verdict: v.Verdict, Message: r.Message, Expires: r.ExpiresUnix, User: r.User}, nil
+}
+
 func main() {
 	sock := os.Getenv("BERGFRIED_SOCKET")
 	if sock == "" {
@@ -112,6 +133,7 @@ func main() {
 	mcp.AddTool(s, &mcp.Tool{Name: "search_files", Description: "Sucht nach Dateinamen im Home des Nutzers (nur Metadaten)."}, a.search)
 	mcp.AddTool(s, &mcp.Tool{Name: "request_file", Description: "Bittet den Nutzer um eine Datei. Wartet auf dessen Entscheidung (bis zu 10 Minuten). Bei Zustimmung liegt eine Kopie unter vm_path (read-only). Gesperrte Pfade werden ohne Rückfrage abgelehnt."}, a.file)
 	mcp.AddTool(s, &mcp.Tool{Name: "request_folder", Description: "Wie request_file, aber für einen ganzen Ordner. Große Ordner (>100 MB oder >500 Dateien) brauchen eine zweite Bestätigung."}, a.folder)
+	mcp.AddTool(s, &mcp.Tool{Name: "request_ssh", Description: "Bittet den Nutzer um eine zeitlich begrenzte SSH-Freigabe für einen Host. Wartet auf die Entscheidung (bis zu 10 Minuten). Bei Zustimmung funktioniert `ssh <user>@<host>` bis zum angegebenen Ablauf; danach wird abgelehnt und laufende Verbindungen werden beendet. Es gibt keinen Zugriff auf private Keys."}, a.ssh)
 	if err := s.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}

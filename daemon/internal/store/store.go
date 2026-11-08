@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -52,10 +53,15 @@ func Open(dir string) (*Store, error) {
 }
 
 func (s *Store) migrate() error {
+	defer func() {
+		// Migration älterer DBs (Spalte extra); Fehler "duplicate column" ist erwartet.
+		_, _ = s.DB.Exec(`ALTER TABLE requests ADD COLUMN extra TEXT`)
+	}()
 	_, err := s.DB.Exec(`
 CREATE TABLE IF NOT EXISTS sessions(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(session TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(session,name));
-CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
+CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, session TEXT, agent TEXT, detail TEXT);`)
 	return err
 }
@@ -152,11 +158,12 @@ type Request struct {
 	Status                             string
 	Created                            time.Time
 	Bytes, Files                       int64
+	Extra                              string // z. B. Host-Key-Fingerprints bei SSH-Anfragen
 }
 
 func (s *Store) AddRequest(r Request) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO requests(session,agent,kind,path,reason,status,created,bytes,files) VALUES(?,?,?,?,?,?,?,?,?)`,
-		r.Session, r.Agent, r.Kind, r.Path, r.Reason, r.Status, time.Now().Unix(), r.Bytes, r.Files)
+	res, err := s.DB.Exec(`INSERT INTO requests(session,agent,kind,path,reason,status,created,bytes,files,extra) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		r.Session, r.Agent, r.Kind, r.Path, r.Reason, r.Status, time.Now().Unix(), r.Bytes, r.Files, r.Extra)
 	if err != nil {
 		return 0, err
 	}
@@ -176,13 +183,13 @@ func (s *Store) SetRequestStatus(id int64, status string) (bool, error) {
 func scanReq(sc interface{ Scan(...any) error }) (Request, error) {
 	var r Request
 	var c int64
-	var agent, reason sql.NullString
-	err := sc.Scan(&r.ID, &r.Session, &agent, &r.Kind, &r.Path, &reason, &r.Status, &c, &r.Bytes, &r.Files)
-	r.Agent, r.Reason, r.Created = agent.String, reason.String, time.Unix(c, 0)
+	var agent, reason, extra sql.NullString
+	err := sc.Scan(&r.ID, &r.Session, &agent, &r.Kind, &r.Path, &reason, &r.Status, &c, &r.Bytes, &r.Files, &extra)
+	r.Agent, r.Reason, r.Extra, r.Created = agent.String, reason.String, extra.String, time.Unix(c, 0)
 	return r, err
 }
 
-const reqCols = `id,session,agent,kind,path,reason,status,created,bytes,files`
+const reqCols = `id,session,agent,kind,path,reason,status,created,bytes,files,extra`
 
 func (s *Store) GetRequest(id int64) (Request, error) {
 	r, err := scanReq(s.DB.QueryRow(`SELECT `+reqCols+` FROM requests WHERE id=?`, id))
@@ -217,5 +224,86 @@ func (s *Store) ListRequests(onlyPending bool, limit int) ([]Request, error) {
 // (die wartenden Agent-Aufrufe sind mit dem Neustart ohnehin weg).
 func (s *Store) ExpirePending() error {
 	_, err := s.DB.Exec(`UPDATE requests SET status='expired' WHERE status='pending'`)
+	return err
+}
+
+type SSHGrant struct {
+	ID                   int64
+	Session, Agent, Host string
+	KeyFP, User          string
+	HostKeys             []string // erlaubte Host-Key-Fingerprints (SHA256:...)
+	Expires              time.Time
+	PerConn, Revoked     bool
+	Created              time.Time
+}
+
+func (s *Store) AddGrant(g SSHGrant) (int64, error) {
+	res, err := s.DB.Exec(`INSERT INTO ssh_grants(session,agent,host,key_fp,user,hostkeys,expires,per_conn,created) VALUES(?,?,?,?,?,?,?,?,?)`,
+		g.Session, g.Agent, g.Host, g.KeyFP, g.User, strings.Join(g.HostKeys, ","), g.Expires.Unix(), g.PerConn, time.Now().Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+const grantCols = `id,session,COALESCE(agent,''),host,key_fp,user,hostkeys,expires,per_conn,revoked,created`
+
+func scanGrant(sc interface{ Scan(...any) error }) (SSHGrant, error) {
+	var g SSHGrant
+	var hk string
+	var exp, cr int64
+	err := sc.Scan(&g.ID, &g.Session, &g.Agent, &g.Host, &g.KeyFP, &g.User, &hk, &exp, &g.PerConn, &g.Revoked, &cr)
+	if hk != "" {
+		g.HostKeys = strings.Split(hk, ",")
+	}
+	g.Expires, g.Created = time.Unix(exp, 0), time.Unix(cr, 0)
+	return g, err
+}
+
+func (s *Store) GetGrant(id int64) (SSHGrant, error) {
+	g, err := scanGrant(s.DB.QueryRow(`SELECT `+grantCols+` FROM ssh_grants WHERE id=?`, id))
+	if err == sql.ErrNoRows {
+		return g, fmt.Errorf("Freigabe %d existiert nicht", id)
+	}
+	return g, err
+}
+
+// ListGrants: nur aktive (nicht entzogen, nicht abgelaufen) oder alle.
+func (s *Store) ListGrants(onlyActive bool, now time.Time) ([]SSHGrant, error) {
+	q := `SELECT ` + grantCols + ` FROM ssh_grants`
+	var args []any
+	if onlyActive {
+		q += ` WHERE revoked=0 AND expires>?`
+		args = append(args, now.Unix())
+	}
+	rows, err := s.DB.Query(q+` ORDER BY id DESC LIMIT 500`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SSHGrant
+	for rows.Next() {
+		g, err := scanGrant(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RevokeGrant(id int64) error {
+	res, err := s.DB.Exec(`UPDATE ssh_grants SET revoked=1 WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("Freigabe %d existiert nicht", id)
+	}
+	return nil
+}
+
+func (s *Store) SetGrantExpiry(id int64, t time.Time) error {
+	_, err := s.DB.Exec(`UPDATE ssh_grants SET expires=? WHERE id=? AND revoked=0`, t.Unix(), id)
 	return err
 }

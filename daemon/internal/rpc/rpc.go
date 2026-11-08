@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
+	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
@@ -63,7 +64,12 @@ type sessionServer struct {
 	pb.UnimplementedSessionAPIServer
 	session string
 	svc     *access.Service
+	ssh     *broker.Service
 	st      *store.Store
+}
+
+func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
+	return s.ssh.RequestSSH(ctx, s.session, s.agent(ctx), r.Host, int(r.Minutes), r.Reason)
 }
 
 // agent: Name ohne das "<session>/"-Präfix, das die VM mitschickt.
@@ -118,7 +124,55 @@ func (s *sessionServer) RequestFolder(ctx context.Context, r *pb.AccessRequest) 
 type adminServer struct {
 	pb.UnimplementedAdminServer
 	svc *access.Service
+	ssh *broker.Service
 	st  *store.Store
+}
+
+func fail(err error) error { return status.Error(codes.FailedPrecondition, err.Error()) }
+
+func (a *adminServer) DecideSSH(_ context.Context, r *pb.DecideSSHRequest) (*pb.DecideResponse, error) {
+	msg, err := a.ssh.DecideSSH(broker.Decision{ID: r.Id, Allow: r.Allow, Minutes: int(r.Minutes), KeyFP: r.KeyFingerprint,
+		User: r.User, AllAgents: r.AllAgents, PerConn: r.PerConnection, TrustUnknownHost: r.TrustUnknownHost})
+	if err != nil {
+		return nil, fail(err)
+	}
+	return &pb.DecideResponse{Message: msg}, nil
+}
+
+func (a *adminServer) ListGrants(_ context.Context, r *pb.ListGrantsRequest) (*pb.ListGrantsResponse, error) {
+	gs, err := a.st.ListGrants(r.OnlyActive, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	out := &pb.ListGrantsResponse{}
+	for _, g := range gs {
+		out.Grants = append(out.Grants, &pb.Grant{Id: g.ID, Session: g.Session, Agent: g.Agent, Host: g.Host, KeyFingerprint: g.KeyFP,
+			User: g.User, ExpiresUnix: g.Expires.Unix(), PerConnection: g.PerConn, Revoked: g.Revoked, HostKeyFingerprints: g.HostKeys})
+	}
+	return out, nil
+}
+
+func (a *adminServer) RevokeGrant(ctx context.Context, r *pb.GrantRef) (*pb.DecideResponse, error) {
+	if err := a.ssh.Revoke(ctx, r.Id); err != nil {
+		return nil, fail(err)
+	}
+	return &pb.DecideResponse{Message: "entzogen"}, nil
+}
+
+func (a *adminServer) ExtendGrant(ctx context.Context, r *pb.ExtendGrantRequest) (*pb.DecideResponse, error) {
+	exp, err := a.ssh.Extend(ctx, r.Id, int(r.Minutes))
+	if err != nil {
+		return nil, fail(err)
+	}
+	return &pb.DecideResponse{Message: "gültig bis " + exp.Format("2006-01-02 15:04")}, nil
+}
+
+func (a *adminServer) ListKeys(context.Context, *pb.ListKeysRequest) (*pb.ListKeysResponse, error) {
+	ks, err := a.ssh.Keys()
+	if err != nil {
+		return &pb.ListKeysResponse{Error: err.Error()}, nil
+	}
+	return &pb.ListKeysResponse{Keys: ks}, nil
 }
 
 func (a *adminServer) ListRequests(_ context.Context, r *pb.ListRequestsRequest) (*pb.ListRequestsResponse, error) {
@@ -146,11 +200,30 @@ func (a *adminServer) Decide(_ context.Context, r *pb.DecideRequest) (*pb.Decide
 type Daemon struct {
 	St        *store.Store
 	Svc       *access.Service
+	SSH       *broker.Service
 	AdminSock string
 	L         lima.Client
 
 	mu      sync.Mutex
-	servers map[string]*grpc.Server // Session -> Server
+	servers map[string]*runtime // Session -> Server + Agent-Socket
+}
+
+type runtime struct {
+	g  *grpc.Server
+	al net.Listener
+}
+
+func (r *runtime) stop() {
+	r.g.Stop()
+	r.al.Close()
+}
+
+func AgentSocket(vm string) (string, error) {
+	d, err := lima.InstanceDir(vm)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "sock", "ssh-agent.sock"), nil
 }
 
 func SessionSocket(vm string) (string, error) {
@@ -167,7 +240,7 @@ func (d *Daemon) startAdmin() error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterAdminServer(g, &adminServer{svc: d.Svc, st: d.St})
+	pb.RegisterAdminServer(g, &adminServer{svc: d.Svc, ssh: d.SSH, st: d.St})
 	go g.Serve(l)
 	return nil
 }
@@ -182,9 +255,31 @@ func (d *Daemon) startSession(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, st: d.St})
+	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, st: d.St})
 	go g.Serve(l)
-	d.servers[name] = g
+	asock, err := AgentSocket(vm)
+	if err != nil {
+		g.Stop()
+		return err
+	}
+	al, err := ListenUnix(asock)
+	if err != nil {
+		g.Stop()
+		return err
+	}
+	go func() {
+		for {
+			c, err := al.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_ = d.SSH.B.NewConn(name).Serve(c)
+			}()
+		}
+	}()
+	d.servers[name] = &runtime{g: g, al: al}
 	return nil
 }
 
@@ -219,7 +314,7 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 	}
 	for name, g := range d.servers {
 		if !want[name] {
-			g.Stop()
+			g.stop()
 			delete(d.servers, name)
 			_ = d.St.Audit("daemon", "socket.close", name, "", "")
 		}
@@ -228,24 +323,25 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 }
 
 func (d *Daemon) Run(ctx context.Context) error {
-	d.servers = map[string]*grpc.Server{}
+	d.servers = map[string]*runtime{}
 	if err := d.St.ExpirePending(); err != nil {
 		return err
 	}
 	if err := d.startAdmin(); err != nil {
 		return err
 	}
-	t := time.NewTicker(5 * time.Second)
+	t := time.NewTicker(5 * time.Second) // auch Takt für Ablauf-Prüfung der SSH-Freigaben
 	defer t.Stop()
 	for {
 		if err := d.Reconcile(ctx); err != nil {
 			fmt.Fprintln(os.Stderr, "Reconcile:", err)
 		}
+		d.SSH.Sweep(ctx)
 		select {
 		case <-ctx.Done():
 			d.mu.Lock()
 			for _, g := range d.servers {
-				g.Stop()
+				g.stop()
 			}
 			d.mu.Unlock()
 			return errors.Join(ctx.Err())

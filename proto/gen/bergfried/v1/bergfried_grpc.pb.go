@@ -23,6 +23,7 @@ const (
 	SessionAPI_SearchFiles_FullMethodName   = "/bergfried.v1.SessionAPI/SearchFiles"
 	SessionAPI_RequestFile_FullMethodName   = "/bergfried.v1.SessionAPI/RequestFile"
 	SessionAPI_RequestFolder_FullMethodName = "/bergfried.v1.SessionAPI/RequestFolder"
+	SessionAPI_RequestSSH_FullMethodName    = "/bergfried.v1.SessionAPI/RequestSSH"
 )
 
 // SessionAPIClient is the client API for SessionAPI service.
@@ -37,6 +38,8 @@ type SessionAPIClient interface {
 	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
 	RequestFile(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
 	RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
+	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
 }
 
 type sessionAPIClient struct {
@@ -87,6 +90,16 @@ func (c *sessionAPIClient) RequestFolder(ctx context.Context, in *AccessRequest,
 	return out, nil
 }
 
+func (c *sessionAPIClient) RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SSHAccessResult)
+	err := c.cc.Invoke(ctx, SessionAPI_RequestSSH_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SessionAPIServer is the server API for SessionAPI service.
 // All implementations must embed UnimplementedSessionAPIServer
 // for forward compatibility.
@@ -99,6 +112,8 @@ type SessionAPIServer interface {
 	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
 	RequestFile(context.Context, *AccessRequest) (*AccessResult, error)
 	RequestFolder(context.Context, *AccessRequest) (*AccessResult, error)
+	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
 	mustEmbedUnimplementedSessionAPIServer()
 }
 
@@ -120,6 +135,9 @@ func (UnimplementedSessionAPIServer) RequestFile(context.Context, *AccessRequest
 }
 func (UnimplementedSessionAPIServer) RequestFolder(context.Context, *AccessRequest) (*AccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestFolder not implemented")
+}
+func (UnimplementedSessionAPIServer) RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestSSH not implemented")
 }
 func (UnimplementedSessionAPIServer) mustEmbedUnimplementedSessionAPIServer() {}
 func (UnimplementedSessionAPIServer) testEmbeddedByValue()                    {}
@@ -214,6 +232,24 @@ func _SessionAPI_RequestFolder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SessionAPI_RequestSSH_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SSHAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SessionAPIServer).RequestSSH(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SessionAPI_RequestSSH_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SessionAPIServer).RequestSSH(ctx, req.(*SSHAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SessionAPI_ServiceDesc is the grpc.ServiceDesc for SessionAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -237,6 +273,10 @@ var SessionAPI_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "RequestFolder",
 			Handler:    _SessionAPI_RequestFolder_Handler,
 		},
+		{
+			MethodName: "RequestSSH",
+			Handler:    _SessionAPI_RequestSSH_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "bergfried/v1/bergfried.proto",
@@ -245,6 +285,11 @@ var SessionAPI_ServiceDesc = grpc.ServiceDesc{
 const (
 	Admin_ListRequests_FullMethodName = "/bergfried.v1.Admin/ListRequests"
 	Admin_Decide_FullMethodName       = "/bergfried.v1.Admin/Decide"
+	Admin_DecideSSH_FullMethodName    = "/bergfried.v1.Admin/DecideSSH"
+	Admin_ListGrants_FullMethodName   = "/bergfried.v1.Admin/ListGrants"
+	Admin_RevokeGrant_FullMethodName  = "/bergfried.v1.Admin/RevokeGrant"
+	Admin_ExtendGrant_FullMethodName  = "/bergfried.v1.Admin/ExtendGrant"
+	Admin_ListKeys_FullMethodName     = "/bergfried.v1.Admin/ListKeys"
 )
 
 // AdminClient is the client API for Admin service.
@@ -255,6 +300,11 @@ const (
 type AdminClient interface {
 	ListRequests(ctx context.Context, in *ListRequestsRequest, opts ...grpc.CallOption) (*ListRequestsResponse, error)
 	Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error)
+	DecideSSH(ctx context.Context, in *DecideSSHRequest, opts ...grpc.CallOption) (*DecideResponse, error)
+	ListGrants(ctx context.Context, in *ListGrantsRequest, opts ...grpc.CallOption) (*ListGrantsResponse, error)
+	RevokeGrant(ctx context.Context, in *GrantRef, opts ...grpc.CallOption) (*DecideResponse, error)
+	ExtendGrant(ctx context.Context, in *ExtendGrantRequest, opts ...grpc.CallOption) (*DecideResponse, error)
+	ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error)
 }
 
 type adminClient struct {
@@ -285,6 +335,56 @@ func (c *adminClient) Decide(ctx context.Context, in *DecideRequest, opts ...grp
 	return out, nil
 }
 
+func (c *adminClient) DecideSSH(ctx context.Context, in *DecideSSHRequest, opts ...grpc.CallOption) (*DecideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideResponse)
+	err := c.cc.Invoke(ctx, Admin_DecideSSH_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) ListGrants(ctx context.Context, in *ListGrantsRequest, opts ...grpc.CallOption) (*ListGrantsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGrantsResponse)
+	err := c.cc.Invoke(ctx, Admin_ListGrants_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) RevokeGrant(ctx context.Context, in *GrantRef, opts ...grpc.CallOption) (*DecideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideResponse)
+	err := c.cc.Invoke(ctx, Admin_RevokeGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) ExtendGrant(ctx context.Context, in *ExtendGrantRequest, opts ...grpc.CallOption) (*DecideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecideResponse)
+	err := c.cc.Invoke(ctx, Admin_ExtendGrant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminClient) ListKeys(ctx context.Context, in *ListKeysRequest, opts ...grpc.CallOption) (*ListKeysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListKeysResponse)
+	err := c.cc.Invoke(ctx, Admin_ListKeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServer is the server API for Admin service.
 // All implementations must embed UnimplementedAdminServer
 // for forward compatibility.
@@ -293,6 +393,11 @@ func (c *adminClient) Decide(ctx context.Context, in *DecideRequest, opts ...grp
 type AdminServer interface {
 	ListRequests(context.Context, *ListRequestsRequest) (*ListRequestsResponse, error)
 	Decide(context.Context, *DecideRequest) (*DecideResponse, error)
+	DecideSSH(context.Context, *DecideSSHRequest) (*DecideResponse, error)
+	ListGrants(context.Context, *ListGrantsRequest) (*ListGrantsResponse, error)
+	RevokeGrant(context.Context, *GrantRef) (*DecideResponse, error)
+	ExtendGrant(context.Context, *ExtendGrantRequest) (*DecideResponse, error)
+	ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error)
 	mustEmbedUnimplementedAdminServer()
 }
 
@@ -308,6 +413,21 @@ func (UnimplementedAdminServer) ListRequests(context.Context, *ListRequestsReque
 }
 func (UnimplementedAdminServer) Decide(context.Context, *DecideRequest) (*DecideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Decide not implemented")
+}
+func (UnimplementedAdminServer) DecideSSH(context.Context, *DecideSSHRequest) (*DecideResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DecideSSH not implemented")
+}
+func (UnimplementedAdminServer) ListGrants(context.Context, *ListGrantsRequest) (*ListGrantsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGrants not implemented")
+}
+func (UnimplementedAdminServer) RevokeGrant(context.Context, *GrantRef) (*DecideResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeGrant not implemented")
+}
+func (UnimplementedAdminServer) ExtendGrant(context.Context, *ExtendGrantRequest) (*DecideResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExtendGrant not implemented")
+}
+func (UnimplementedAdminServer) ListKeys(context.Context, *ListKeysRequest) (*ListKeysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListKeys not implemented")
 }
 func (UnimplementedAdminServer) mustEmbedUnimplementedAdminServer() {}
 func (UnimplementedAdminServer) testEmbeddedByValue()               {}
@@ -366,6 +486,96 @@ func _Admin_Decide_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Admin_DecideSSH_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideSSHRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).DecideSSH(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_DecideSSH_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).DecideSSH(ctx, req.(*DecideSSHRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_ListGrants_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGrantsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).ListGrants(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_ListGrants_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).ListGrants(ctx, req.(*ListGrantsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_RevokeGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GrantRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).RevokeGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_RevokeGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).RevokeGrant(ctx, req.(*GrantRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_ExtendGrant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExtendGrantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).ExtendGrant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_ExtendGrant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).ExtendGrant(ctx, req.(*ExtendGrantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Admin_ListKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListKeysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServer).ListKeys(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Admin_ListKeys_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServer).ListKeys(ctx, req.(*ListKeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Admin_ServiceDesc is the grpc.ServiceDesc for Admin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -380,6 +590,26 @@ var Admin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Decide",
 			Handler:    _Admin_Decide_Handler,
+		},
+		{
+			MethodName: "DecideSSH",
+			Handler:    _Admin_DecideSSH_Handler,
+		},
+		{
+			MethodName: "ListGrants",
+			Handler:    _Admin_ListGrants_Handler,
+		},
+		{
+			MethodName: "RevokeGrant",
+			Handler:    _Admin_RevokeGrant_Handler,
+		},
+		{
+			MethodName: "ExtendGrant",
+			Handler:    _Admin_ExtendGrant_Handler,
+		},
+		{
+			MethodName: "ListKeys",
+			Handler:    _Admin_ListKeys_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

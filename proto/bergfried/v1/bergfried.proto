@@ -12,13 +12,61 @@ service SessionAPI {
   // Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
   rpc RequestFile(AccessRequest) returns (AccessResult);
   rpc RequestFolder(AccessRequest) returns (AccessResult);
+  // SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+  rpc RequestSSH(SSHAccessRequest) returns (SSHAccessResult);
 }
 
 // Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
 service Admin {
   rpc ListRequests(ListRequestsRequest) returns (ListRequestsResponse);
   rpc Decide(DecideRequest) returns (DecideResponse);
+  rpc DecideSSH(DecideSSHRequest) returns (DecideResponse);
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse);
+  rpc RevokeGrant(GrantRef) returns (DecideResponse);
+  rpc ExtendGrant(ExtendGrantRequest) returns (DecideResponse);
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
 }
+
+message SSHAccessRequest {
+  string host = 1;       // Hostname, optional mit :port
+  int32 minutes = 2;     // nur ein Vorschlag
+  string reason = 3;
+}
+message SSHAccessResult {
+  Verdict verdict = 1;
+  string message = 2;
+  int64 expires_unix = 3;
+  string user = 4;
+}
+message DecideSSHRequest {
+  int64 id = 1;
+  bool allow = 2;
+  int32 minutes = 3;
+  string key_fingerprint = 4;   // SHA256:...
+  string user = 5;
+  bool all_agents = 6;
+  bool per_connection = 7;
+  bool trust_unknown_host = 8;  // Host-Key war nicht in known_hosts
+}
+message Grant {
+  int64 id = 1;
+  string session = 2;
+  string agent = 3;      // leer = alle Agents der Session
+  string host = 4;
+  string key_fingerprint = 5;
+  string user = 6;
+  int64 expires_unix = 7;
+  bool per_connection = 8;
+  bool revoked = 9;
+  repeated string host_key_fingerprints = 10;
+}
+message ListGrantsRequest { bool only_active = 1; }
+message ListGrantsResponse { repeated Grant grants = 1; }
+message GrantRef { int64 id = 1; }
+message ExtendGrantRequest { int64 id = 1; int32 minutes = 2; }
+message KeyInfo { string fingerprint = 1; string comment = 2; string type = 3; }
+message ListKeysRequest {}
+message ListKeysResponse { repeated KeyInfo keys = 1; string error = 2; }
 
 message FileEntry {
   string path = 1;       // relativ zum Home, mit "/" getrennt

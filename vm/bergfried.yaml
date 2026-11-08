@@ -1,4 +1,4 @@
-# Bergfried-VM-Vorlage, Version 2 (der Daemon merkt sich die Version je Session)
+# Bergfried-VM-Vorlage, Version 3 (der Daemon merkt sich die Version je Session)
 # Bewusst KEIN `template:_default/mounts` -> Home wird nicht gemountet.
 # Die zwei Session-Mounts (shared/in ro, shared/out rw) setzt der Daemon per `--mount`.
 minimumLimaVersion: 2.0.0
@@ -34,6 +34,15 @@ provision:
     fi
     # Docker nur für den VM-User, kein Socket-Forwarding zum Host.
     usermod -aG docker "{{.User}}"
+    # SSH nur über den Broker, ohne ControlMaster (Verbindungen leben nicht über eine Freigabe hinaus).
+    mkdir -p /etc/ssh/ssh_config.d
+    cat > /etc/ssh/ssh_config.d/50-bergfried.conf <<'CONF'
+    Host *
+      IdentityAgent /run/user/%i/bergfried-agent.sock
+      ControlMaster no
+      ControlPath none
+      ControlPersist no
+    CONF
 - mode: user
   script: |
     #!/bin/bash
@@ -46,6 +55,10 @@ provision:
 portForwards:
 - guestSocket: "/run/user/{{.UID}}/bergfried.sock"
   hostSocket: "{{.Dir}}/sock/bergfried.sock"
+  reverse: true
+# SSH-Broker: ssh-agent-Socket des Mac-Daemons (signiert nur während einer Freigabe).
+- guestSocket: "/run/user/{{.UID}}/bergfried-agent.sock"
+  hostSocket: "{{.Dir}}/sock/ssh-agent.sock"
   reverse: true
 probes:
 - script: |

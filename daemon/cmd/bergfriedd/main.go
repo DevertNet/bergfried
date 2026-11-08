@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
+	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/notify"
@@ -39,6 +40,7 @@ const usage = `bergfriedd – Bergfried-CLI (M1)
   shell <session>               Shell in der VM
   audit [-n 50]                 Audit-Log
   serve [--no-dialog]           Daemon: Index, Sockets je Session, Freigabe-Dialog (läuft im Vordergrund)
+  ssh keys|grants|allow|deny|revoke|extend   SSH-Freigaben
   requests [list|allow|deny] [id] [--confirm-large] [--all]   Anfragen ansehen/entscheiden
 
 Umgebung: BERGFRIED_HOME (Standard ~/.bergfried), BERGFRIED_TEMPLATE (Standard vm/bergfried.yaml)
@@ -142,10 +144,14 @@ func run(cmd string, args []string) error {
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		noDialog := fs.Bool("no-dialog", false, "keinen macOS-Dialog zeigen (nur CLI-Entscheidung)")
+		knownHosts := fs.String("known-hosts", filepath.Join(h, ".ssh", "known_hosts"), "known_hosts für Host-Key-Prüfung der Ziele")
+		upstream := fs.String("upstream-agent", os.Getenv("SSH_AUTH_SOCK"), "ssh-agent-Socket mit deinen echten Keys")
 		_ = fs.Parse(args)
-		return serve(ctx, m, home, h, *noDialog)
+		return serve(ctx, m, home, h, *noDialog, *upstream, *knownHosts)
 	case "requests":
 		return requests(ctx, home, args)
+	case "ssh":
+		return sshCmd(ctx, home, args)
 	case "audit":
 		fs := flag.NewFlagSet("audit", flag.ExitOnError)
 		n := fs.Int("n", 50, "")
@@ -193,7 +199,7 @@ func list(ctx context.Context, m *session.Manager) error {
 	return nil
 }
 
-func serve(ctx context.Context, m *session.Manager, home, userHome string, noDialog bool) error {
+func serve(ctx context.Context, m *session.Manager, home, userHome string, noDialog bool, upstream, knownHosts string) error {
 	lock, err := os.OpenFile(filepath.Join(home, "serve.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
@@ -226,7 +232,21 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	if !noDialog {
 		svc.Asker = &notify.Dialog{Decide: svc.Decide, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 	}
-	d := &rpc.Daemon{St: m.S, Svc: svc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	if upstream == "" {
+		fmt.Fprintln(os.Stderr, "WARNUNG: kein Upstream-ssh-agent (SSH_AUTH_SOCK / --upstream-agent): SSH-Freigaben gehen nicht.")
+	}
+	hc, err := broker.LoadHostConfig(filepath.Join(home, "hosts.json"))
+	if err != nil {
+		return err
+	}
+	br := &broker.Broker{St: m.S, Up: broker.SocketUpstream{Path: upstream}}
+	sshSvc := broker.NewService(br, broker.ResolveHostKeys(knownHosts),
+		session.Hooks{M: m, Render: broker.RenderSSHConfig}, nil, hc)
+	if !noDialog {
+		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
+		br.ConfirmEach = notify.ConfirmEach
+	}
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	_ = m.S.Audit("daemon", "serve.start", "", "", fmt.Sprintf("dialog=%v", !noDialog))
@@ -286,4 +306,111 @@ func requests(ctx context.Context, home string, args []string) error {
 		return nil
 	}
 	return errors.New("nutze: requests [list|allow|deny]")
+}
+
+func sshCmd(ctx context.Context, home string, args []string) error {
+	conn, err := grpc.NewClient("unix://"+filepath.Join(home, "admin.sock"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	c := pb.NewAdminClient(conn)
+	if len(args) == 0 {
+		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-agents] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
+	}
+	num := func(i int) (int64, error) {
+		var n int64
+		if len(args) <= i {
+			return 0, errors.New("ID fehlt")
+		}
+		_, err := fmt.Sscan(args[i], &n)
+		return n, err
+	}
+	unreachable := func(err error) error { return fmt.Errorf("Daemon nicht erreichbar oder abgelehnt: %w", err) }
+	switch args[0] {
+	case "keys":
+		r, err := c.ListKeys(ctx, &pb.ListKeysRequest{})
+		if err != nil {
+			return unreachable(err)
+		}
+		if r.Error != "" {
+			return errors.New(r.Error)
+		}
+		for _, k := range r.Keys {
+			fmt.Printf("%s  %s  (%s)\n", k.Fingerprint, k.Comment, k.Type)
+		}
+	case "grants":
+		fs := flag.NewFlagSet("ssh grants", flag.ExitOnError)
+		all := fs.Bool("all", false, "auch abgelaufene/entzogene")
+		_ = fs.Parse(args[1:])
+		r, err := c.ListGrants(ctx, &pb.ListGrantsRequest{OnlyActive: !*all})
+		if err != nil {
+			return unreachable(err)
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tSESSION\tAGENT\tHOST\tUSER\tBIS\tMODUS\tSTATUS")
+		for _, g := range r.Grants {
+			st := "aktiv"
+			if g.Revoked {
+				st = "entzogen"
+			} else if time.Unix(g.ExpiresUnix, 0).Before(time.Now()) {
+				st = "abgelaufen"
+			}
+			ag := g.Agent
+			if ag == "" {
+				ag = "(alle)"
+			}
+			mode := "still"
+			if g.PerConnection {
+				mode = "einzeln"
+			}
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Session, ag, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
+		}
+		return tw.Flush()
+	case "allow", "deny":
+		id, err := num(1)
+		if err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("ssh allow", flag.ExitOnError)
+		minutes := fs.Int("minutes", 15, "Dauer")
+		key := fs.String("key", "", "Key-Fingerprint (SHA256:…); sonst Standard des Hosts")
+		user := fs.String("user", "", "Benutzer auf dem Ziel (Standard: claude)")
+		allAg := fs.Bool("all-agents", false, "für alle Agents der Session")
+		per := fs.Bool("per-connection", false, "jede Verbindung einzeln bestätigen")
+		trust := fs.Bool("trust-host-key", false, "neuen Host-Key bestätigen")
+		_ = fs.Parse(args[2:])
+		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
+			User: *user, AllAgents: *allAg, PerConnection: *per, TrustUnknownHost: *trust})
+		if err != nil {
+			return err
+		}
+		fmt.Println(r.Message)
+	case "revoke":
+		id, err := num(1)
+		if err != nil {
+			return err
+		}
+		r, err := c.RevokeGrant(ctx, &pb.GrantRef{Id: id})
+		if err != nil {
+			return err
+		}
+		fmt.Println(r.Message)
+	case "extend":
+		id, err := num(1)
+		if err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("ssh extend", flag.ExitOnError)
+		minutes := fs.Int("minutes", 15, "zusätzliche Minuten")
+		_ = fs.Parse(args[2:])
+		r, err := c.ExtendGrant(ctx, &pb.ExtendGrantRequest{Id: id, Minutes: int32(*minutes)})
+		if err != nil {
+			return err
+		}
+		fmt.Println(r.Message)
+	default:
+		return errors.New("unbekannter Unterbefehl")
+	}
+	return nil
 }
