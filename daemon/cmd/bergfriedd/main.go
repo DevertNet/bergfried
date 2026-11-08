@@ -8,12 +8,22 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"syscall"
+	"text/tabwriter"
+	"time"
 
+	"github.com/DevertNet/bergfried/daemon/internal/access"
+	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/notify"
+	"github.com/DevertNet/bergfried/daemon/internal/rpc"
 	"github.com/DevertNet/bergfried/daemon/internal/session"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
+	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const usage = `bergfriedd – Bergfried-CLI (M1)
@@ -28,6 +38,8 @@ const usage = `bergfriedd – Bergfried-CLI (M1)
   attach <session>              tmux der Session öffnen
   shell <session>               Shell in der VM
   audit [-n 50]                 Audit-Log
+  serve [--no-dialog]           Daemon: Index, Sockets je Session, Freigabe-Dialog (läuft im Vordergrund)
+  requests [list|allow|deny] [id] [--confirm-large] [--all]   Anfragen ansehen/entscheiden
 
 Umgebung: BERGFRIED_HOME (Standard ~/.bergfried), BERGFRIED_TEMPLATE (Standard vm/bergfried.yaml)
 `
@@ -127,6 +139,13 @@ func run(cmd string, args []string) error {
 		}
 		_ = st.Audit("cli", "session."+cmd, args[0], "", "")
 		return syscall.Exec(lc, append([]string{"limactl", "shell", s.VM, "--"}, inner...), os.Environ())
+	case "serve":
+		fs := flag.NewFlagSet("serve", flag.ExitOnError)
+		noDialog := fs.Bool("no-dialog", false, "keinen macOS-Dialog zeigen (nur CLI-Entscheidung)")
+		_ = fs.Parse(args)
+		return serve(ctx, m, home, h, *noDialog)
+	case "requests":
+		return requests(ctx, home, args)
 	case "audit":
 		fs := flag.NewFlagSet("audit", flag.ExitOnError)
 		n := fs.Int("n", 50, "")
@@ -172,4 +191,93 @@ func list(ctx context.Context, m *session.Manager) error {
 		fmt.Printf("%-16s %-10s v%-3d %s\n", s.Name, st, s.TemplateVersion, names)
 	}
 	return nil
+}
+
+func serve(ctx context.Context, m *session.Manager, home, userHome string, noDialog bool) error {
+	lock, err := os.OpenFile(filepath.Join(home, "serve.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return errors.New("bergfriedd serve läuft bereits")
+	}
+	bl, err := index.LoadBlocklist(filepath.Join(home, "blocklist.json"))
+	if err != nil {
+		return err
+	}
+	ix, err := index.Build(userHome, bl)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range time.Tick(5 * time.Minute) {
+			if err := ix.Refresh(); err != nil {
+				fmt.Fprintln(os.Stderr, "Index-Refresh:", err)
+			}
+		}
+	}()
+	svc := access.New(m.S, ix, home, nil)
+	if !noDialog {
+		svc.Asker = &notify.Dialog{Decide: svc.Decide, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
+	}
+	d := &rpc.Daemon{St: m.S, Svc: svc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	_ = m.S.Audit("daemon", "serve.start", "", "", fmt.Sprintf("dialog=%v", !noDialog))
+	fmt.Println("bergfriedd serve läuft (Strg-C beendet). Admin-Socket:", d.AdminSock)
+	err = d.Run(ctx)
+	_ = m.S.Audit("daemon", "serve.stop", "", "", "")
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}
+
+func requests(ctx context.Context, home string, args []string) error {
+	conn, err := grpc.NewClient("unix://"+filepath.Join(home, "admin.sock"), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	c := pb.NewAdminClient(conn)
+	sub := "list"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "list":
+		fs := flag.NewFlagSet("requests list", flag.ExitOnError)
+		all := fs.Bool("all", false, "auch erledigte")
+		if len(args) > 1 {
+			_ = fs.Parse(args[1:])
+		}
+		r, err := c.ListRequests(ctx, &pb.ListRequestsRequest{OnlyPending: !*all})
+		if err != nil {
+			return fmt.Errorf("Daemon nicht erreichbar (läuft `bergfriedd serve`?): %w", err)
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tSTATUS\tSESSION/AGENT\tART\tPFAD\tGRÖSSE\tBEGRÜNDUNG")
+		for _, q := range r.Requests {
+			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d Dat., %.1f MB\t%s\n", q.Id, q.Status, q.Session, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
+		}
+		return tw.Flush()
+	case "allow", "deny":
+		fs := flag.NewFlagSet("requests "+sub, flag.ExitOnError)
+		big := fs.Bool("confirm-large", false, "zweite Bestätigung für große Ordner")
+		if len(args) < 2 {
+			return errors.New("nutze: requests " + sub + " <id> [--confirm-large]")
+		}
+		var id int64
+		if _, err := fmt.Sscan(args[1], &id); err != nil {
+			return errors.New("ungültige ID")
+		}
+		_ = fs.Parse(args[2:])
+		r, err := c.Decide(ctx, &pb.DecideRequest{Id: id, Allow: sub == "allow", ConfirmLarge: *big})
+		if err != nil {
+			return err
+		}
+		fmt.Println(r.Message)
+		return nil
+	}
+	return errors.New("nutze: requests [list|allow|deny]")
 }

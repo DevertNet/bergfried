@@ -1,0 +1,257 @@
+// Package access: Datei-/Ordner-Anfragen prüfen, Entscheidung abwarten, Kopie nach shared/in.
+package access
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/DevertNet/bergfried/daemon/internal/index"
+	"github.com/DevertNet/bergfried/daemon/internal/store"
+	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
+)
+
+const (
+	LargeBytes = 100 << 20
+	LargeFiles = 500
+)
+
+// Asker zeigt die Anfrage dem Nutzer. Die Antwort kommt später über Service.Decide.
+type Asker interface{ Ask(r store.Request) }
+
+type decision struct{ allow bool }
+
+type Service struct {
+	S       *store.Store
+	Ix      *index.Index
+	DataDir string
+	Asker   Asker
+	Timeout time.Duration
+
+	mu      sync.Mutex
+	waiters map[int64]chan decision
+}
+
+func New(s *store.Store, ix *index.Index, dataDir string, a Asker) *Service {
+	return &Service{S: s, Ix: ix, DataDir: dataDir, Asker: a, Timeout: 10 * time.Minute, waiters: map[int64]chan decision{}}
+}
+
+func (v *Service) audit(event, session, agent, detail string) {
+	if err := v.S.Audit("daemon", event, session, agent, detail); err != nil {
+		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
+	}
+}
+
+// Dest: Zielordner in shared/in der Session (in der VM unter demselben Pfad sichtbar).
+func (v *Service) Dest(session string) string {
+	return filepath.Join(v.DataDir, "sessions", session, "shared", "in", session)
+}
+
+func measure(abs string, isDir bool, size int64, ix *index.Index, relBase string) (bytes, files int64) {
+	if !isDir {
+		return size, 1
+	}
+	_ = filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		rel, _ := filepath.Rel(abs, p)
+		if rel != "." {
+			if _, _, e := ix.Resolve(filepath.ToSlash(filepath.Join(relBase, rel))); e != nil {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+		}
+		if !d.IsDir() {
+			if info, e := d.Info(); e == nil && info.Mode().IsRegular() {
+				bytes += info.Size()
+				files++
+			}
+		}
+		return nil
+	})
+	return
+}
+
+// Request verarbeitet request_file (folder=false) bzw. request_folder (folder=true).
+func (v *Service) Request(ctx context.Context, session, agent string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
+	kind := "file"
+	if folder {
+		kind = "folder"
+	}
+	reason = sanitize(reason, 500)
+	agent = sanitize(agent, 64)
+	abs, rel, err := v.Ix.Resolve(relPath)
+	if err != nil {
+		if errors.Is(err, index.ErrBlocked) {
+			id, _ := v.S.AddRequest(store.Request{Session: session, Agent: agent, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
+			v.audit("request.blocked", session, agent, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_BLOCKED, Message: "Pfad steht auf der Sperrliste und wird nicht freigegeben."}, nil
+		}
+		v.audit("request.invalid", session, agent, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ungültig oder nicht vorhanden."}, nil
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad nicht vorhanden."}, nil
+	}
+	if folder != info.IsDir() || (!folder && !info.Mode().IsRegular()) {
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ist " + map[bool]string{true: "ein Ordner (nutze request_folder)", false: "keine normale Datei (nutze request_file)"}[info.IsDir()]}, nil
+	}
+	b, n := measure(abs, info.IsDir(), info.Size(), v.Ix, rel)
+	req := store.Request{Session: session, Agent: agent, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
+	id, err := v.S.AddRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	req.ID = id
+	ch := make(chan decision, 1)
+	v.mu.Lock()
+	v.waiters[id] = ch
+	v.mu.Unlock()
+	defer func() { v.mu.Lock(); delete(v.waiters, id); v.mu.Unlock() }()
+	v.audit("request.created", session, agent, fmt.Sprintf("id=%d %s %s bytes=%d files=%d", id, kind, rel, b, n))
+	if v.Asker != nil {
+		v.Asker.Ask(req)
+	}
+	timer := time.NewTimer(v.Timeout)
+	defer timer.Stop()
+	select {
+	case d := <-ch:
+		if !d.allow {
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Der Nutzer hat abgelehnt."}, nil
+		}
+		dst, err := v.copyOut(session, rel, abs, info.IsDir())
+		if err != nil {
+			v.audit("request.copy_failed", session, agent, fmt.Sprintf("id=%d %v", id, err))
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Kopieren fehlgeschlagen: " + err.Error()}, nil
+		}
+		v.audit("request.copied", session, agent, fmt.Sprintf("id=%d -> %s", id, dst))
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, VmPath: dst, Message: "Freigegeben und kopiert."}, nil
+	case <-timer.C:
+		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
+			v.audit("request.expired", session, agent, fmt.Sprintf("id=%d", id))
+		}
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_EXPIRED, Message: "Keine Antwort, Anfrage abgelaufen."}, nil
+	case <-ctx.Done():
+		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
+			v.audit("request.cancelled", session, agent, fmt.Sprintf("id=%d", id))
+		}
+		return nil, ctx.Err()
+	}
+}
+
+// Decide entscheidet eine offene Anfrage. Große Anfragen brauchen confirmLarge.
+func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
+	r, err := v.S.GetRequest(id)
+	if err != nil {
+		return "", err
+	}
+	if r.Status != "pending" {
+		return "", fmt.Errorf("Anfrage %d ist nicht mehr offen (%s)", id, r.Status)
+	}
+	if allow && Large(r) && !confirmLarge {
+		return "", fmt.Errorf("große Anfrage (%d MB, %d Dateien): zweite Bestätigung nötig", r.Bytes>>20, r.Files)
+	}
+	v.mu.Lock()
+	ch, ok := v.waiters[id]
+	v.mu.Unlock()
+	if !ok {
+		return "", fmt.Errorf("Anfrage %d wartet nicht mehr (Agent hat abgebrochen)", id)
+	}
+	status := "denied"
+	if allow {
+		status = "allowed"
+	}
+	if ok, err := v.S.SetRequestStatus(id, status); err != nil || !ok {
+		return "", fmt.Errorf("Anfrage %d ist nicht mehr offen", id)
+	}
+	v.audit("request."+status, r.Session, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
+	ch <- decision{allow: allow}
+	return status, nil
+}
+
+func Large(r store.Request) bool { return r.Bytes > LargeBytes || r.Files > LargeFiles }
+
+func (v *Service) copyOut(session, rel, abs string, isDir bool) (string, error) {
+	base := v.Dest(session)
+	dst := filepath.Join(base, filepath.FromSlash(rel))
+	if !strings.HasPrefix(dst, base+string(os.PathSeparator)) {
+		return "", errors.New("Zielpfad außerhalb von shared/in")
+	}
+	if !isDir {
+		return dst, copyFile(abs, dst)
+	}
+	err := filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		r2, _ := filepath.Rel(abs, p)
+		relFull := filepath.ToSlash(filepath.Join(rel, r2))
+		if r2 != "." {
+			// jede Datei erneut prüfen (Sperrliste, Symlink-Auflösung)
+			if _, _, e := v.Ix.Resolve(relFull); e != nil {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+		}
+		target := filepath.Join(dst, r2)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		return copyFile(p, target)
+	})
+	return dst, err
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	st, err := in.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return errors.New("keine normale Datei")
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// sanitize: Steuerzeichen raus, Länge begrenzen. Agent-Text ist nur Anzeige-Daten.
+func sanitize(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 && r != '\n' || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	if len([]rune(s)) > max {
+		s = string([]rune(s)[:max]) + "…"
+	}
+	return s
+}

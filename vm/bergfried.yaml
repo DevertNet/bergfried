@@ -1,4 +1,4 @@
-# Bergfried-VM-Vorlage, Version 1 (der Daemon merkt sich die Version je Session)
+# Bergfried-VM-Vorlage, Version 2 (der Daemon merkt sich die Version je Session)
 # Bewusst KEIN `template:_default/mounts` -> Home wird nicht gemountet.
 # Die zwei Session-Mounts (shared/in ro, shared/out rw) setzt der Daemon per `--mount`.
 minimumLimaVersion: 2.0.0
@@ -41,6 +41,12 @@ provision:
     command -v claude >/dev/null 2>&1 && exit 0
     curl -fsSL https://claude.ai/install.sh | bash
     grep -q '.local/bin' ~/.profile || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
+# Daemon-Socket: in der VM lauscht /run/user/<uid>/bergfried.sock, Verbindungen gehen an den
+# Socket des Mac-Daemons dieser Instanz. Die Session ergibt sich aus dem Socket-Pfad auf dem Mac.
+portForwards:
+- guestSocket: "/run/user/{{.UID}}/bergfried.sock"
+  hostSocket: "{{.Dir}}/sock/bergfried.sock"
+  reverse: true
 probes:
 - script: |
     #!/bin/bash

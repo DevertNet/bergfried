@@ -3,11 +3,11 @@ package lima
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 

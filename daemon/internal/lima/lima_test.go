@@ -1,13 +1,16 @@
 package lima
 
 import (
-	"os"
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
 
-type fake struct{ calls [][]string; out string }
+type fake struct {
+	calls [][]string
+	out   string
+}
 
 func (f *fake) Run(_ context.Context, a ...string) ([]byte, error) {
 	f.calls = append(f.calls, a)

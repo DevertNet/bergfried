@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package bergfried.v1;
+
+option go_package = "github.com/DevertNet/bergfried/proto/gen/bergfried/v1;bergfriedv1";
+
+// SessionAPI: VM -> Daemon. Die Session ergibt sich aus dem Socket, nie aus einem Feld.
+// Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
+service SessionAPI {
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+  rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse);
+  // Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
+  rpc RequestFile(AccessRequest) returns (AccessResult);
+  rpc RequestFolder(AccessRequest) returns (AccessResult);
+}
+
+// Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
+service Admin {
+  rpc ListRequests(ListRequestsRequest) returns (ListRequestsResponse);
+  rpc Decide(DecideRequest) returns (DecideResponse);
+}
+
+message FileEntry {
+  string path = 1;       // relativ zum Home, mit "/" getrennt
+  bool is_dir = 2;
+  int64 size = 3;
+  int64 mtime_unix = 4;
+}
+
+message ListFilesRequest {
+  string path = 1;       // relativ zum Home; leer = Home
+  string pattern = 2;    // optionaler Glob auf den Namen
+}
+message ListFilesResponse {
+  repeated FileEntry entries = 1;
+  bool truncated = 2;
+}
+
+message SearchFilesRequest { string query = 1; }
+message SearchFilesResponse {
+  repeated FileEntry entries = 1;
+  bool truncated = 2;
+}
+
+message AccessRequest {
+  string path = 1;       // relativ zum Home
+  string reason = 2;     // vom Agent geliefert, nur als Text anzeigen
+}
+
+enum Verdict {
+  VERDICT_UNSPECIFIED = 0;
+  VERDICT_ALLOWED = 1;
+  VERDICT_DENIED = 2;
+  VERDICT_BLOCKED = 3;   // Sperrliste, ohne Rückfrage abgelehnt
+  VERDICT_EXPIRED = 4;
+}
+
+message AccessResult {
+  Verdict verdict = 1;
+  string vm_path = 2;    // Pfad in der VM unter shared/in/<session>/...
+  string message = 3;
+}
+
+message Request {
+  int64 id = 1;
+  string session = 2;
+  string agent = 3;
+  string kind = 4;       // file | folder
+  string path = 5;
+  string reason = 6;
+  string status = 7;     // pending | allowed | denied | blocked | expired
+  int64 created_unix = 8;
+  int64 total_bytes = 9;
+  int64 total_files = 10;
+}
+
+message ListRequestsRequest { bool only_pending = 1; }
+message ListRequestsResponse { repeated Request requests = 1; }
+
+message DecideRequest {
+  int64 id = 1;
+  bool allow = 2;
+  bool confirm_large = 3; // zweite Bestätigung bei großen Ordnern
+}
+message DecideResponse { string message = 1; }

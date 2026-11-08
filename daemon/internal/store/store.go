@@ -14,7 +14,7 @@ import (
 type Store struct{ DB *sql.DB }
 
 type Session struct {
-	Name, VM, Repo string
+	Name, VM, Repo  string
 	TemplateVersion int
 	Created         time.Time
 }
@@ -25,7 +25,7 @@ type Agent struct {
 }
 
 type AuditEntry struct {
-	TS                               time.Time
+	TS                                   time.Time
 	Actor, Event, Session, Agent, Detail string
 }
 
@@ -55,6 +55,7 @@ func (s *Store) migrate() error {
 	_, err := s.DB.Exec(`
 CREATE TABLE IF NOT EXISTS sessions(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(session TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(session,name));
+CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, agent TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, session TEXT, agent TEXT, detail TEXT);`)
 	return err
 }
@@ -143,4 +144,78 @@ func (s *Store) AuditList(limit int) ([]AuditEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+type Request struct {
+	ID                                 int64
+	Session, Agent, Kind, Path, Reason string
+	Status                             string
+	Created                            time.Time
+	Bytes, Files                       int64
+}
+
+func (s *Store) AddRequest(r Request) (int64, error) {
+	res, err := s.DB.Exec(`INSERT INTO requests(session,agent,kind,path,reason,status,created,bytes,files) VALUES(?,?,?,?,?,?,?,?,?)`,
+		r.Session, r.Agent, r.Kind, r.Path, r.Reason, r.Status, time.Now().Unix(), r.Bytes, r.Files)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// SetRequestStatus ändert nur eine noch offene Anfrage (pending); sonst false.
+func (s *Store) SetRequestStatus(id int64, status string) (bool, error) {
+	res, err := s.DB.Exec(`UPDATE requests SET status=? WHERE id=? AND status='pending'`, status, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+func scanReq(sc interface{ Scan(...any) error }) (Request, error) {
+	var r Request
+	var c int64
+	var agent, reason sql.NullString
+	err := sc.Scan(&r.ID, &r.Session, &agent, &r.Kind, &r.Path, &reason, &r.Status, &c, &r.Bytes, &r.Files)
+	r.Agent, r.Reason, r.Created = agent.String, reason.String, time.Unix(c, 0)
+	return r, err
+}
+
+const reqCols = `id,session,agent,kind,path,reason,status,created,bytes,files`
+
+func (s *Store) GetRequest(id int64) (Request, error) {
+	r, err := scanReq(s.DB.QueryRow(`SELECT `+reqCols+` FROM requests WHERE id=?`, id))
+	if err == sql.ErrNoRows {
+		return r, fmt.Errorf("Anfrage %d existiert nicht", id)
+	}
+	return r, err
+}
+
+func (s *Store) ListRequests(onlyPending bool, limit int) ([]Request, error) {
+	q := `SELECT ` + reqCols + ` FROM requests`
+	if onlyPending {
+		q += ` WHERE status='pending'`
+	}
+	rows, err := s.DB.Query(q+` ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Request
+	for rows.Next() {
+		r, err := scanReq(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ExpirePending markiert beim Daemon-Start alle offenen Anfragen als abgelaufen
+// (die wartenden Agent-Aufrufe sind mit dem Neustart ohnehin weg).
+func (s *Store) ExpirePending() error {
+	_, err := s.DB.Exec(`UPDATE requests SET status='expired' WHERE status='pending'`)
+	return err
 }

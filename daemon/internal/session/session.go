@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	TemplateVersion = 1
-	BaseName        = "bergfried-base-v1"
+	TemplateVersion = 2
+	BaseName        = "bergfried-base-v2"
 	tmuxSession     = "bf"
 )
 
@@ -100,6 +100,35 @@ sudo dpkg-reconfigure -f noninteractive openssh-server
 sudo systemctl restart ssh
 mkdir -p ~/work`
 
+// McpBin: Pfad zum bergfried-mcp-Binary (Linux arm64), Standard neben bergfriedd.
+func McpBin() string {
+	if v := os.Getenv("BERGFRIED_MCP_BIN"); v != "" {
+		return v
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "bin/bergfried-mcp"
+	}
+	return filepath.Join(filepath.Dir(exe), "bergfried-mcp")
+}
+
+// InstallMCP kopiert bergfried-mcp in die VM und trägt es in Claude Code ein (idempotent).
+func (m *Manager) InstallMCP(ctx context.Context, vm string) error {
+	bin := McpBin()
+	if _, err := os.Stat(bin); err != nil {
+		return fmt.Errorf("bergfried-mcp nicht gefunden (%s) – `make build` ausführen: %w", bin, err)
+	}
+	if _, err := m.L.R.Run(ctx, "cp", bin, vm+":/tmp/bergfried-mcp"); err != nil {
+		return err
+	}
+	_, err := m.L.Shell(ctx, vm, "bash", "-lc", `set -e
+mkdir -p ~/.local/bin && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
+export PATH="$HOME/.local/bin:$PATH"
+claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
+claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`)
+	return err
+}
+
 func (m *Manager) Create(ctx context.Context, name, repo string) error {
 	if err := ValidName(name); err != nil {
 		return err
@@ -134,6 +163,9 @@ func (m *Manager) Create(ctx context.Context, name, repo string) error {
 	if err := lima.RepinHostKey(vm); err != nil {
 		return err
 	}
+	if err := m.InstallMCP(ctx, vm); err != nil {
+		return err
+	}
 	if repo != "" {
 		if _, err := m.L.Shell(ctx, vm, "git", "clone", repo, "work/main"); err != nil {
 			return fmt.Errorf("git clone: %w", err)
@@ -152,6 +184,9 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 	if err := m.L.Start(ctx, s.VM); err != nil {
+		return err
+	}
+	if err := m.InstallMCP(ctx, s.VM); err != nil {
 		return err
 	}
 	// tmux überlebt keinen VM-Stopp: Agents mit --continue wieder hochfahren.
@@ -216,7 +251,7 @@ func (m *Manager) Delete(ctx context.Context, name string, force bool) error {
 // --continue holt den Verlauf; gibt es keinen (neuer Agent), startet der Fallback frisch.
 func AgentCmd(session, agent string) string {
 	rc := fmt.Sprintf("--remote-control '%s/%s'", session, agent)
-	return fmt.Sprintf(`cd ~/work/%[2]s && export COMPOSE_PROJECT_NAME=%[1]s-%[2]s && (~/.local/bin/claude --continue %[3]s || exec ~/.local/bin/claude %[3]s)`, session, agent, rc)
+	return fmt.Sprintf(`cd ~/work/%[2]s && export COMPOSE_PROJECT_NAME=%[1]s-%[2]s BERGFRIED_AGENT=%[1]s/%[2]s && (~/.local/bin/claude --continue %[3]s || exec ~/.local/bin/claude %[3]s)`, session, agent, rc)
 }
 
 // ensureWindow legt tmux-Session/-Fenster an, falls nicht vorhanden, und startet den Agent darin.
