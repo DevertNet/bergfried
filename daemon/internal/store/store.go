@@ -79,7 +79,7 @@ func (s *Store) GetSession(name string) (Session, error) {
 	var c int64
 	err := s.DB.QueryRow(`SELECT name,vm,repo,template_version,created FROM sessions WHERE name=?`, name).Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c)
 	if err == sql.ErrNoRows {
-		return x, fmt.Errorf("Session %q existiert nicht", name)
+		return x, fmt.Errorf("Sandbox %q existiert nicht", name)
 	}
 	x.Created = time.Unix(c, 0)
 	return x, err

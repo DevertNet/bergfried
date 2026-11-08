@@ -144,7 +144,7 @@ func CheckTemplate(yml string) (warnings []string, err error) {
 	var errs []string
 	if mounts, ok := m["mounts"]; ok {
 		if l, ok := mounts.([]any); !ok || len(l) > 0 {
-			errs = append(errs, "`mounts` muss leer bleiben – Mounts (shared/in, shared/out) setzt der Daemon je Session; Home darf nie gemountet werden")
+			errs = append(errs, "`mounts` muss leer bleiben – Mounts (shared/in, shared/out) setzt der Daemon je Sandbox; Home darf nie gemountet werden")
 		}
 	}
 	if base, ok := m["base"]; ok {

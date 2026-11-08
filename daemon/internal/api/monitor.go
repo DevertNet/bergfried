@@ -153,7 +153,7 @@ func (mo *Monitor) MarkRC(session, agent string) error {
 	defer mo.mu.Unlock()
 	st := mo.state[session]
 	if st == nil {
-		return fmt.Errorf("Session wurde noch nicht abgefragt")
+		return fmt.Errorf("Sandbox wurde noch nicht abgefragt")
 	}
 	a, ok := st.Agents[agent]
 	if !ok || !a.Running || a.PID == 0 {
@@ -349,7 +349,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			if err := mo.M.AgentAdd(cctx, name, "main"); err != nil {
 				fmt.Fprintln(os.Stderr, "Erster Agent:", err)
 			} else {
-				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "Session hatte keinen Agent")
+				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "Sandbox hatte keinen Agent")
 			}
 		}
 		_ = mo.M.S.SetSeeded(name)

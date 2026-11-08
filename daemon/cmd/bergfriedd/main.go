@@ -434,7 +434,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		minutes := fs.Int("minutes", 15, "Dauer")
 		key := fs.String("key", "", "Key-Fingerprint (SHA256:…); sonst Standard des Hosts")
 		user := fs.String("user", "", "Benutzer auf dem Ziel (Standard: claude)")
-		allAg := fs.Bool("all-agents", false, "für alle Agents der Session")
+		allAg := fs.Bool("all-agents", false, "für alle Agents der Sandbox")
 		per := fs.Bool("per-connection", false, "jede Verbindung einzeln bestätigen")
 		trust := fs.Bool("trust-host-key", false, "neuen Host-Key bestätigen")
 		_ = fs.Parse(args[2:])

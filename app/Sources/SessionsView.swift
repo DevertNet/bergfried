@@ -25,27 +25,29 @@ struct SessionsView: View {
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.yellow.opacity(0.15))
             }
             if model.sessions.isEmpty && creating.isEmpty {
-                ContentUnavailableView("Keine Sessions", systemImage: "shield", description: Text("Lege mit „Neue Session“ eine isolierte VM an."))
+                ContentUnavailableView("Keine Sandboxes", systemImage: "shield", description: Text("Lege mit „Neue Sandbox“ eine isolierte VM an."))
             } else {
                 List {
                     ForEach(creating, id: \.name) { c in
                         HStack(spacing: 10) {
                             ProgressView().controlSize(.small)
                             Text(c.name).font(.headline)
-                            Text(c.step).foregroundStyle(.secondary)
+                            Text(c.step).foregroundStyle(.secondary).lineLimit(1)
                             Spacer()
-                        }.padding(.vertical, 8)
+                        }.padding(.vertical, 10).frame(minHeight: 44).fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(model.sessions) { s in
                         SessionRow(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .transaction { $0.animation = nil }   // Zeilen sollen beim Erscheinen nicht animiert „einfahren“ (wirkte oben abgeschnitten)
             }
         }
-        .toolbar { Button { showCreate = true } label: { Label("Neue Session", systemImage: "plus") } }
+        .toolbar { Button { showCreate = true } label: { Label("Neue Sandbox", systemImage: "plus") } }
         .sheet(isPresented: $showCreate) { CreateSessionSheet() }
         .sheet(item: $addAgentFor) { s in AddAgentSheet(session: s) }
-        .confirmationDialog("Session „\(deleteFor?.name ?? "")“ löschen?", isPresented: Binding(get: { deleteFor != nil }, set: { if !$0 { deleteFor = nil } })) {
+        .confirmationDialog("Sandbox „\(deleteFor?.name ?? "")“ löschen?", isPresented: Binding(get: { deleteFor != nil }, set: { if !$0 { deleteFor = nil } })) {
             Button("Löschen", role: .destructive) {
                 if let s = deleteFor { Task { await delete(s, force: false) } }
             }
@@ -288,31 +290,47 @@ struct CreateSessionSheet: View {
     }
 
     var body: some View {
-        Form {
-            Text("Neue Session").font(.headline)
-            TextField("Name (a–z, 0–9, -; max. 24 Zeichen)", text: $name)
-            Picker("Quelle für den Code", selection: $source) {
-                Text("Leer starten").tag(0)
-                Text("Git-Repo klonen").tag(1)
-                Text("Bestehenden Ordner kopieren").tag(2)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Neue Sandbox").font(.title3.bold())
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Name").font(.callout.bold())
+                TextField("z. B. shop", text: $name).textFieldStyle(.roundedBorder)
+                Text("a–z, 0–9 und -, höchstens 24 Zeichen").font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Code-Quelle").font(.callout.bold())
+                Picker("Code-Quelle", selection: $source) {
+                    Text("Leer").tag(0)
+                    Text("Git-Repo").tag(1)
+                    Text("Ordner").tag(2)
+                }.pickerStyle(.segmented).labelsHidden()
             }
             if source == 1 {
-                TextField("Git-URL (https://github.com/owner/repo)", text: $repo)
-                GitHubTokenSteps(link: link, hint: hint, token: $token)
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("https://github.com/owner/repo", text: $repo).textFieldStyle(.roundedBorder)
+                        Divider()
+                        GitHubTokenSteps(link: link, hint: hint, token: $token)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
+                }
             }
             if source == 2 {
-                HStack {
-                    Text(folder.isEmpty ? "Kein Ordner gewählt" : folder).lineLimit(1).truncationMode(.middle).foregroundStyle(folder.isEmpty ? .secondary : .primary)
-                    Spacer()
-                    Button("Ordner wählen …") { chooseFolder() }
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(folder.isEmpty ? "Kein Ordner gewählt" : folder).lineLimit(1).truncationMode(.middle).foregroundStyle(folder.isEmpty ? .secondary : .primary)
+                            Spacer()
+                            Button("Ordner wählen …") { chooseFolder() }
+                        }
+                        if let p = preview { Label("\(p.files) Dateien, \(formatBytes(p.bytes)) werden kopiert", systemImage: "doc.on.doc").font(.callout) }
+                        if let e = previewError { Label(e, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true) }
+                        Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Für Git braucht der Agent später ein GitHub-Token (er fragt danach).")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
                 }
-                if let p = preview { Label("\(p.files) Dateien, \(formatBytes(p.bytes)) werden kopiert", systemImage: "doc.on.doc").font(.callout) }
-                if let e = previewError { Label(e, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout) }
-                Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Ergebnisse kommen über shared/out zurück; für Git braucht der Agent später ein GitHub-Token (Anfrage `request_github_token`).")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            Text("Wo liegt die Session? Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -322,7 +340,7 @@ struct CreateSessionSheet: View {
                     Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 560)
+        }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
         .task(id: name) {
             // Link mit dem Session-Namen vorbelegen (Token heißt dann bergfried-<name>)
             let q = valid ? name : "neu"

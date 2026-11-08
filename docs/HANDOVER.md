@@ -65,6 +65,8 @@ Alles ist auf `main` (GitHub: `DevertNet/bergfried`, privat). `make test` ist gr
 - **Sessionnamen:** neue max. 24 Zeichen, `base` reserviert (Kollision mit Basis-VM-Namen, Unix-Socket-Pfadlänge).
 - Go 1.26 (Docker-Image `golang:1.26`), reines Go (`modernc.org/sqlite`, kein cgo).
 
+**Begriff:** Für Nutzer heißen Sessions „Sandboxes“ (nur Oberflächen- und Meldungstexte); im Code, in der API und in der DB bleibt `session`.
+
 ## Git und CI (kurz)
 **Ein Fine-grained GitHub-Token pro Session**, in der VM (`~/.git-credentials`, `credential.helper store`) für alle Git-Aktionen per HTTPS und für Actions; kein Umbiegen von URLs, kein `gh`.
 Anlegen über vorausgefüllten Link (Repo-Auswahl nur als Hinweis möglich): beim Erstellen einer Session mit Repo (Token Pflicht) oder per Agent-Anfrage `request_github_token` bei `permission denied`.

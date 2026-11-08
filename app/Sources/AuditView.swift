@@ -10,7 +10,7 @@ struct AuditView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                TextField("Filter (Session, Agent, Ereignis, Details …)", text: $query).textFieldStyle(.roundedBorder).onSubmit { Task { await load() } }
+                TextField("Filter (Sandbox, Agent, Ereignis, Details …)", text: $query).textFieldStyle(.roundedBorder).onSubmit { Task { await load() } }
                 Button("Aktualisieren") { Task { await load() } }
                 Button("CSV exportieren …") { Task { await export() } }
             }.padding(8)
@@ -18,7 +18,7 @@ struct AuditView: View {
                 TableColumn("Zeit") { Text(Date(timeIntervalSince1970: TimeInterval($0.tsUnix)).formatted(date: .abbreviated, time: .standard)) }.width(150)
                 TableColumn("Akteur") { Text($0.actor) }.width(60)
                 TableColumn("Ereignis") { Text($0.event).foregroundStyle(color($0.event)) }.width(150)
-                TableColumn("Session/Agent") { Text($0.session.isEmpty ? "" : "\($0.session)/\($0.agent)") }.width(120)
+                TableColumn("Sandbox/Agent") { Text($0.session.isEmpty ? "" : "\($0.session)/\($0.agent)") }.width(120)
                 TableColumn("Details") { Text($0.detail).lineLimit(2).textSelection(.enabled) }
             }
         }

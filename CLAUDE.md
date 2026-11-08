@@ -6,6 +6,9 @@ Der Nutzer schreibt Deutsch – Antworten, Doku und Commit-Nachrichten auf Deuts
 **Zuerst lesen:** [`docs/HANDOVER.md`](docs/HANDOVER.md) (Stand, Entscheidungen, Fallstricke), dann [`docs/ROADMAP.md`](docs/ROADMAP.md);
 Ursprungsauftrag: [`docs/SPEC.md`](docs/SPEC.md); nächster Schritt: [`docs/M5-PLAN.md`](docs/M5-PLAN.md).
 
+## Begriffe
+In der App und in Texten für den Nutzer heißen Sessions **Sandboxes** („Neue Sandbox“). Intern bleibt es bei `session` (Code, API-Pfade `/v1/sessions`, DB, Ordner `~/.bergfried/sessions`).
+
 ## Vorgehen
 - **Plan-first:** vor größeren Teilen kurz den Plan (Dateien, Befehle, Tests) zeigen und nachfragen, wenn etwas unklar ist.
 - Kleine, testbare Schritte; zu jedem Meilenstein eine kurze Anleitung zum manuellen Test in `docs/mN-test.md`.

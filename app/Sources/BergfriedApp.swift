@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sessions = "Sessions", requests = "Anfragen", audit = "Protokoll", settings = "Einstellungen"
+    case sessions = "Sandboxes", requests = "Anfragen", audit = "Protokoll", settings = "Einstellungen"
     var id: String { rawValue }
-    var icon: String { ["Sessions": "shield", "Anfragen": "bell", "Protokoll": "list.bullet.rectangle", "Einstellungen": "gearshape"][rawValue] ?? "circle" }
+    var icon: String { ["Sandboxes": "shield", "Anfragen": "bell", "Protokoll": "list.bullet.rectangle", "Einstellungen": "gearshape"][rawValue] ?? "circle" }
 }
 
 struct ContentView: View {

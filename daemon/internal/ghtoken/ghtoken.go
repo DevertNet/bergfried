@@ -89,7 +89,7 @@ func Link(session string) string {
 	}
 	q := url.Values{}
 	q.Set("name", name)
-	q.Set("description", "Bergfried-Session "+session+": Git (clone/push/pull) und GitHub Actions für den Agent in der VM")
+	q.Set("description", "Bergfried-Sandbox "+session+": Git (clone/push/pull) und GitHub Actions für den Agent in der VM")
 	q.Set("expires_in", fmt.Sprint(ExpiresDays))
 	q.Set("contents", "write")
 	q.Set("pull_requests", "write")
@@ -99,7 +99,7 @@ func Link(session string) string {
 }
 
 // Hint: Text zur Repo-Auswahl (nicht vorbelegbar).
-const Hint = "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die Repos dieser Session auswählen."
+const Hint = "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die Repos dieser Sandbox auswählen."
 
 // Detail: Anzeige in der App (requests.extra).
 type Detail struct {
@@ -203,11 +203,11 @@ func (s *Service) Request(ctx context.Context, session, agent, repo, reason stri
 	if has && repo != "" {
 		tok, _ := s.Tokens.Get(session)
 		if err := s.CheckRepo(ctx, tok, gr); err == nil {
-			return true, "Das Token der Session hat bereits Zugriff auf " + repo + ".", nil
+			return true, "Das Token der Sandbox hat bereits Zugriff auf " + repo + ".", nil
 		}
 	}
 	if has && repo == "" {
-		return true, "Für diese Session ist bereits ein Token hinterlegt. Nenne das Repo (owner/name), auf das der Zugriff fehlt.", nil
+		return true, "Für diese Sandbox ist bereits ein Token hinterlegt. Nenne das Repo (owner/name), auf das der Zugriff fehlt.", nil
 	}
 	d := Detail{Repo: repo, HasToken: has, Link: Link(session), Hint: Hint}
 	extra, _ := json.Marshal(d)

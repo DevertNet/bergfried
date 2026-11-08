@@ -64,7 +64,7 @@ struct PendingRow: View {
             if r.kind == "ssh" { Text("möchte per SSH auf **\(r.path)** zugreifen") }
             else if r.kind == "ghtoken" {
                 if (r.github?.repo ?? "").isEmpty { Text("braucht ein **GitHub-Token** für Git und Actions") }
-                else if r.github?.hasToken == true { Text("braucht Zugriff auf das Repo **\(r.path)** (das Token der Session erreicht es noch nicht)") }
+                else if r.github?.hasToken == true { Text("braucht Zugriff auf das Repo **\(r.path)** (das Token der Sandbox erreicht es noch nicht)") }
                 else { Text("braucht ein **GitHub-Token** und Zugriff auf **\(r.path)**") }
             }
             else { Text("möchte \(r.kind == "folder" ? "den Ordner" : "die Datei") **~/\(r.path)** (\(r.files) Datei(en), \(formatBytes(r.bytes)))") }
@@ -107,7 +107,7 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text("Session \(g.session) · \(g.agent.isEmpty ? "alle Agents" : "Agent " + g.agent) · \(g.perConnection ? "jede Verbindung einzeln" : "still im Zeitfenster")").font(.caption).foregroundStyle(.secondary)
+                Text("Sandbox \(g.session) · \(g.agent.isEmpty ? "alle Agents" : "Agent " + g.agent) · \(g.perConnection ? "jede Verbindung einzeln" : "still im Zeitfenster")").font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -170,8 +170,8 @@ struct SSHDecisionSheet: View {
                     }
                 }
             }
-            Toggle("Für alle Agents der Session", isOn: $allAgents)
-            Text("Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Session.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Für alle Agents der Sandbox", isOn: $allAgents)
+            Text("Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Sandbox.").font(.caption).foregroundStyle(.secondary)
             Toggle("Jede Verbindung einzeln bestätigen (in der App noch nicht verfügbar)", isOn: $perConn).disabled(true)
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
@@ -217,7 +217,7 @@ struct GitHubTokenSheet: View {
             if let repo = d?.repo, !repo.isEmpty { Text("Repo: **\(repo)**") }
             Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
             if hasToken {
-                Text("Die Session hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.session)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
+                Text("Die Sandbox hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.session)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
                 Button("Token-Liste bei GitHub öffnen …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
                 Text("Danach „Zugriff prüfen“ – oder ein neues Token einfügen, falls du lieber eins neu anlegst:").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -250,12 +250,12 @@ struct GitHubTokenSteps: View {
     @Binding var token: String
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("1. Token bei GitHub anlegen (Formular ist vorausgefüllt: Ablauf 1 Jahr, Rechte Contents, Pull requests, Actions):").font(.callout)
+            Text("1. Token bei GitHub anlegen (Formular ist vorausgefüllt: Ablauf 1 Jahr, Rechte Contents, Pull requests, Actions):").font(.callout).fixedSize(horizontal: false, vertical: true)
             Button("Token bei GitHub anlegen …") { if let u = URL(string: link) { NSWorkspace.shared.open(u) } }.disabled(link.isEmpty)
-            Label(hint.isEmpty ? "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die benötigten Repos auswählen." : hint, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
-            Text("2. „Generate token“ klicken und den Wert hier einfügen (GitHub zeigt ihn nur einmal):").font(.callout)
+            Label(hint.isEmpty ? "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die benötigten Repos auswählen." : hint, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            Text("2. „Generate token“ klicken und den Wert hier einfügen (GitHub zeigt ihn nur einmal):").font(.callout).fixedSize(horizontal: false, vertical: true)
             SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
-            Text("Das Token liegt anschließend in der VM; der Agent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.").font(.caption).foregroundStyle(.secondary)
+            Text("Das Token liegt anschließend in der VM; der Agent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

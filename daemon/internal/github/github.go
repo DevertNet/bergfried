@@ -29,7 +29,7 @@ func (s StaticToken) Token() (string, error) {
 	return string(s), nil
 }
 
-var ErrNoToken = errors.New("für diese Session ist kein GitHub-Token hinterlegt – rufe request_github_token auf")
+var ErrNoToken = errors.New("für diese Sandbox ist kein GitHub-Token hinterlegt – rufe request_github_token auf")
 
 type Repo struct{ Owner, Name string }
 

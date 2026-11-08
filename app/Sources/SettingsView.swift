@@ -41,7 +41,7 @@ struct SettingsView: View {
                         }.disabled(model.running["base"] != nil)
                         if let l = model.running["base"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
                     }
-                    Text("Neue Sessions werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sessions.").font(.caption).foregroundStyle(.secondary)
+                    Text("Neue Sandboxes werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sandboxes.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section("Benachrichtigungen bei Anfragen") {
@@ -58,7 +58,7 @@ struct SettingsView: View {
                 Text("Zusätzlich springt das Dock-Symbol, und das Menüleisten-Symbol sowie das Dock-Badge zeigen die Zahl offener Anfragen.").font(.caption).foregroundStyle(.secondary)
             }
             Section("GitHub") {
-                Text("Das GitHub-Token gehört zur Session: Es wird beim Anlegen einer Session mit Git-Repo abgefragt oder auf Anfrage des Agents (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.").font(.callout).foregroundStyle(.secondary)
+                Text("Das GitHub-Token gehört zur Sandbox: Es wird beim Anlegen einer Sandbox mit Git-Repo abgefragt oder auf Anfrage des Agents (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.").font(.callout).foregroundStyle(.secondary)
             }
             Section("Terminal") {
                 Picker("Terminal-App für „Terminal“ und „Login“", selection: $termChoice) {
@@ -74,7 +74,7 @@ struct SettingsView: View {
                     LabeledContent("Änderungen") { Text("Revision \(t.revision)") }
                 }
                 TextEditor(text: $tplText).font(.body.monospaced()).frame(height: 260).border(.secondary.opacity(0.4))
-                Text("Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt: keine Mounts (Home!), kein forwardAgent, kein Docker-Socket, die beiden Bergfried-Sockets bleiben. Nach dem Speichern wird eine neue Basis-VM fällig (oben „Jetzt bauen“); bestehende Sessions bleiben unverändert.").font(.caption).foregroundStyle(.secondary)
+                Text("Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt: keine Mounts (Home!), kein forwardAgent, kein Docker-Socket, die beiden Bergfried-Sockets bleiben. Nach dem Speichern wird eine neue Basis-VM fällig (oben „Jetzt bauen“); bestehende Sandboxes bleiben unverändert.").font(.caption).foregroundStyle(.secondary)
                 if let tplErr { Label(tplErr, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout).textSelection(.enabled) }
                 if let t = tpl { ForEach(t.warnings, id: \.self) { Label($0, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout) } }
                 if let tplMsg { Text(tplMsg).font(.callout) }
@@ -84,7 +84,7 @@ struct SettingsView: View {
                     Button("Auf mitgelieferte Vorlage zurücksetzen", role: .destructive) { Task { await resetTemplate() } }
                 }
             }
-            Section("Wo liegen Sessions?") {
+            Section("Wo liegen Sandboxes?") {
                 Text("VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sessions/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried").font(.callout).textSelection(.enabled)
             }
             Section("Sperrliste (nie im Index, nie freigebbar)") {
