@@ -2,6 +2,7 @@
 package lima
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,9 +23,13 @@ func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	if bin == "" {
 		bin = "limactl"
 	}
-	out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	// stdout und stderr getrennt: Warnungen auf stderr dürfen die JSON-Ausgabe nicht stören.
+	cmd := exec.CommandContext(ctx, bin, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return out, fmt.Errorf("limactl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return out, fmt.Errorf("limactl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()+string(out)))
 	}
 	return out, nil
 }
