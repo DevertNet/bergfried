@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,8 +17,7 @@ import (
 )
 
 const (
-	TemplateVersion = 3
-	BaseName        = "bergfried-base-v3"
+	TemplateVersion = 3 // Start-Revision der mitgelieferten Vorlage
 	tmuxSession     = "bf"
 )
 
@@ -30,12 +30,42 @@ func (e ErrUnpushed) Error() string {
 	return "ungepushte Änderungen in der VM:\n" + e.Report + "\n(mit --force trotzdem löschen)"
 }
 
+// Importer kopiert einen Mac-Ordner als tar-Strom (siehe package importer).
+type Importer interface {
+	Preview(path string) (files, bytes int64, err error)
+	Stream(path string, w io.Writer) (files, bytes int64, err error)
+}
+
 type Manager struct {
+	Imp      Importer
 	L        lima.Client
 	S        *store.Store
 	Home     string // Datenverzeichnis, z. B. ~/.bergfried
-	Template string // Pfad zu vm/bergfried.yaml
+	Template string // Pfad zur Vorlage (bei Tpl != nil: Tpl.Path())
+	Tpl      *TemplateStore
 	Actor    string
+}
+
+// Rev: Vorlagen-Revision (Zähler der Änderungen, nur zur Anzeige).
+func (m *Manager) Rev() int {
+	if m.Tpl != nil {
+		return m.Tpl.Rev()
+	}
+	return TemplateVersion
+}
+
+func (m *Manager) BaseName() string {
+	if m.Tpl != nil {
+		return "bergfried-base-" + m.Tpl.Hash()
+	}
+	return fmt.Sprintf("bergfried-base-v%d", TemplateVersion)
+}
+
+func (m *Manager) templatePath() string {
+	if m.Tpl != nil {
+		return m.Tpl.Path()
+	}
+	return m.Template
 }
 
 func ValidName(n string) error {
@@ -68,7 +98,8 @@ func (m *Manager) exists(ctx context.Context, vm string) (bool, error) {
 
 // BuildBase baut die Basis-VM (ohne Login!) aus der Vorlage und stoppt sie.
 func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
-	ok, err := m.exists(ctx, BaseName)
+	base := m.BaseName()
+	ok, err := m.exists(ctx, base)
 	if err != nil {
 		return err
 	}
@@ -76,20 +107,30 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
 		if !rebuild {
 			return nil
 		}
-		if err := m.L.Delete(ctx, BaseName); err != nil {
+		if err := m.L.Delete(ctx, base); err != nil {
 			return err
 		}
 	}
-	if _, err := m.L.R.Run(ctx, "create", "--name="+BaseName, "--tty=false", m.Template); err != nil {
+	if _, err := m.L.R.Run(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
 		return err
 	}
-	if err := m.L.Start(ctx, BaseName); err != nil {
+	if err := m.L.Start(ctx, base); err != nil {
 		return err
 	}
-	if err := m.L.Stop(ctx, BaseName); err != nil {
+	if err := m.L.Stop(ctx, base); err != nil {
 		return err
 	}
-	m.audit("base.build", "", "", BaseName)
+	m.audit("base.build", "", "", base)
+	// Ältere Basis-VMs aufräumen (Sessions sind unabhängige Klone).
+	if vms, err := m.L.List(ctx); err == nil {
+		for _, v := range vms {
+			if strings.HasPrefix(v.Name, "bergfried-base-") && v.Name != base {
+				if err := m.L.Delete(ctx, v.Name); err == nil {
+					m.audit("base.remove_old", "", "", v.Name)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -130,9 +171,36 @@ claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/ber
 	return err
 }
 
-func (m *Manager) Create(ctx context.Context, name, repo string) error {
+// importFolder streamt den Ordner in ~/work/main der VM.
+func (m *Manager) importFolder(ctx context.Context, vm, path string) (files, bytes int64, err error) {
+	pr, pw := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var serr error
+		files, bytes, serr = m.Imp.Stream(path, pw)
+		pw.CloseWithError(serr)
+	}()
+	_, err = m.L.ShellStdin(ctx, vm, pr, "bash", "-c", "mkdir -p ~/work/main && tar -xf - -C ~/work/main")
+	pr.Close()
+	<-done
+	return files, bytes, err
+}
+
+func (m *Manager) Create(ctx context.Context, name, repo, importPath string) error {
 	if err := ValidName(name); err != nil {
 		return err
+	}
+	if repo != "" && importPath != "" {
+		return fmt.Errorf("Git-Repo und Ordner-Import schließen sich aus")
+	}
+	if importPath != "" {
+		if m.Imp == nil {
+			return fmt.Errorf("Import nicht verfügbar")
+		}
+		if _, _, err := m.Imp.Preview(importPath); err != nil {
+			return fmt.Errorf("Import: %w", err)
+		}
 	}
 	vm := VMName(name)
 	if ok, err := m.exists(ctx, vm); err != nil {
@@ -150,7 +218,7 @@ func (m *Manager) Create(ctx context.Context, name, repo string) error {
 			return err
 		}
 	}
-	if _, err := m.L.R.Run(ctx, "clone", BaseName, vm, "--tty=false",
+	if _, err := m.L.R.Run(ctx, "clone", m.BaseName(), vm, "--tty=false",
 		"--mount-only", in, "--mount-only", out+":w"); err != nil {
 		return err
 	}
@@ -176,7 +244,14 @@ func (m *Manager) Create(ctx context.Context, name, repo string) error {
 			return fmt.Errorf("git clone: %w", err)
 		}
 	}
-	if err := m.S.AddSession(store.Session{Name: name, VM: vm, Repo: repo, TemplateVersion: TemplateVersion, Created: time.Now()}); err != nil {
+	if importPath != "" {
+		files, bytes, err := m.importFolder(ctx, vm, importPath)
+		if err != nil {
+			return fmt.Errorf("Import: %w", err)
+		}
+		m.audit("session.import", name, "", fmt.Sprintf("%s files=%d bytes=%d", importPath, files, bytes))
+	}
+	if err := m.S.AddSession(store.Session{Name: name, VM: vm, Repo: repo, TemplateVersion: m.Rev(), Created: time.Now()}); err != nil {
 		return err
 	}
 	m.audit("session.create", name, "", repo)

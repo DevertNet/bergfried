@@ -6,6 +6,10 @@ struct SettingsView: View {
     @Local private var names = ""
     @Local private var info: String?
     @Local private var daemonInstalled = DaemonController.installed
+    @Local private var tpl: TemplateInfo?
+    @Local private var tplText = ""
+    @Local private var tplMsg: String?
+    @Local private var tplErr: String?
 
     var body: some View {
         Form {
@@ -38,6 +42,25 @@ struct SettingsView: View {
                     Text("Neue Sessions werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sessions.").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            Section("VM-Vorlage (bergfried.yaml)") {
+                if let t = tpl {
+                    LabeledContent("Basis") { Text("\(t.baseName) – \(t.baseReady ? "gebaut" : "noch nicht gebaut")") }
+                    LabeledContent("Änderungen") { Text("Revision \(t.revision)") }
+                }
+                TextEditor(text: $tplText).font(.body.monospaced()).frame(height: 260).border(.secondary.opacity(0.4))
+                Text("Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt: keine Mounts (Home!), kein forwardAgent, kein Docker-Socket, die beiden Bergfried-Sockets bleiben. Nach dem Speichern wird eine neue Basis-VM fällig (oben „Jetzt bauen“); bestehende Sessions bleiben unverändert.").font(.caption).foregroundStyle(.secondary)
+                if let tplErr { Label(tplErr, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+                if let t = tpl { ForEach(t.warnings, id: \.self) { Label($0, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout) } }
+                if let tplMsg { Text(tplMsg).font(.callout) }
+                HStack {
+                    Button("Prüfen und speichern") { Task { await saveTemplate() } }.disabled(tpl == nil || tplText == tpl?.yaml)
+                    Button("Änderungen verwerfen") { tplText = tpl?.yaml ?? ""; tplErr = nil; tplMsg = nil }.disabled(tplText == tpl?.yaml)
+                    Button("Auf mitgelieferte Vorlage zurücksetzen", role: .destructive) { Task { await resetTemplate() } }
+                }
+            }
+            Section("Wo liegen Sessions?") {
+                Text("VM-Platte (Code, Docker-Daten): ~/.lima/bf-<name>\nAustausch-Ordner: ~/.bergfried/sessions/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried").font(.callout).textSelection(.enabled)
+            }
             Section("Sperrliste (nie im Index, nie freigebbar)") {
                 Text("Pfade relativ zum Home, eine pro Zeile. Die ersten vier Standardeinträge (.ssh, Library, .config, .mcp-einfach123-secrets) sind fest.").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $paths).font(.body.monospaced()).frame(height: 120).border(.secondary.opacity(0.4))
@@ -53,13 +76,36 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { await load() }
+        .task { await load(); await loadTemplate() }
     }
 
     func load() async {
         if let b: Blocklist = try? await model.api.get("/v1/blocklist") {
             paths = b.paths.joined(separator: "\n"); names = b.names.joined(separator: "\n")
         }
+    }
+
+    func loadTemplate() async {
+        if let t: TemplateInfo = try? await model.api.get("/v1/template") { tpl = t; tplText = t.yaml }
+    }
+
+    func saveTemplate() async {
+        tplErr = nil; tplMsg = nil
+        do {
+            let t: TemplateInfo = try await model.api.send("PUT", "/v1/template", YAMLBody(yaml: tplText))
+            tpl = t; tplText = t.yaml
+            tplMsg = t.baseReady ? "Gespeichert." : "Gespeichert. Die Basis-VM muss neu gebaut werden (Abschnitt „Basis-VM“)."
+            await model.refresh()
+        } catch { tplErr = error.localizedDescription }
+    }
+
+    func resetTemplate() async {
+        tplErr = nil; tplMsg = nil
+        do {
+            let t: TemplateInfo = try await model.api.send("POST", "/v1/template/reset", Optional<String>.none)
+            tpl = t; tplText = t.yaml; tplMsg = "Mitgelieferte Vorlage wiederhergestellt."
+            await model.refresh()
+        } catch { tplErr = error.localizedDescription }
     }
 
     func save() async {

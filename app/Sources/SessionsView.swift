@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SessionsView: View {
     @EnvironmentObject var model: AppModel
@@ -97,24 +98,61 @@ struct CreateSessionSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @Local private var name = ""
+    @Local private var source = 0            // 0 leer, 1 Git-Repo, 2 Ordner
     @Local private var repo = ""
+    @Local private var folder = ""
+    @Local private var preview: ImportPreview?
+    @Local private var previewError: String?
     var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil }
+    var sourceOK: Bool { source != 2 || (preview != nil && previewError == nil) }
 
     var body: some View {
         Form {
+            Text("Neue Session").font(.headline)
             TextField("Name (a–z, 0–9, -)", text: $name)
-            TextField("Git-Repo (optional, https://…)", text: $repo)
-            Text("Eine Session ist ein Projekt in einer eigenen VM. Der Code wird per git clone in die VM geholt.").font(.caption).foregroundStyle(.secondary)
+            Picker("Quelle für den Code", selection: $source) {
+                Text("Leer starten").tag(0)
+                Text("Git-Repo klonen").tag(1)
+                Text("Bestehenden Ordner kopieren").tag(2)
+            }
+            if source == 1 { TextField("Git-URL (https://…)", text: $repo) }
+            if source == 2 {
+                HStack {
+                    Text(folder.isEmpty ? "Kein Ordner gewählt" : folder).lineLimit(1).truncationMode(.middle).foregroundStyle(folder.isEmpty ? .secondary : .primary)
+                    Spacer()
+                    Button("Ordner wählen …") { chooseFolder() }
+                }
+                if let p = preview { Label("\(p.files) Dateien, \(formatBytes(p.bytes)) werden kopiert", systemImage: "doc.on.doc").font(.callout) }
+                if let e = previewError { Label(e, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout) }
+                Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Ergebnisse kommen per git push oder über shared/out zurück.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Wo liegt die Session? Die VM-Platte liegt unter ~/.lima/bf-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Erstellen") {
-                    let n = name, r = repo
+                    let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r)) { model.setBanner(e) } }
-                }.disabled(!valid).keyboardShortcut(.defaultAction)
+                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r, importPath: f)) { model.setBanner(e) } }
+                }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 440)
+        }.padding(20).frame(width: 520)
+    }
+
+    func chooseFolder() {
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true; p.canChooseFiles = false; p.allowsMultipleSelection = false
+        p.directoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        p.prompt = "Auswählen"
+        p.message = "Ordner im Home-Verzeichnis, der in die VM kopiert werden soll"
+        guard p.runModal() == .OK, let url = p.url else { return }
+        folder = url.path; preview = nil; previewError = nil
+        Task {
+            do { preview = try await model.api.send("POST", "/v1/import/preview", PathBody(path: url.path), as: ImportPreview.self) }
+            catch { previewError = error.localizedDescription }
+        }
     }
 }
 

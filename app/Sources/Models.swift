@@ -103,7 +103,18 @@ struct SSHDecideBody: Encodable {
 }
 struct IDBody: Encodable { var id: Int64 }
 struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
-struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false }
+struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = "" }
+struct PathBody: Encodable { var path: String }
+struct ImportPreview: Codable { var files: Int64; var bytes: Int64 }
+struct YAMLBody: Encodable { var yaml: String }
+struct TemplateInfo: Codable {
+    var yaml: String
+    var revision: Int
+    var baseName: String
+    var baseReady: Bool
+    var path: String
+    var warnings: [String]
+}
 struct AgentBody: Encodable { var session: String; var agent: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }

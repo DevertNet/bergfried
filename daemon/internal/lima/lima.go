@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +35,37 @@ func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
+// StdinRunner: optionale Fähigkeit des Runners, Eingabedaten an limactl zu streamen.
+type StdinRunner interface {
+	RunStdin(ctx context.Context, stdin io.Reader, args ...string) ([]byte, error)
+}
+
+func (r ExecRunner) RunStdin(ctx context.Context, stdin io.Reader, args ...string) ([]byte, error) {
+	bin := r.Bin
+	if bin == "" {
+		bin = "limactl"
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Stdin = stdin
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return out, fmt.Errorf("limactl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()+string(out)))
+	}
+	return out, nil
+}
+
 type Client struct{ R Runner }
+
+// ShellStdin führt ein Kommando in der VM aus und speist stdin ein.
+func (c Client) ShellStdin(ctx context.Context, name string, stdin io.Reader, cmd ...string) ([]byte, error) {
+	sr, ok := c.R.(StdinRunner)
+	if !ok {
+		return nil, fmt.Errorf("Runner unterstützt kein stdin")
+	}
+	return sr.RunStdin(ctx, stdin, append([]string{"shell", "--tty=false", name, "--"}, cmd...)...)
+}
 
 type Instance struct {
 	Name   string `json:"name"`

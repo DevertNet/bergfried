@@ -154,6 +154,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
+	mux.HandleFunc("POST /v1/import/preview", s.importPreview)
+	mux.HandleFunc("GET /v1/template", s.getTemplate)
+	mux.HandleFunc("PUT /v1/template", s.putTemplate)
+	mux.HandleFunc("POST /v1/template/reset", s.resetTemplate)
 	mux.HandleFunc("GET /v1/requests", s.requests)
 	mux.HandleFunc("POST /v1/requests/decide", s.decide)
 	mux.HandleFunc("POST /v1/ssh/decide", s.sshDecide)
@@ -198,13 +202,13 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	base := false
 	for _, v := range vms {
-		if v.Name == session.BaseName {
+		if v.Name == s.M.BaseName() {
 			base = true
 		}
 	}
 	ss, _ := s.M.S.ListSessions()
-	writeJSON(w, 200, map[string]any{"version": Version, "base_ready": base, "base_name": session.BaseName,
-		"template_version": session.TemplateVersion, "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sessions": len(ss)})
+	writeJSON(w, 200, map[string]any{"version": Version, "base_ready": base, "base_name": s.M.BaseName(),
+		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sessions": len(ss)})
 }
 
 func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +258,7 @@ type nameReq struct {
 	Name    string `json:"name"`
 	Repo    string `json:"repo"`
 	Force   bool   `json:"force"`
+	Import  string `json:"import_path"`
 	Session string `json:"session"`
 	Agent   string `json:"agent"`
 }
@@ -268,7 +273,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	writeJSON(w, 202, s.job("session.create", func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo) }))
+	writeJSON(w, 202, s.job("session.create", func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import) }))
 }
 
 func (s *Server) simple(kind string, f func(context.Context, string, bool) error) http.HandlerFunc {
@@ -318,6 +323,102 @@ func (s *Server) jobGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, cp)
+}
+
+func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Path string `json:"path"`
+	}
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if s.M.Imp == nil {
+		fail(w, 500, fmt.Errorf("Import nicht verfügbar"))
+		return
+	}
+	files, bytes, err := s.M.Imp.Preview(q.Path)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"files": files, "bytes": bytes})
+}
+
+type templateJ struct {
+	YAML      string   `json:"yaml"`
+	Revision  int      `json:"revision"`
+	BaseName  string   `json:"base_name"`
+	BaseReady bool     `json:"base_ready"`
+	Path      string   `json:"path"`
+	Warnings  []string `json:"warnings"`
+}
+
+func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, error) {
+	y, err := s.M.Tpl.Read()
+	if err != nil {
+		return templateJ{}, err
+	}
+	vms, _ := s.M.L.List(r.Context())
+	ready := false
+	for _, v := range vms {
+		if v.Name == s.M.BaseName() {
+			ready = true
+		}
+	}
+	if warnings == nil {
+		warnings = []string{}
+	}
+	return templateJ{YAML: y, Revision: s.M.Rev(), BaseName: s.M.BaseName(), BaseReady: ready, Path: s.M.Tpl.Path(), Warnings: warnings}, nil
+}
+
+func (s *Server) getTemplate(w http.ResponseWriter, r *http.Request) {
+	y, _ := s.M.Tpl.Read()
+	warnings, _ := session.CheckTemplate(y)
+	t, err := s.templateState(r, warnings)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, t)
+}
+
+func (s *Server) putTemplate(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		YAML string `json:"yaml"`
+	}
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	warnings, err := s.M.Tpl.Save(r.Context(), q.YAML)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "template.save", "", "", fmt.Sprintf("revision=%d", s.M.Rev()))
+	t, err := s.templateState(r, warnings)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, t)
+}
+
+func (s *Server) resetTemplate(w http.ResponseWriter, r *http.Request) {
+	if err := s.M.Tpl.Reset(); err != nil {
+		fail(w, 500, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "template.reset", "", "", fmt.Sprintf("revision=%d", s.M.Rev()))
+	y, _ := s.M.Tpl.Read()
+	warnings, _ := session.CheckTemplate(y)
+	t, err := s.templateState(r, warnings)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, t)
 }
 
 func (s *Server) requests(w http.ResponseWriter, r *http.Request) {

@@ -17,6 +17,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/importer"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/notify"
@@ -31,7 +32,7 @@ import (
 const usage = `bergfriedd – Bergfried-CLI (M1)
 
   base build [--rebuild]        Basis-VM aus der Vorlage bauen
-  create <name> [--repo URL]    Session aus Basis-VM klonen
+  create <name> [--repo URL | --import ORDNER]   Session aus Basis-VM klonen
   start|stop <name>
   delete <name> [--force]       warnt bei ungepushten Commits
   list                          Sessions mit VM-Status und Agents
@@ -75,6 +76,13 @@ func run(cmd string, args []string) error {
 	}
 	m := &session.Manager{L: lima.Client{R: lima.ExecRunner{}}, S: st, Home: home,
 		Template: getenv("BERGFRIED_TEMPLATE", "vm/bergfried.yaml"), Actor: "cli"}
+	// Vorlage im Datenverzeichnis (änderbar in der App); CLI und Daemon nutzen dieselbe Revision.
+	ts := session.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
+	if err := ts.Ensure(); err == nil {
+		m.Tpl = &ts
+	} else if cmd == "base" || cmd == "create" || cmd == "serve" {
+		return fmt.Errorf("Vorlage: %w", err)
+	}
 	need := func(n int) error {
 		if len(args) < n {
 			return errors.New("zu wenige Argumente\n\n" + usage)
@@ -96,8 +104,16 @@ func run(cmd string, args []string) error {
 		}
 		fs := flag.NewFlagSet("create", flag.ExitOnError)
 		repo := fs.String("repo", "", "Git-URL, wird nach ~/work/main geklont")
+		imp := fs.String("import", "", "bestehender Ordner im Home, wird nach ~/work/main KOPIERT (Sperrliste, ohne .env/Schlüssel)")
 		_ = fs.Parse(args[1:])
-		return m.Create(ctx, args[0], *repo)
+		if *imp != "" {
+			bl, err := index.LoadBlocklist(filepath.Join(home, "blocklist.json"))
+			if err != nil {
+				return err
+			}
+			m.Imp = importer.Importer{Home: h, BL: func() index.Blocklist { return bl }}
+		}
+		return m.Create(ctx, args[0], *repo, *imp)
 	case "start":
 		if err := need(1); err != nil {
 			return err
@@ -250,6 +266,7 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
 	am := *m
 	am.Actor = "app"
 	apiSrv := &api.Server{M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}

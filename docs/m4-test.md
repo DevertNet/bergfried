@@ -21,6 +21,18 @@ open app/build/Bergfried.app
 7. **Mitteilungen** mit Aktions-Buttons (Erlauben/Ablehnen, bei SSH „Erlauben (Standard)“ nur bei bekanntem Host und Standard-Key).
    Beim ersten Start fragt macOS nach der Mitteilungs-Erlaubnis.
 
+## Ergänzungen
+- **Vorlage bearbeiten:** Einstellungen → „VM-Vorlage“. Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt
+  (keine Mounts/Home, kein `forwardAgent`, kein Docker-Socket, beide Bergfried-Sockets bleiben). Die Basis-VM heißt
+  `bergfried-base-<Inhalts-Hash>`: geänderter Inhalt = neue Basis (einmal bauen), Zurücksetzen nutzt die vorhandene wieder.
+  Bestehende Sessions bleiben unverändert; ältere Basis-VMs werden nach einem Neubau entfernt. Datei: `~/.bergfried/template/bergfried.yaml`.
+- **Bestehenden Ordner nutzen:** „Neue Session“ → Quelle „Bestehenden Ordner kopieren“ (CLI: `create <name> --import ORDNER`).
+  Der Ordner wird **kopiert** (nicht gemountet) nach `~/work/main` der VM: nur unterhalb des Homes, nie das Home selbst, nie gesperrte Pfade;
+  ohne `.env`/Schlüssel/Symlinks/`node_modules`/Caches; Zugangsdaten in `.git/config` werden entfernt. Vorschau zeigt Dateien und Größe vorab.
+  Ergebnisse kommen per `git push` oder über `shared/out` zurück.
+- **Wo liegen Sessions?** VM-Platte `~/.lima/bf-<name>`, Austausch `~/.bergfried/sessions/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
+- **Icon:** `app/icon/make-icon.swift` zeichnet es, `app/icon/AppIcon.icns` liegt im Repo.
+
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
 - Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).
