@@ -32,6 +32,7 @@ type Server struct {
 	Ix            *index.Index
 	BlocklistFile string
 	Upstream      string
+	Mon           *Monitor
 
 	mu   sync.Mutex
 	jobs map[int64]*Job
@@ -41,6 +42,7 @@ type Server struct {
 type Job struct {
 	ID    int64  `json:"id"`
 	Kind  string `json:"kind"`
+	Step  string `json:"step,omitempty"`
 	State string `json:"state"` // running | done | failed
 	Error string `json:"error,omitempty"`
 }
@@ -55,7 +57,12 @@ func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
 	s.jobs[j.ID] = j
 	s.mu.Unlock()
 	go func() {
-		err := f(context.Background())
+		ctx := session.WithProgress(context.Background(), func(msg string) {
+			s.mu.Lock()
+			j.Step = msg
+			s.mu.Unlock()
+		})
+		err := f(ctx)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err != nil {
@@ -85,6 +92,9 @@ func decode(r *http.Request, v any) error {
 type agentJ struct {
 	Name     string `json:"name"`
 	Worktree string `json:"worktree"`
+	Window   bool   `json:"window"`
+	RC       bool   `json:"rc"`
+	RCURL    string `json:"rc_url"`
 }
 type sessionJ struct {
 	Name            string   `json:"name"`
@@ -97,6 +107,11 @@ type sessionJ struct {
 	Memory          int64    `json:"memory"`
 	Disk            int64    `json:"disk"`
 	Agents          []agentJ `json:"agents"`
+	ClaudeLoggedIn  *bool    `json:"claude_logged_in"`
+	HostDiskUsed    int64    `json:"host_disk_used"`
+	GuestDiskUsed   int64    `json:"guest_disk_used"`
+	GuestDiskSize   int64    `json:"guest_disk_size"`
+	ProbeError      string   `json:"probe_error,omitempty"`
 	ActiveGrants    int      `json:"active_grants"`
 	Pending         int      `json:"pending_requests"`
 }
@@ -152,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sessions/stop", s.simple("session.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sessions/delete", s.simple("session.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
+	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
 	mux.HandleFunc("POST /v1/import/preview", s.importPreview)
@@ -235,9 +251,19 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
 		}
+		var ps SessionState
+		var havePS bool
+		if s.Mon != nil && j.Status == "Running" {
+			ps, havePS = s.Mon.Get(x.Name)
+		}
+		if havePS {
+			j.ClaudeLoggedIn, j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.LoggedIn, ps.GuestUsed, ps.GuestSize, ps.Err
+		}
+		j.HostDiskUsed = hostDiskUsed(x.VM)
 		ags, _ := s.M.S.ListAgents(x.Name)
 		for _, a := range ags {
-			j.Agents = append(j.Agents, agentJ{a.Name, a.Worktree})
+			as := ps.Agents[a.Name]
+			j.Agents = append(j.Agents, agentJ{a.Name, a.Worktree, as.Window, as.RC, as.URL})
 		}
 		for _, g := range grants {
 			if g.Session == x.Name {
@@ -302,6 +328,25 @@ func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, s.job("agent.add", func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Session, q.Agent) }))
+}
+
+func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
+	var q nameReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		return
+	}
+	writeJSON(w, 202, s.job("agent.restart", func(ctx context.Context) error {
+		err := s.M.RestartAgent(ctx, q.Session, q.Agent)
+		if s.Mon != nil {
+			s.Mon.Poke(q.Session)
+		}
+		return err
+	}))
 }
 
 func (s *Server) baseBuild(w http.ResponseWriter, r *http.Request) {

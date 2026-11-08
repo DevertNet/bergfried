@@ -10,7 +10,13 @@ struct DaemonStatus: Codable, Equatable {
     var sessions: Int
 }
 
-struct AgentInfo: Codable, Hashable { var name: String; var worktree: String }
+struct AgentInfo: Codable, Hashable {
+    var name: String
+    var worktree: String
+    var window: Bool
+    var rc: Bool
+    var rcUrl: String
+}
 
 struct SessionInfo: Codable, Identifiable, Hashable {
     var name: String
@@ -25,6 +31,11 @@ struct SessionInfo: Codable, Identifiable, Hashable {
     var agents: [AgentInfo]
     var activeGrants: Int
     var pendingRequests: Int
+    var claudeLoggedIn: Bool?
+    var hostDiskUsed: Int64
+    var guestDiskUsed: Int64
+    var guestDiskSize: Int64
+    var probeError: String?
     var id: String { name }
     var running: Bool { status == "Running" }
 }
@@ -87,7 +98,7 @@ struct KeysResponse: Codable { var keys: [KeyInfo]; var error: String? }
 
 struct Blocklist: Codable, Equatable { var paths: [String]; var names: [String] }
 
-struct Job: Codable { var id: Int64; var kind: String; var state: String; var error: String? }
+struct Job: Codable { var id: Int64; var kind: String; var state: String; var step: String?; var error: String? }
 struct Message: Codable { var message: String? }
 
 struct DecideBody: Encodable { var id: Int64; var allow: Bool; var confirmLarge: Bool = false }

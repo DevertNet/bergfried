@@ -56,16 +56,47 @@ enum DaemonController {
 }
 
 enum Terminal {
-    /// Öffnet Terminal.app mit einem Befehl in der VM. Der VM-Name wird streng geprüft.
+    static var hasITerm: Bool { FileManager.default.fileExists(atPath: "/Applications/iTerm.app") }
+
+    static var limactl: String {
+        ["/opt/homebrew/bin/limactl", "/usr/local/bin/limactl"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "limactl"
+    }
+
+    /// Öffnet iTerm (falls installiert) oder Terminal.app mit einem Befehl in der VM.
+    /// Der Befehl wird als Argument an AppleScript übergeben (keine Quoting-Probleme); der VM-Name wird streng geprüft.
     static func open(vm: String, inner: String) {
         guard vm.range(of: #"^bf-[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil else { return }
-        let cmd = "limactl shell \(vm) -- \(inner)"
-        let script = "tell application \"Terminal\"\nactivate\ndo script \"\(cmd)\"\nend tell"
+        let cmd = "\(limactl) shell \(vm) -- \(inner)"
+        let script: String
+        if hasITerm {
+            script = """
+            on run argv
+              tell application "iTerm"
+                activate
+                set w to (create window with default profile)
+                tell current session of w to write text (item 1 of argv)
+              end tell
+            end run
+            """
+        } else {
+            script = """
+            on run argv
+              tell application "Terminal"
+                activate
+                do script (item 1 of argv)
+              end tell
+            end run
+            """
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", script]
+        p.arguments = ["-e", script, cmd]
         try? p.run()
     }
+
     static func attach(vm: String) { open(vm: vm, inner: "bash -lc 'tmux attach -t bf || tmux new -s bf'") }
-    static func login(vm: String) { open(vm: vm, inner: "bash -lc 'claude auth login'") }
+
+    static func login(vm: String) {
+        open(vm: vm, inner: "bash -lc \"claude auth login; echo; echo 'Fertig – dieses Fenster kann geschlossen werden. Die Agents starten automatisch neu.'\"")
+    }
 }

@@ -269,7 +269,9 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
 	am := *m
 	am.Actor = "app"
-	apiSrv := &api.Server{M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	mon := api.NewMonitor(&am)
+	go mon.Run(ctx)
+	apiSrv := &api.Server{Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

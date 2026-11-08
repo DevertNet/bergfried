@@ -33,6 +33,15 @@ open app/build/Bergfried.app
 - **Wo liegen Sessions?** VM-Platte `~/.lima/bf-<name>`, Austausch `~/.bergfried/sessions/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
 - **Icon:** `app/icon/make-icon.swift` zeichnet es, `app/icon/AppIcon.icns` liegt im Repo.
 
+## Statusanzeige und Login
+- **Neue Session:** erscheint sofort als Zeile mit Fortschritt (klonen → starten → Erstkonfiguration → Hilfsprogramm …).
+- **Übersicht je Session:** „Claude eingeloggt“ bzw. Button „jetzt einloggen“; je Agent „RC aktiv“ (mit Link öffnen/kopieren), „wartet auf Login“,
+  „RC startet …“ oder „kein Fenster“; Platte: auf dem Mac **real belegte** Bytes (sparse) und Belegung in der VM.
+  Der Daemon fragt laufende VMs alle 5 s (instabil) bzw. 20 s (alles grün) ab.
+- **Login:** Button öffnet iTerm (falls installiert, sonst Terminal) mit `claude auth login`. Erkennt der Daemon danach den Login, startet er die
+  Agents der Session automatisch neu (`--continue --remote-control`); beantwortet dabei die Theme-Frage mit der Vorauswahl. Hängt ein Agent,
+  hilft „Agent neu starten“ im Agent-Menü.
+
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
 - Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).

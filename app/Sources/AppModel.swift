@@ -60,6 +60,7 @@ final class AppModel: ObservableObject {
             let job: Job = try await api.send("POST", path, body)
             var j = job
             while j.state == "running" {
+                if let st = j.step, !st.isEmpty { running[key] = st }
                 try await Task.sleep(nanoseconds: 700_000_000)
                 j = try await api.get("/v1/jobs/\(job.id)")
                 await refresh()

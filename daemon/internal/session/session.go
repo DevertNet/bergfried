@@ -23,6 +23,19 @@ const (
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 
+type progressKey struct{}
+
+// WithProgress hängt einen Fortschritts-Callback an den Kontext (für Job-Anzeige in der App).
+func WithProgress(ctx context.Context, f func(string)) context.Context {
+	return context.WithValue(ctx, progressKey{}, f)
+}
+
+func progress(ctx context.Context, msg string) {
+	if f, ok := ctx.Value(progressKey{}).(func(string)); ok {
+		f(msg)
+	}
+}
+
 // ErrUnpushed wird von Delete geliefert, wenn ungesicherte Arbeit in der VM liegt.
 type ErrUnpushed struct{ Report string }
 
@@ -111,12 +124,15 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
 			return err
 		}
 	}
+	progress(ctx, "Basis-VM wird erstellt (Image laden, Docker und Claude Code installieren – mehrere Minuten)")
 	if _, err := m.L.R.Run(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
 		return err
 	}
+	progress(ctx, "Basis-VM startet und wird konfiguriert (mehrere Minuten)")
 	if err := m.L.Start(ctx, base); err != nil {
 		return err
 	}
+	progress(ctx, "Basis-VM wird gestoppt")
 	if err := m.L.Stop(ctx, base); err != nil {
 		return err
 	}
@@ -208,6 +224,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 	} else if ok {
 		return fmt.Errorf("VM %s existiert bereits", vm)
 	}
+	progress(ctx, "Basis-VM prüfen")
 	if err := m.BuildBase(ctx, false); err != nil {
 		return err
 	}
@@ -218,13 +235,16 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 			return err
 		}
 	}
+	progress(ctx, "VM wird aus der Basis geklont")
 	if _, err := m.L.R.Run(ctx, "clone", m.BaseName(), vm, "--tty=false",
 		"--mount-only", in, "--mount-only", out+":w"); err != nil {
 		return err
 	}
+	progress(ctx, "VM startet (ca. 10–15 Sekunden)")
 	if err := m.L.Start(ctx, vm); err != nil {
 		return err
 	}
+	progress(ctx, "Erstkonfiguration (neue Maschinen-ID, SSH-Host-Keys)")
 	if _, err := m.L.Shell(ctx, vm, "bash", "-c", firstBoot); err != nil {
 		return fmt.Errorf("First-Boot-Schritt: %w", err)
 	}
@@ -232,6 +252,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 	if err := lima.RepinHostKey(vm); err != nil {
 		return err
 	}
+	progress(ctx, "Datei-/SSH-Hilfsprogramm installieren")
 	if err := m.InstallMCP(ctx, vm); err != nil {
 		return err
 	}
@@ -240,11 +261,13 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath string) err
 		return fmt.Errorf("SSH-Config: %w", err)
 	}
 	if repo != "" {
+		progress(ctx, "Git-Repo wird geklont")
 		if _, err := m.L.Shell(ctx, vm, "git", "clone", repo, "work/main"); err != nil {
 			return fmt.Errorf("git clone: %w", err)
 		}
 	}
 	if importPath != "" {
+		progress(ctx, "Ordner wird in die VM kopiert")
 		files, bytes, err := m.importFolder(ctx, vm, importPath)
 		if err != nil {
 			return fmt.Errorf("Import: %w", err)
@@ -263,9 +286,11 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	progress(ctx, "VM startet")
 	if err := m.L.Start(ctx, s.VM); err != nil {
 		return err
 	}
+	progress(ctx, "Hilfsprogramme und Agents werden gestartet")
 	if err := m.InstallMCP(ctx, s.VM); err != nil {
 		return err
 	}
@@ -416,5 +441,33 @@ func (h Hooks) KillSSH(ctx context.Context, session string) error {
 		return err
 	}
 	_, err = h.M.L.Shell(ctx, vm, "bash", "-c", "pkill -x ssh || true")
+	return err
+}
+
+// RestartAgent beendet das tmux-Fenster des Agents und startet ihn neu (mit --continue und Remote Control).
+func (m *Manager) RestartAgent(ctx context.Context, session, agent string) error {
+	if err := ValidName(agent); err != nil {
+		return err
+	}
+	s, err := m.S.GetSession(session)
+	if err != nil {
+		return err
+	}
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf("tmux kill-window -t %s:%s 2>/dev/null || true", tmuxSession, agent)); err != nil {
+		return err
+	}
+	if err := m.ensureWindow(ctx, s.VM, session, agent); err != nil {
+		return err
+	}
+	m.audit("agent.restart", session, agent, "")
+	return nil
+}
+
+// PressEnter bestätigt eine Standardauswahl im Agent-Fenster (z. B. Theme-Frage beim ersten Start).
+func (m *Manager) PressEnter(ctx context.Context, vm, agent string) error {
+	if err := ValidName(agent); err != nil {
+		return err
+	}
+	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s Enter", tmuxSession, agent))
 	return err
 }
