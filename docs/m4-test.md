@@ -89,7 +89,7 @@ open app/build/Bergfried.app
   (`ssh -F ~/.lima/<vm>/ssh.config lima-<vm>`, auch für VS Code Remote-SSH nutzbar). Den Claude-Login gibt es dort ebenfalls.
 - **Terminal-Button pro Agent:** In der Agent-Zeile öffnet „iTerm: Claude-Fenster“ das tmux-Fenster genau dieses Agents.
 - **Mitteilungs-Berechtigung:** Der Auslöser ist `requestAuthorization` beim App-Start. Die frühere Kennung war bei macOS als „abgelehnt“
-  gespeichert, dann fragt macOS nie wieder. Die App nutzt deshalb die Bundle-ID `de.einfach123.bergfried.control`; beim ersten Start erscheint
+  gespeichert, dann fragt macOS nie wieder. Die App nutzt deshalb die Bundle-ID `de.einfach123.bergfried`; beim ersten Start erscheint
   die macOS-Abfrage „Bergfried möchte Mitteilungen senden“ (mit „Erlauben“ bestätigen). Der Stand steht in den Einstellungen.
 
 ## Technik
