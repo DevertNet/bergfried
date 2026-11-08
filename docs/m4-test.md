@@ -1,0 +1,34 @@
+# M4 – Control-App (macOS)
+
+Gebaut ohne Xcode (siehe [M4-PLAN.md](M4-PLAN.md)):
+
+```bash
+make build            # bin/bergfriedd, bin/bergfried-mcp (Docker)
+app/build.sh          # app/build/Bergfried.app (swiftc, ad-hoc signiert, Binaries + Vorlage im Bundle)
+open app/build/Bergfried.app
+```
+
+1. **Einstellungen → „Daemon installieren und starten“** legt einen LaunchAgent an (`~/Library/LaunchAgents/de.einfach123.bergfried.plist`,
+   `bergfriedd serve --no-dialog`, Log `~/.bergfried/daemon.log`). Alternativ im Terminal `bergfriedd serve --no-dialog`.
+2. **Einstellungen → Basis-VM → „Jetzt bauen“** (einmalig, einige Minuten).
+3. **Sessions → „Neue Session“**, danach „Agent +“, „Terminal → Claude-Login“ (einmal pro VM), Start/Stopp, Löschen
+   (Warnung bei ungepushten Commits, „Trotzdem löschen“ nach Bestätigung).
+4. **Anfragen:** Datei-/Ordner-Anfragen erlauben/ablehnen (große Ordner mit zweiter Bestätigung). SSH-Anfragen: „Entscheiden …“
+   → Dauer, Key, Benutzer, Geltung, Einzelbestätigung; bei neuem Host-Key muss der Fingerprint bestätigt werden.
+   Aktive Freigaben mit Countdown, Verlängern, Entziehen.
+5. **Protokoll:** Filter und CSV-Export (Formeln im CSV werden entschärft).
+6. **Menüleiste:** Schild-Symbol mit Zähler offener Anfragen; Datei-Anfragen direkt dort erlauben/ablehnen.
+7. **Mitteilungen** mit Aktions-Buttons (Erlauben/Ablehnen, bei SSH „Erlauben (Standard)“ nur bei bekanntem Host und Standard-Key).
+   Beim ersten Start fragt macOS nach der Mitteilungs-Erlaubnis.
+
+## Technik
+- Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
+- Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).
+
+## Nicht geprüft / offen
+- Die Oberfläche wurde **nicht visuell getestet** (keine Bildschirm-/Bedienungshilfen-Rechte in der Entwicklungsumgebung):
+  kompiliert, startet, spricht mit dem Daemon (Selftest, Lebenszyklus per API). Layout-Feinheiten, Mitteilungs-Buttons und
+  Menüleiste bitte einmal ansehen.
+- Ports je Session („Shop auf localhost:8080 öffnen“), Ressourcen-Auslastung (nur konfigurierte Werte), Hosts-Bereich
+  (VPS, M5) und „In VS Code öffnen“ (M6) fehlen noch.
+- Mitteilungen brauchen ein ad-hoc signiertes Bundle; ohne Apple-Entwickler-Zertifikat kann macOS sie strenger behandeln.

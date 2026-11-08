@@ -1,0 +1,109 @@
+import Foundation
+
+struct DaemonStatus: Codable, Equatable {
+    var version: String
+    var baseReady: Bool
+    var baseName: String
+    var templateVersion: Int
+    var indexReady: Bool
+    var upstreamAgent: Bool
+    var sessions: Int
+}
+
+struct AgentInfo: Codable, Hashable { var name: String; var worktree: String }
+
+struct SessionInfo: Codable, Identifiable, Hashable {
+    var name: String
+    var vm: String
+    var status: String
+    var repo: String
+    var templateVersion: Int
+    var createdUnix: Int64
+    var cpus: Int
+    var memory: Int64
+    var disk: Int64
+    var agents: [AgentInfo]
+    var activeGrants: Int
+    var pendingRequests: Int
+    var id: String { name }
+    var running: Bool { status == "Running" }
+}
+
+struct SSHInfo: Codable, Hashable {
+    var hostKeyFingerprints: [String]
+    var source: String
+    var defaultKey: String
+    var defaultUser: String
+    var suggestedMinutes: Int
+}
+
+struct RequestInfo: Codable, Identifiable, Hashable {
+    var id: Int64
+    var session: String
+    var agent: String
+    var kind: String
+    var path: String
+    var reason: String
+    var status: String
+    var createdUnix: Int64
+    var bytes: Int64
+    var files: Int64
+    var large: Bool
+    var ssh: SSHInfo?
+    var pending: Bool { status == "pending" }
+}
+
+struct GrantInfo: Codable, Identifiable, Hashable {
+    var id: Int64
+    var session: String
+    var agent: String
+    var host: String
+    var keyFingerprint: String
+    var user: String
+    var expiresUnix: Int64
+    var perConnection: Bool
+    var revoked: Bool
+    var active: Bool
+    var hostKeyFingerprints: [String]
+}
+
+struct AuditEntry: Codable, Identifiable, Hashable {
+    var tsUnix: Int64
+    var actor: String
+    var event: String
+    var session: String
+    var agent: String
+    var detail: String
+    var id: String { "\(tsUnix)-\(actor)-\(event)-\(session)-\(agent)-\(detail.hashValue)" }
+}
+
+struct KeyInfo: Codable, Identifiable, Hashable {
+    var fingerprint: String
+    var comment: String
+    var type: String
+    var id: String { fingerprint }
+}
+struct KeysResponse: Codable { var keys: [KeyInfo]; var error: String? }
+
+struct Blocklist: Codable, Equatable { var paths: [String]; var names: [String] }
+
+struct Job: Codable { var id: Int64; var kind: String; var state: String; var error: String? }
+struct Message: Codable { var message: String? }
+
+struct DecideBody: Encodable { var id: Int64; var allow: Bool; var confirmLarge: Bool = false }
+struct SSHDecideBody: Encodable {
+    var id: Int64
+    var allow: Bool
+    var minutes: Int
+    var keyFingerprint: String
+    var user: String
+    var allAgents: Bool
+    var perConnection: Bool
+    var trustUnknownHost: Bool
+}
+struct IDBody: Encodable { var id: Int64 }
+struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
+struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false }
+struct AgentBody: Encodable { var session: String; var agent: String }
+
+func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }

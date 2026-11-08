@@ -21,3 +21,4 @@ xcuserdata/
 *.db
 *.sqlite
 *.log
+app/build/
