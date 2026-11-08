@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,15 +57,6 @@ func TestClientEndpointsAndAuth(t *testing.T) {
 	mux.HandleFunc("GET /repos/o/r/actions/runs/7/jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"jobs":[{"id":9,"run_id":7,"name":"test","status":"completed","conclusion":"failure","steps":[{"name":"Run tests","number":3,"status":"completed","conclusion":"failure"}]}]}`))
 	})
-	mux.HandleFunc("POST /repos/o/r/pulls", func(w http.ResponseWriter, r *http.Request) {
-		var b map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&b)
-		if b["head"] != "agent/x" || b["base"] != "trunk" || b["title"] != "T" {
-			t.Errorf("%v", b)
-		}
-		w.WriteHeader(201)
-		w.Write([]byte(`{"html_url":"https://github.com/o/r/pull/5","number":5}`))
-	})
 	mux.HandleFunc("POST /repos/o/r/actions/runs/7/rerun-failed-jobs", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(201) })
 	mux.HandleFunc("GET /repos/o/r/actions/jobs/9/logs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/blob/log", http.StatusFound)
@@ -84,10 +74,6 @@ func TestClientEndpointsAndAuth(t *testing.T) {
 	jobs, _ := c.ListJobs(ctx, repo, 7)
 	if len(jobs) != 1 || jobs[0].Steps[0].Name != "Run tests" {
 		t.Fatalf("%+v", jobs)
-	}
-	pr, err := c.CreatePR(ctx, repo, "agent/x", "trunk", "T", "B", false)
-	if err != nil || pr.Number != 5 {
-		t.Fatal(pr, err)
 	}
 	if err := c.RerunFailed(ctx, repo, 7); err != nil {
 		t.Fatal(err)

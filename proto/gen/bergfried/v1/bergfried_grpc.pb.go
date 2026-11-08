@@ -19,17 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SessionAPI_ListFiles_FullMethodName      = "/bergfried.v1.SessionAPI/ListFiles"
-	SessionAPI_SearchFiles_FullMethodName    = "/bergfried.v1.SessionAPI/SearchFiles"
-	SessionAPI_RequestFile_FullMethodName    = "/bergfried.v1.SessionAPI/RequestFile"
-	SessionAPI_RequestFolder_FullMethodName  = "/bergfried.v1.SessionAPI/RequestFolder"
-	SessionAPI_RequestSSH_FullMethodName     = "/bergfried.v1.SessionAPI/RequestSSH"
-	SessionAPI_SSHAttempt_FullMethodName     = "/bergfried.v1.SessionAPI/SSHAttempt"
-	SessionAPI_GitPushPrepare_FullMethodName = "/bergfried.v1.SessionAPI/GitPushPrepare"
-	SessionAPI_RequestGitPush_FullMethodName = "/bergfried.v1.SessionAPI/RequestGitPush"
-	SessionAPI_CIStatus_FullMethodName       = "/bergfried.v1.SessionAPI/CIStatus"
-	SessionAPI_CILogs_FullMethodName         = "/bergfried.v1.SessionAPI/CILogs"
-	SessionAPI_CIRerun_FullMethodName        = "/bergfried.v1.SessionAPI/CIRerun"
+	SessionAPI_ListFiles_FullMethodName          = "/bergfried.v1.SessionAPI/ListFiles"
+	SessionAPI_SearchFiles_FullMethodName        = "/bergfried.v1.SessionAPI/SearchFiles"
+	SessionAPI_RequestFile_FullMethodName        = "/bergfried.v1.SessionAPI/RequestFile"
+	SessionAPI_RequestFolder_FullMethodName      = "/bergfried.v1.SessionAPI/RequestFolder"
+	SessionAPI_RequestSSH_FullMethodName         = "/bergfried.v1.SessionAPI/RequestSSH"
+	SessionAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SessionAPI/SSHAttempt"
+	SessionAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SessionAPI/RequestGitHubToken"
+	SessionAPI_CIStatus_FullMethodName           = "/bergfried.v1.SessionAPI/CIStatus"
+	SessionAPI_CILogs_FullMethodName             = "/bergfried.v1.SessionAPI/CILogs"
+	SessionAPI_CIRerun_FullMethodName            = "/bergfried.v1.SessionAPI/CIRerun"
 )
 
 // SessionAPIClient is the client API for SessionAPI service.
@@ -48,10 +47,10 @@ type SessionAPIClient interface {
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
-	// Git: Der Mac pusht für die VM. Die VM legt ein Bundle in shared/out (GitPushPrepare liefert den Pfad) und fragt an.
-	GitPushPrepare(ctx context.Context, in *GitPushPrepareRequest, opts ...grpc.CallOption) (*GitPushPrepareResult, error)
-	RequestGitPush(ctx context.Context, in *GitPushRequest, opts ...grpc.CallOption) (*GitPushResult, error)
-	// CI (GitHub Actions) über den Mac: Status ohne Rückfrage für selbst gepushte Branches, Logs/Wiederholen nach Bestätigung.
+	// GitHub-Zugriff (Token pro Session, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
+	// in der App; blockiert, bis der Nutzer entschieden hat.
+	RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error)
+	// CI (GitHub Actions) mit dem Token der Session; ohne Rückfrage.
 	CIStatus(ctx context.Context, in *CIStatusRequest, opts ...grpc.CallOption) (*CIStatusResult, error)
 	CILogs(ctx context.Context, in *CILogsRequest, opts ...grpc.CallOption) (*CILogsResult, error)
 	CIRerun(ctx context.Context, in *CIRerunRequest, opts ...grpc.CallOption) (*CIRerunResult, error)
@@ -125,20 +124,10 @@ func (c *sessionAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest
 	return out, nil
 }
 
-func (c *sessionAPIClient) GitPushPrepare(ctx context.Context, in *GitPushPrepareRequest, opts ...grpc.CallOption) (*GitPushPrepareResult, error) {
+func (c *sessionAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GitPushPrepareResult)
-	err := c.cc.Invoke(ctx, SessionAPI_GitPushPrepare_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *sessionAPIClient) RequestGitPush(ctx context.Context, in *GitPushRequest, opts ...grpc.CallOption) (*GitPushResult, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GitPushResult)
-	err := c.cc.Invoke(ctx, SessionAPI_RequestGitPush_FullMethodName, in, out, cOpts...)
+	out := new(GitHubTokenResult)
+	err := c.cc.Invoke(ctx, SessionAPI_RequestGitHubToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -191,10 +180,10 @@ type SessionAPIServer interface {
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
-	// Git: Der Mac pusht für die VM. Die VM legt ein Bundle in shared/out (GitPushPrepare liefert den Pfad) und fragt an.
-	GitPushPrepare(context.Context, *GitPushPrepareRequest) (*GitPushPrepareResult, error)
-	RequestGitPush(context.Context, *GitPushRequest) (*GitPushResult, error)
-	// CI (GitHub Actions) über den Mac: Status ohne Rückfrage für selbst gepushte Branches, Logs/Wiederholen nach Bestätigung.
+	// GitHub-Zugriff (Token pro Session, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
+	// in der App; blockiert, bis der Nutzer entschieden hat.
+	RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error)
+	// CI (GitHub Actions) mit dem Token der Session; ohne Rückfrage.
 	CIStatus(context.Context, *CIStatusRequest) (*CIStatusResult, error)
 	CILogs(context.Context, *CILogsRequest) (*CILogsResult, error)
 	CIRerun(context.Context, *CIRerunRequest) (*CIRerunResult, error)
@@ -226,11 +215,8 @@ func (UnimplementedSessionAPIServer) RequestSSH(context.Context, *SSHAccessReque
 func (UnimplementedSessionAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method SSHAttempt not implemented")
 }
-func (UnimplementedSessionAPIServer) GitPushPrepare(context.Context, *GitPushPrepareRequest) (*GitPushPrepareResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method GitPushPrepare not implemented")
-}
-func (UnimplementedSessionAPIServer) RequestGitPush(context.Context, *GitPushRequest) (*GitPushResult, error) {
-	return nil, status.Error(codes.Unimplemented, "method RequestGitPush not implemented")
+func (UnimplementedSessionAPIServer) RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestGitHubToken not implemented")
 }
 func (UnimplementedSessionAPIServer) CIStatus(context.Context, *CIStatusRequest) (*CIStatusResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method CIStatus not implemented")
@@ -370,38 +356,20 @@ func _SessionAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_GitPushPrepare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GitPushPrepareRequest)
+func _SessionAPI_RequestGitHubToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitHubTokenRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).GitPushPrepare(ctx, in)
+		return srv.(SessionAPIServer).RequestGitHubToken(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_GitPushPrepare_FullMethodName,
+		FullMethod: SessionAPI_RequestGitHubToken_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).GitPushPrepare(ctx, req.(*GitPushPrepareRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _SessionAPI_RequestGitPush_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GitPushRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SessionAPIServer).RequestGitPush(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SessionAPI_RequestGitPush_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).RequestGitPush(ctx, req.(*GitPushRequest))
+		return srv.(SessionAPIServer).RequestGitHubToken(ctx, req.(*GitHubTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -492,12 +460,8 @@ var SessionAPI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SessionAPI_SSHAttempt_Handler,
 		},
 		{
-			MethodName: "GitPushPrepare",
-			Handler:    _SessionAPI_GitPushPrepare_Handler,
-		},
-		{
-			MethodName: "RequestGitPush",
-			Handler:    _SessionAPI_RequestGitPush_Handler,
+			MethodName: "RequestGitHubToken",
+			Handler:    _SessionAPI_RequestGitHubToken_Handler,
 		},
 		{
 			MethodName: "CIStatus",

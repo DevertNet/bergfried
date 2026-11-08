@@ -26,7 +26,7 @@ struct RequestsView: View {
         .onChange(of: showHistory) { _, on in if on { Task { await loadHistory() } } }
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
-        .sheet(item: $gitFor) { r in GitPushSheet(r: r) }
+        .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
         .confirmationDialog("Große Freigabe", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
             Button("Ja, \(largeFor.map { formatBytes($0.bytes) } ?? "") kopieren") { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
         } message: { Text("\(largeFor?.files ?? 0) Dateien, \(formatBytes(largeFor?.bytes ?? 0)). Wirklich kopieren?") }
@@ -48,9 +48,7 @@ struct PendingRow: View {
         switch r.kind {
         case "ssh": return "key.fill"
         case "folder": return "folder"
-        case "gitpush": return "arrow.up.doc.fill"
-        case "cilogs": return "text.alignleft"
-        case "cirerun": return "arrow.clockwise"
+        case "ghtoken": return "key.horizontal.fill"
         default: return "doc"
         }
     }
@@ -64,21 +62,16 @@ struct PendingRow: View {
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
             if r.kind == "ssh" { Text("möchte per SSH auf **\(r.path)** zugreifen") }
-            else if r.kind == "gitpush" { Text("möchte **\(r.git?.commits.count ?? 0) Commit(s)** nach **\(r.path)** pushen (der Mac pusht)") }
-            else if r.kind == "cilogs" { Text("möchte die CI-Logs von **\(r.path)** lesen (Branch \(r.ci?.branch ?? r.reason))") }
-            else if r.kind == "cirerun" { Text("möchte einen CI-Lauf wiederholen: **\(r.path)**") }
+            else if r.kind == "ghtoken" {
+                if (r.github?.repo ?? "").isEmpty { Text("braucht ein **GitHub-Token** für Git und Actions") }
+                else if r.github?.hasToken == true { Text("braucht Zugriff auf das Repo **\(r.path)** (das Token der Session erreicht es noch nicht)") }
+                else { Text("braucht ein **GitHub-Token** und Zugriff auf **\(r.path)**") }
+            }
             else { Text("möchte \(r.kind == "folder" ? "den Ordner" : "die Datei") **~/\(r.path)** (\(r.files) Datei(en), \(formatBytes(r.bytes)))") }
             Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
             HStack {
-                if r.kind == "gitpush" {
-                    Button("Prüfen und entscheiden …", action: decideGit).buttonStyle(.borderedProminent)
-                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
-                } else if r.kind == "cilogs" {
-                    Button("Für diese Session erlauben (4 h)") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: true)) } }.buttonStyle(.borderedProminent)
-                    Button("Nur dieses Mal") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: false)) } }
-                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
-                } else if r.kind == "cirerun" {
-                    Button("Wiederholen erlauben") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: false)) } }.buttonStyle(.borderedProminent)
+                if r.kind == "ghtoken" {
+                    Button("Einrichten …", action: decideGit).buttonStyle(.borderedProminent)
                     Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
                 } else if r.kind == "ssh" {
                     Button("Entscheiden …", action: decideSSH).buttonStyle(.borderedProminent)
@@ -97,9 +90,9 @@ struct HistoryRow: View {
     var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" ? .red : .secondary) }
     var body: some View {
         HStack {
-            Image(systemName: ["ssh": "key", "gitpush": "arrow.up.doc", "cilogs": "text.alignleft", "cirerun": "arrow.clockwise"][r.kind] ?? "doc").foregroundStyle(.secondary)
+            Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
             Text("\(r.session)/\(r.agent)")
-            Text(["ssh", "gitpush", "cilogs", "cirerun"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+            Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(r.status).foregroundStyle(color)
             Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
@@ -208,77 +201,61 @@ struct SSHDecisionSheet: View {
     }
 }
 
-struct GitPushSheet: View {
+struct GitHubTokenSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     let r: RequestInfo
-    @Local private var createPR = false
-    @Local private var okWorkflows = false
-    @Local private var okSecrets = false
+    @Local private var token = ""
     @Local private var error: String?
-    var d: GitDetail? { r.git }
-    var needWorkflows: Bool { !(d?.workflowFiles.isEmpty ?? true) }
-    var needSecrets: Bool { !(d?.secrets.isEmpty ?? true) }
-    var canPush: Bool { (!needWorkflows || okWorkflows) && (!needSecrets || okSecrets) }
+    @Local private var busy = false
+    var d: GitHubDetail? { r.github }
+    var hasToken: Bool { d?.hasToken ?? false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Push nach GitHub – \(r.session) / \(r.agent)").font(.headline)
-            if let d {
-                Text("**\(d.repo)** · Branch **\(d.branch)** (\(d.newBranch ? "neu" : "bestehend"), Basis \(d.defaultBranch))")
-                Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
-                GroupBox("\(d.commits.count) Commit(s) · \(d.files) Datei(en) · +\(d.additions) −\(d.deletions)") {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(d.commits, id: \.sha) { c in
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(String(c.sha.prefix(7))).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                    Text(c.subject).lineLimit(2)
-                                    Spacer()
-                                    Text(c.author).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.frame(maxHeight: 110)
-                }
-                GroupBox("Änderungen") {
-                    ScrollView { Text(d.diffstat).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 110)
-                }
-                if !d.triggers.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label("Dieser Push startet Workflows: \(d.triggers.joined(separator: ", "))", systemImage: "play.circle").foregroundStyle(.orange)
-                        Text("Workflows laufen mit dem Code des Agents und können je nach Konfiguration auf Repo-Secrets zugreifen.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if needWorkflows {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Ändert Workflow-Dateien: \(d.workflowFiles.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-                        Toggle("Ich habe die Workflow-Änderungen geprüft", isOn: $okWorkflows)
-                    }
-                }
-                if needSecrets {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Mögliche Geheimnisse im Diff:", systemImage: "exclamationmark.octagon.fill").foregroundStyle(.red)
-                        ForEach(d.secrets, id: \.self) { Text($0).font(.caption.monospaced()) }
-                        Toggle("Ich habe die Funde geprüft (kein echtes Geheimnis)", isOn: $okSecrets)
-                    }
-                }
-                Toggle("Pull Request anlegen (Basis \(d.defaultBranch))\(d.wantPr && !d.prTitle.isEmpty ? " – Titel: \(d.prTitle)" : "")", isOn: $createPR)
+            Text("GitHub-Zugriff für \(r.session) / \(r.agent)").font(.headline)
+            if let repo = d?.repo, !repo.isEmpty { Text("Repo: **\(repo)**") }
+            Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
+            if hasToken {
+                Text("Die Session hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.session)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
+                Button("Token-Liste bei GitHub öffnen …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
+                Text("Danach „Zugriff prüfen“ – oder ein neues Token einfügen, falls du lieber eins neu anlegst:").font(.caption).foregroundStyle(.secondary)
+            } else {
+                GitHubTokenSteps(link: d?.link ?? "", hint: d?.hint ?? "", token: $token)
             }
+            if hasToken { SecureField("Optional: neues Token einfügen", text: $token).textFieldStyle(.roundedBorder) }
             if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
             HStack {
                 Spacer()
                 Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Ablehnen", role: .destructive) { Task { await model.deny(r); dismiss() } }
-                Button("Pushen") {
+                Button(hasToken && token.isEmpty ? "Zugriff prüfen" : "Prüfen und speichern") {
+                    busy = true
                     Task {
-                        let e = await model.decideGit(GitDecideBody(id: r.id, allow: true, createPr: createPR, confirmWorkflows: okWorkflows, confirmSecrets: okSecrets))
+                        let e = await model.decideGitHub(id: r.id, token: token)
+                        busy = false
                         if let e { error = e } else { dismiss() }
                     }
-                }.disabled(!canPush).keyboardShortcut(.defaultAction)
+                }.disabled(busy || (!hasToken && token.trimmingCharacters(in: .whitespaces).isEmpty)).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 640)
-        .task { createPR = r.git?.wantPr ?? false }
+        .padding(20).frame(width: 600)
+    }
+}
+
+/// Gemeinsame Schritte: Link zum vorausgefüllten GitHub-Formular, Hinweis zur Repo-Auswahl, Feld für das Token.
+struct GitHubTokenSteps: View {
+    let link: String
+    let hint: String
+    @Binding var token: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("1. Token bei GitHub anlegen (Formular ist vorausgefüllt: Ablauf 1 Jahr, Rechte Contents, Pull requests, Actions):").font(.callout)
+            Button("Token bei GitHub anlegen …") { if let u = URL(string: link) { NSWorkspace.shared.open(u) } }.disabled(link.isEmpty)
+            Label(hint.isEmpty ? "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die benötigten Repos auswählen." : hint, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+            Text("2. „Generate token“ klicken und den Wert hier einfügen (GitHub zeigt ihn nur einmal):").font(.callout)
+            SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
+            Text("Das Token liegt anschließend in der VM; der Agent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.").font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

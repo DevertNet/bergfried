@@ -3,13 +3,15 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
@@ -123,76 +125,71 @@ func TestJobLifecycleAndAuditSearch(t *testing.T) {
 	}
 }
 
-func TestCIFixOnlyWhenLoggedInAndIdle(t *testing.T) {
-	s, ts := srv(t)
-	_ = s.M.S.AddSession(store.Session{Name: "shop", VM: "bergfried-shop", TemplateVersion: 1})
-	s.Mon = NewMonitor(s.M)
-	post := func() (int, string) {
-		return do(t, "POST", ts.URL+"/v1/agents/ci-fix", `{"session":"shop","agent":"main"}`)
+func TestGitHubLink(t *testing.T) {
+	_, ts := srv(t)
+	code, body := do(t, "GET", ts.URL+"/v1/github/link?session=shop", "")
+	if code != 200 || !strings.Contains(body, "personal-access-tokens/new") || !strings.Contains(body, "name%3Dbergfried-shop") && !strings.Contains(body, "name=bergfried-shop") {
+		t.Fatalf("%d %s", code, body)
 	}
-	if code, _ := post(); code != 409 {
-		t.Fatalf("ohne Abfrage-Ergebnis: %d", code)
-	}
-	no, yes := false, true
-	s.Mon.state["shop"] = &SessionState{LoggedIn: &no, Agents: map[string]AgentState{"main": {Window: true, Running: true, Idle: true}}}
-	if code, body := post(); code != 409 || !strings.Contains(body, "nicht eingeloggt") {
-		t.Fatalf("nicht eingeloggt muss abgelehnt werden: %d %s", code, body)
-	}
-	s.Mon.state["shop"] = &SessionState{LoggedIn: &yes, Agents: map[string]AgentState{"main": {Window: true, Running: true, Idle: false}}}
-	if code, _ := post(); code != 409 {
-		t.Fatalf("beschäftigter Agent: %d", code)
-	}
-	if code, _ := do(t, "POST", ts.URL+"/v1/agents/ci-fix", `{"session":"x;y","agent":"main"}`); code != 400 {
+	if code, _ := do(t, "GET", ts.URL+"/v1/github/link?session=x%3By", ""); code != 400 {
 		t.Fatal("ungültiger Name")
 	}
 }
 
-type fakeKeys struct {
-	tok string
-}
-
-func (f *fakeKeys) Token() (string, error) {
-	if f.tok == "" {
-		return "", github.ErrNoToken
-	}
-	return f.tok, nil
-}
-func (f *fakeKeys) Set(t string) error { f.tok = t; return nil }
-func (f *fakeKeys) Delete() error      { f.tok = ""; return nil }
-
-func TestGitHubTokenLifecycle(t *testing.T) {
+func TestGitHubDecideNeverEchoesToken(t *testing.T) {
+	const tok = "github_pat_11ABCDEFG0abcdefghijklmnop_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user" && r.Header.Get("Authorization") == "Bearer gut-token" {
-			w.Write([]byte(`{"login":"tester"}`))
+		if r.Header.Get("Authorization") != "Bearer "+tok {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"message":"Bad credentials"}`))
 			return
 		}
-		w.WriteHeader(401)
-		w.Write([]byte(`{"message":"Bad credentials"}`))
+		w.Write([]byte(`{"default_branch":"main"}`))
 	}))
 	defer gh.Close()
 	s, ts := srv(t)
-	keys := &fakeKeys{}
-	s.Keys, s.GHBase, s.LoginFile = keys, gh.URL, filepath.Join(t.TempDir(), "login")
-	if _, body := do(t, "GET", ts.URL+"/v1/github", ""); !strings.Contains(body, `"has_token":false`) {
-		t.Fatal(body)
+	_ = s.M.S.AddSession(store.Session{Name: "shop", VM: "bergfried-shop", TemplateVersion: 1})
+	var installed string
+	s.GH = ghtoken.NewService(s.M.S, ghtoken.Store{Home: t.TempDir()}, func(_ context.Context, _, t string) error { installed = t; return nil })
+	s.GH.Client = func(token string) *github.Client {
+		c := github.New(github.StaticToken(token))
+		c.Base = gh.URL
+		return c
 	}
-	if code, body := do(t, "PUT", ts.URL+"/v1/github/token", `{"token":"falsch"}`); code != 400 || !strings.Contains(body, "ungültig") || keys.tok != "" {
-		t.Fatalf("ungültiges Token darf nicht gespeichert werden: %d %s %q", code, body, keys.tok)
+	done := make(chan bool, 1)
+	go func() { ok, _, _ := s.GH.Request(context.Background(), "shop", "main", "o/r", "clone"); done <- ok }()
+	var id int64
+	for i := 0; i < 200 && id == 0; i++ {
+		if rs, _ := s.M.S.ListRequests(true, 5); len(rs) > 0 {
+			id = rs[0].ID
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if code, body := do(t, "PUT", ts.URL+"/v1/github/token", `{"token":"gut-token"}`); code != 200 || !strings.Contains(body, "tester") || keys.tok != "gut-token" {
+	if id == 0 {
+		t.Fatal("keine Anfrage")
+	}
+	_, list := do(t, "GET", ts.URL+"/v1/requests", "")
+	if !strings.Contains(list, `"github"`) || !strings.Contains(list, `"repo":"o/r"`) || !strings.Contains(list, `"has_token":false`) {
+		t.Fatalf("Anfrage fehlt Details: %s", list)
+	}
+	code, body := do(t, "POST", ts.URL+"/v1/github/decide", fmt.Sprintf(`{"id":%d,"allow":true,"token":"falsch-aber-lang-genug-0123456789"}`, id))
+	if code != 409 || strings.Contains(body, "falsch-aber") {
 		t.Fatalf("%d %s", code, body)
 	}
-	if _, body := do(t, "GET", ts.URL+"/v1/github", ""); !strings.Contains(body, `"has_token":true`) || !strings.Contains(body, "tester") || strings.Contains(body, "gut-token") {
-		t.Fatalf("Status darf das Token nie enthalten: %s", body)
+	code, body = do(t, "POST", ts.URL+"/v1/github/decide", fmt.Sprintf(`{"id":%d,"allow":true,"token":%q}`, id, tok))
+	if code != 200 || strings.Contains(body, tok) {
+		t.Fatalf("%d %s", code, body)
 	}
-	if b, _ := os.ReadFile(s.LoginFile); strings.Contains(string(b), "gut-token") {
-		t.Fatal("Token in der Login-Datei")
+	if !<-done || installed != tok {
+		t.Fatal("Token nicht in die VM geschrieben")
 	}
-	if _, out := do(t, "GET", ts.URL+"/v1/audit?q=github", ""); strings.Contains(out, "gut-token") {
-		t.Fatal("Token im Protokoll")
+	_, sessions := do(t, "GET", ts.URL+"/v1/sessions", "")
+	if !strings.Contains(sessions, `"has_github_token":true`) || strings.Contains(sessions, tok) {
+		t.Fatalf("%s", sessions)
 	}
-	do(t, "DELETE", ts.URL+"/v1/github/token", "")
-	if keys.tok != "" {
-		t.Fatal("Token muss entfernt sein")
+	_, list = do(t, "GET", ts.URL+"/v1/requests?all=1", "")
+	_, audit := do(t, "GET", ts.URL+"/v1/audit?q=ghtoken", "")
+	if strings.Contains(list, tok) || strings.Contains(audit, tok) || !strings.Contains(audit, "ghtoken.allowed") {
+		t.Fatalf("Token in Liste/Protokoll: %s %s", list, audit)
 	}
 }

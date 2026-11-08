@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -19,8 +18,8 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/ci"
+	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/github"
-	"github.com/DevertNet/bergfried/daemon/internal/gitpush"
 	"github.com/DevertNet/bergfried/daemon/internal/importer"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
@@ -117,7 +116,7 @@ func run(cmd string, args []string) error {
 			}
 			m.Imp = importer.Importer{Home: h, BL: func() index.Blocklist { return bl }}
 		}
-		return m.Create(ctx, args[0], *repo, *imp)
+		return m.Create(ctx, args[0], *repo, *imp, "")
 	case "start":
 		if err := need(1); err != nil {
 			return err
@@ -267,32 +266,42 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
 	}
-	// GitHub: Token im Schlüsselbund; der Mac pusht für die VM und liest CI (siehe docs/DESIGN-GIT.md).
-	kc := github.Keychain{}
-	gh := github.New(kc)
-	if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // nur Entwicklung/Tests: lokaler GitHub-Ersatz
-		gh.Base = v
+	// GitHub: ein Fine-grained Token pro Session (liegt in der VM, Kopie für CI auf dem Mac; siehe docs/DESIGN-GIT.md).
+	tokStore := ghtoken.Store{Home: home}
+	mkClient := func(tok string) *github.Client {
+		c := github.New(github.StaticToken(tok))
+		if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // nur Entwicklung/Tests: lokaler GitHub-Ersatz
+			c.Base = v
+		}
+		return c
 	}
-	loginFile := filepath.Join(home, "github-login")
-	creds := func(context.Context) (string, string, error) {
-		tok, err := kc.Token()
+	ciSvc := ci.NewService(m.S, func(session string) (*github.Client, error) {
+		t, err := tokStore.Get(session)
 		if err != nil {
-			return "", "", err
+			return nil, err
 		}
-		user := "x-access-token"
-		if b, e := os.ReadFile(loginFile); e == nil && strings.TrimSpace(string(b)) != "" {
-			user = strings.TrimSpace(string(b))
+		return mkClient(t), nil
+	})
+	ghSvc := ghtoken.NewService(m.S, tokStore, func(ctx context.Context, session, tok string) error {
+		s, err := m.S.GetSession(session)
+		if err != nil {
+			return err
 		}
-		return user, tok, nil
+		return m.InstallGitToken(ctx, s.VM, tok)
+	})
+	ghSvc.Client = mkClient
+	m.PreCheck = func(ctx context.Context, token, repoURL string) error {
+		if err := ghSvc.Validate(ctx, token); err != nil {
+			return err
+		}
+		if r, err := github.ParseRemote(repoURL); err == nil {
+			return ghSvc.CheckRepo(ctx, token, r)
+		}
+		return nil
 	}
-	pusher := gitpush.New(filepath.Join(home, "repos"), creds)
-	if v := os.Getenv("BERGFRIED_GITHUB_GIT"); v != "" { // nur Entwicklung/Tests, z. B. http://127.0.0.1:8099
-		pusher.RemoteURL = func(r github.Repo) string { return strings.TrimSuffix(v, "/") + "/" + r.Owner + "/" + r.Name + ".git" }
-	}
-	gitSvc := gitpush.NewService(m.S, pusher, gh, home)
-	ciSvc := ci.NewService(m.S, gh)
-	watcher := ci.NewWatcher(m.S, gh)
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, Git: gitSvc, CI: ciSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	m.SaveToken = tokStore.Set
+	m.DropToken = tokStore.Delete
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, CI: ciSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
@@ -300,8 +309,7 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	am.Actor = "app"
 	mon := api.NewMonitor(&am)
 	go mon.Run(ctx)
-	go watcher.Run(ctx)
-	apiSrv := &api.Server{GHBase: os.Getenv("BERGFRIED_GITHUB_API"), Git: gitSvc, CI: ciSvc, Watch: watcher, Keys: kc, LoginFile: loginFile, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

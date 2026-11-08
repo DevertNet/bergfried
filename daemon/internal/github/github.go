@@ -1,6 +1,5 @@
-// Package github: schmaler REST-Client für das, was Bergfried auf dem Mac für Agents erledigt
-// (Pull Request anlegen, Actions-Läufe/-Jobs/-Logs lesen, Läufe wiederholen). Das Token liegt im Schlüsselbund und
-// verlässt den Mac nie; die VM bekommt nur Ergebnisse (geschwärzt, gekürzt).
+// Package github: schmaler REST-Client für das, was der Daemon mit dem Token einer Session erledigt
+// (Zugriff prüfen, Actions-Läufe/-Jobs/-Logs lesen, Läufe wiederholen). Die Agents bekommen nur Ergebnisse (geschwärzt, gekürzt).
 package github
 
 import (
@@ -12,8 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -33,49 +30,7 @@ func (s StaticToken) Token() (string, error) {
 	return string(s), nil
 }
 
-var ErrNoToken = errors.New("kein GitHub-Token hinterlegt (App → Einstellungen → GitHub)")
-
-const (
-	KeychainService = "de.einfach123.bergfried.github"
-	KeychainAccount = "token"
-)
-
-// Keychain liest/schreibt das Token im macOS-Schlüsselbund über `security`. BERGFRIED_GITHUB_TOKEN (nur Entwicklung) hat Vorrang.
-type Keychain struct{}
-
-func (Keychain) Token() (string, error) {
-	if v := strings.TrimSpace(os.Getenv("BERGFRIED_GITHUB_TOKEN")); v != "" {
-		return v, nil
-	}
-	out, err := exec.Command("/usr/bin/security", "find-generic-password", "-s", KeychainService, "-a", KeychainAccount, "-w").Output()
-	if err != nil {
-		return "", ErrNoToken
-	}
-	t := strings.TrimSpace(string(out))
-	if t == "" {
-		return "", ErrNoToken
-	}
-	return t, nil
-}
-
-// Set speichert das Token (ersetzt ein vorhandenes). Hinweis: `security` bekommt das Token als Argument (für kurze Zeit in der
-// Prozessliste desselben Nutzers sichtbar) – ein Weg ohne Argument gibt es nur interaktiv.
-func (Keychain) Set(token string) error {
-	token = strings.TrimSpace(token)
-	if token == "" || strings.ContainsAny(token, " \t\r\n") {
-		return errors.New("Token ungültig")
-	}
-	out, err := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", KeychainService, "-a", KeychainAccount, "-w", token).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("Schlüsselbund: %s", strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func (Keychain) Delete() error {
-	_ = exec.Command("/usr/bin/security", "delete-generic-password", "-s", KeychainService, "-a", KeychainAccount).Run()
-	return nil
-}
+var ErrNoToken = errors.New("für diese Session ist kein GitHub-Token hinterlegt – rufe request_github_token auf")
 
 type Repo struct{ Owner, Name string }
 
@@ -176,12 +131,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return resp.StatusCode, nil
 }
 
-func (c *Client) CurrentUser(ctx context.Context) (string, error) {
-	var u struct{ Login string }
-	if _, err := c.do(ctx, "GET", "/user", nil, &u); err != nil {
-		return "", err
-	}
-	return u.Login, nil
+// Ping prüft, ob GitHub das Token akzeptiert (GET /rate_limit; 401 = ungültig/abgelaufen). Sagt nichts über Repo-Rechte.
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.do(ctx, "GET", "/rate_limit", nil, nil)
+	return err
 }
 
 func (c *Client) DefaultBranch(ctx context.Context, r Repo) (string, error) {
@@ -192,21 +145,6 @@ func (c *Client) DefaultBranch(ctx context.Context, r Repo) (string, error) {
 		return "", err
 	}
 	return d.DefaultBranch, nil
-}
-
-type PR struct {
-	URL    string
-	Number int
-}
-
-// CreatePR legt einen Pull Request an (POST /repos/{o}/{r}/pulls).
-func (c *Client) CreatePR(ctx context.Context, r Repo, head, base, title, body string, draft bool) (PR, error) {
-	var out struct {
-		HTMLURL string `json:"html_url"`
-		Number  int    `json:"number"`
-	}
-	_, err := c.do(ctx, "POST", "/repos/"+r.String()+"/pulls", map[string]any{"title": title, "head": head, "base": base, "body": body, "draft": draft}, &out)
-	return PR{out.HTMLURL, out.Number}, err
 }
 
 type Run struct {

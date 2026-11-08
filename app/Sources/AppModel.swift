@@ -20,7 +20,6 @@ final class AppModel: ObservableObject {
     private var started = false
     private var notified = Set<Int64>()
     private var firstLoad = true
-    private var lastCI: [String: String] = [:]   // session/agent -> letzter CI-Zustand
     private var bag = Set<AnyCancellable>()
 
     func start() {
@@ -52,17 +51,6 @@ final class AppModel: ObservableObject {
             for r in rq where !notified.contains(r.id) {
                 notified.insert(r.id)
                 if !firstLoad { Notifier.shared.post(r) }
-            }
-            // CI wird rot: einmalige Mitteilung (nicht beim ersten Laden und nicht bei jedem Abfragen)
-            for sess in ss {
-                for a in sess.agents {
-                    guard let ci = a.ci else { continue }
-                    let key = "\(sess.name)/\(a.name)"
-                    if let prev = lastCI[key], prev != "failure", ci.state == "failure", !firstLoad {
-                        Notifier.shared.postCI(session: sess.name, agent: a.name, ci: ci)
-                    }
-                    lastCI[key] = ci.state
-                }
             }
             firstLoad = false
         } catch {
@@ -104,16 +92,14 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Lehnt eine Anfrage beliebiger Art ab (Datei/Ordner, SSH, Git-Push, CI).
+    /// Lehnt eine Anfrage beliebiger Art ab (Datei/Ordner, SSH, GitHub-Token).
     func deny(_ r: RequestInfo) async {
         do {
             switch r.kind {
             case "ssh":
                 try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false))
-            case "gitpush":
-                try await api.post("/v1/git/decide", GitDecideBody(id: r.id, allow: false, createPr: false, confirmWorkflows: false, confirmSecrets: false))
-            case "cilogs", "cirerun":
-                try await api.post("/v1/ci/decide", CIDecideBody(id: r.id, allow: false, forSession: false))
+            case "ghtoken":
+                try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: ""))
             default:
                 try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false))
             }
@@ -121,13 +107,10 @@ final class AppModel: ObservableObject {
         await refresh()
     }
 
-    func decideGit(_ b: GitDecideBody) async -> String? {
-        do { try await api.post("/v1/git/decide", b); await refresh(); return nil } catch { return error.localizedDescription }
-    }
-
-    func decideCI(_ b: CIDecideBody) async {
-        do { try await api.post("/v1/ci/decide", b) } catch { banner = error.localizedDescription }
-        await refresh()
+    /// Token einfügen bzw. „Zugriff erweitert“ bestätigen (token leer). Rückgabe: Fehlermeldung (Anfrage bleibt dann offen).
+    func decideGitHub(id: Int64, token: String) async -> String? {
+        do { try await api.post("/v1/github/decide", GitHubDecideBody(id: id, allow: true, token: token)); await refresh(); return nil }
+        catch { return error.localizedDescription }
     }
 
     func revoke(_ g: GrantInfo) async {

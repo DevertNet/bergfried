@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
@@ -26,7 +25,6 @@ func setup(t *testing.T) *fx {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = st.AddPush(store.GitPush{Session: "shop", Agent: "main", Repo: "o/r", Branch: "agent/x", SHA: "abc"})
 	var logHits, rerun int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /repos/o/r/actions/runs", func(w http.ResponseWriter, r *http.Request) {
@@ -60,30 +58,20 @@ func setup(t *testing.T) *fx {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	gh := github.New(github.StaticToken("tok"))
-	gh.Base = srv.URL
-	svc := NewService(st, gh)
-	svc.Timeout = 3 * time.Second
+	svc := NewService(st, func(session string) (*github.Client, error) {
+		if session != "shop" {
+			return nil, github.ErrNoToken
+		}
+		gh := github.New(github.StaticToken("tok"))
+		gh.Base = srv.URL
+		return gh, nil
+	})
 	return &fx{svc: svc, logHits: &logHits, rerun: &rerun}
 }
 
 var repo = github.Repo{Owner: "o", Name: "r"}
 
-func (f *fx) pendingID(t *testing.T, kind string) int64 {
-	for i := 0; i < 200; i++ {
-		rs, _ := f.svc.S.ListRequests(true, 10)
-		for _, r := range rs {
-			if r.Kind == kind {
-				return r.ID
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("keine offene Anfrage " + kind)
-	return 0
-}
-
-func TestStatusOnlyForPushedBranchAndFailedStep(t *testing.T) {
+func TestStatusAndFailedStep(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	res, _ := f.svc.Status(ctx, "shop", repo, "agent/x")
@@ -102,11 +90,8 @@ func TestStatusOnlyForPushedBranchAndFailedStep(t *testing.T) {
 	if failed == nil || len(failed.Jobs) != 1 || failed.Jobs[0].FailedStep != "Run tests" {
 		t.Fatalf("%+v", failed)
 	}
-	if res, _ := f.svc.Status(ctx, "shop", repo, "main"); res.State != "none" || !strings.Contains(res.Message, "nicht über request_git_push") {
-		t.Fatalf("fremder Branch: %+v", res)
-	}
-	if res, _ := f.svc.Status(ctx, "andere", repo, "agent/x"); res.State != "none" {
-		t.Fatal("andere Session hat keinen Zugriff")
+	if res, _ := f.svc.Status(ctx, "andere", repo, "agent/x"); res.State != "none" || !strings.Contains(res.Message, "request_github_token") {
+		t.Fatalf("Session ohne Token: %+v", res)
 	}
 }
 
@@ -128,93 +113,30 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
-func TestLogsNeedApprovalRedactAndSessionGrant(t *testing.T) {
+func TestLogsWithoutApprovalRedacted(t *testing.T) {
 	f := setup(t)
-	ctx := context.Background()
-	ch := make(chan *pb.CILogsResult, 1)
-	go func() { r, _ := f.svc.Logs(ctx, "shop", "main", repo, 20); ch <- r }()
-	id := f.pendingID(t, "cilogs")
-	if atomic.LoadInt32(f.logHits) != 0 {
-		t.Fatal("vor der Bestätigung dürfen keine Logs geladen werden")
-	}
-	if _, err := f.svc.Decide(id, Decision{Allow: true, ForSession: true}); err != nil {
-		t.Fatal(err)
-	}
-	res := <-ch
+	res, _ := f.svc.Logs(context.Background(), "shop", "main", repo, 20)
 	if res.Verdict != pb.Verdict_VERDICT_ALLOWED || !strings.Contains(res.Log, "##[error]Process completed") || strings.Contains(res.Log, "hunter22xx") || strings.Contains(res.Log, "2026-11-08T") {
 		t.Fatalf("%+v", res)
 	}
-	// Session-Freigabe: zweiter Aufruf ohne Rückfrage
-	res2, _ := f.svc.Logs(ctx, "shop", "main", repo, 20)
-	if res2.Verdict != pb.Verdict_VERDICT_ALLOWED {
-		t.Fatalf("%+v", res2)
+	if atomic.LoadInt32(f.logHits) != 1 {
+		t.Fatal("Logs nicht geladen")
 	}
 	if rs, _ := f.svc.S.ListRequests(true, 10); len(rs) != 0 {
-		t.Fatal("mit Session-Freigabe darf keine neue Anfrage entstehen")
+		t.Fatal("CI darf keine Anfrage erzeugen")
 	}
-	// andere Session: weiterhin Rückfrage/Ablehnung wegen fehlendem Push
-	if r, _ := f.svc.Logs(ctx, "andere", "main", repo, 20); r.Verdict != pb.Verdict_VERDICT_DENIED {
+	if r, _ := f.svc.Logs(context.Background(), "andere", "main", repo, 20); r.Verdict != pb.Verdict_VERDICT_DENIED || !strings.Contains(r.Message, "request_github_token") {
 		t.Fatalf("%+v", r)
 	}
 }
 
-func TestLogsDeniedAndForeignJob(t *testing.T) {
+func TestRerunWithoutApproval(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	ch := make(chan *pb.CILogsResult, 1)
-	go func() { r, _ := f.svc.Logs(ctx, "shop", "main", repo, 20); ch <- r }()
-	id := f.pendingID(t, "cilogs")
-	if _, err := f.svc.Decide(id, Decision{Allow: false}); err != nil {
-		t.Fatal(err)
-	}
-	if r := <-ch; r.Verdict != pb.Verdict_VERDICT_DENIED || r.Log != "" || atomic.LoadInt32(f.logHits) != 0 {
-		t.Fatalf("abgelehnt: keine Logs: %+v", r)
-	}
-	// Job von einem Branch, den die Session nicht gepusht hat (main)
-	if r, _ := f.svc.Logs(ctx, "shop", "main", repo, 99); r.Verdict != pb.Verdict_VERDICT_DENIED || !strings.Contains(r.Message, "nicht zu einem Branch") {
+	if r, _ := f.svc.Rerun(ctx, "shop", "main", repo, 2); r.Verdict != pb.Verdict_VERDICT_ALLOWED || atomic.LoadInt32(f.rerun) != 1 {
 		t.Fatalf("%+v", r)
 	}
-}
-
-func TestRerunAlwaysAsksAndOnlyOwnBranches(t *testing.T) {
-	f := setup(t)
-	ctx := context.Background()
-	if r, _ := f.svc.Rerun(ctx, "shop", "main", repo, 9); r.Verdict != pb.Verdict_VERDICT_DENIED {
-		t.Fatalf("fremder Branch: %+v", r)
-	}
-	ch := make(chan *pb.CIRerunResult, 1)
-	go func() { r, _ := f.svc.Rerun(ctx, "shop", "main", repo, 2); ch <- r }()
-	id := f.pendingID(t, "cirerun")
-	if atomic.LoadInt32(f.rerun) != 0 {
-		t.Fatal("vor der Bestätigung nichts wiederholen")
-	}
-	if _, err := f.svc.Decide(id, Decision{Allow: true, ForSession: true}); err != nil {
-		t.Fatal(err)
-	}
-	if r := <-ch; r.Verdict != pb.Verdict_VERDICT_ALLOWED || atomic.LoadInt32(f.rerun) != 1 {
+	if r, _ := f.svc.Rerun(ctx, "andere", "main", repo, 2); r.Verdict != pb.Verdict_VERDICT_DENIED || atomic.LoadInt32(f.rerun) != 1 {
 		t.Fatalf("%+v", r)
-	}
-	// auch mit Session-Freigabe: erneut fragen
-	ch2 := make(chan *pb.CIRerunResult, 1)
-	go func() { r, _ := f.svc.Rerun(ctx, "shop", "main", repo, 2); ch2 <- r }()
-	id2 := f.pendingID(t, "cirerun")
-	if _, err := f.svc.Decide(id2, Decision{Allow: false}); err != nil {
-		t.Fatal(err)
-	}
-	if r := <-ch2; r.Verdict != pb.Verdict_VERDICT_DENIED || atomic.LoadInt32(f.rerun) != 1 {
-		t.Fatalf("%+v", r)
-	}
-}
-
-func TestWatcherStateForAgent(t *testing.T) {
-	f := setup(t)
-	w := NewWatcher(f.svc.S, f.svc.GH)
-	w.Poll(context.Background())
-	st, ok := w.For("shop", "main")
-	if !ok || st.State != "failure" || st.URL != "u2" || st.Branch != "agent/x" {
-		t.Fatalf("%+v %v", st, ok)
-	}
-	if _, ok := w.For("shop", "anderer"); ok {
-		t.Fatal("Agent ohne Push hat keinen CI-Zustand")
 	}
 }

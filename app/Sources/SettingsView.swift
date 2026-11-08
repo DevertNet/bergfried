@@ -7,9 +7,6 @@ struct SettingsView: View {
     @Local private var info: String?
     @Local private var daemonInstalled = DaemonController.installed
     @Local private var termChoice = Terminal.choice
-    @Local private var ghStatus: GitHubStatus?
-    @Local private var ghToken = ""
-    @Local private var ghMsg: String?
     @Local private var notifStatus = "wird geprüft …"
     @Local private var tpl: TemplateInfo?
     @Local private var tplText = ""
@@ -60,22 +57,8 @@ struct SettingsView: View {
                 Text("Erscheinen keine Banner: In den Systemeinstellungen → Mitteilungen → Bergfried den Mitteilungsstil auf „Banner“ oder „Hinweise“ stellen und Mitteilungen erlauben.").font(.caption).foregroundStyle(.secondary)
                 Text("Zusätzlich springt das Dock-Symbol, und das Menüleisten-Symbol sowie das Dock-Badge zeigen die Zahl offener Anfragen.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("GitHub (Push und CI über den Mac)") {
-                LabeledContent("Token") {
-                    if let g = ghStatus { Text(g.hasToken ? "im Schlüsselbund" + (g.login.isEmpty ? "" : " (\(g.login))") : "nicht hinterlegt").foregroundStyle(g.hasToken ? Color.primary : Color.orange) }
-                    else { Text("…") }
-                }
-                HStack {
-                    SecureField("Fine-grained Token einfügen", text: $ghToken).textFieldStyle(.roundedBorder)
-                    Button("Prüfen und speichern") { Task { await saveToken() } }.disabled(ghToken.trimmingCharacters(in: .whitespaces).isEmpty)
-                    if ghStatus?.hasToken == true { Button("Entfernen", role: .destructive) { Task { await removeToken() } } }
-                }
-                if let ghMsg { Text(ghMsg).font(.callout).textSelection(.enabled) }
-                HStack {
-                    Button("Token bei GitHub anlegen …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens/new") { NSWorkspace.shared.open(u) } }
-                    Text("nur die Repos auswählen, die Agents bearbeiten dürfen").font(.caption).foregroundStyle(.secondary)
-                }
-                Text("Benötigte Rechte laut GitHub-Doku: Actions (Read and write: Läufe lesen, Logs, Wiederholen), Metadata (Read). Voraussichtlich außerdem Contents (Read and write) fürs Pushen und Pull requests (Read and write) für Pull Requests – diese beiden Namen sind in der Doku nicht ausdrücklich belegt; bitte beim ersten Push mit einem Test-Repo prüfen. Das Token bleibt auf dem Mac (Schlüsselbund); die VM bekommt es nie.").font(.caption).foregroundStyle(.secondary)
+            Section("GitHub") {
+                Text("Das GitHub-Token gehört zur Session: Es wird beim Anlegen einer Session mit Git-Repo abgefragt oder auf Anfrage des Agents (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.").font(.callout).foregroundStyle(.secondary)
             }
             Section("Terminal") {
                 Picker("Terminal-App für „Terminal“ und „Login“", selection: $termChoice) {
@@ -119,29 +102,13 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { await load(); await loadTemplate(); notifStatus = await Notifier.shared.status(); await loadGH() }
+        .task { await load(); await loadTemplate(); notifStatus = await Notifier.shared.status() }
     }
 
     func load() async {
         if let b: Blocklist = try? await model.api.get("/v1/blocklist") {
             paths = b.paths.joined(separator: "\n"); names = b.names.joined(separator: "\n")
         }
-    }
-
-    func loadGH() async {
-        if let g: GitHubStatus = try? await model.api.get("/v1/github") { ghStatus = g }
-    }
-
-    func saveToken() async {
-        ghMsg = nil
-        do {
-            let g: GitHubStatus = try await model.api.send("PUT", "/v1/github/token", TokenBody(token: ghToken))
-            ghStatus = g; ghToken = ""; ghMsg = "Token gespeichert."
-        } catch { ghMsg = error.localizedDescription }
-    }
-
-    func removeToken() async {
-        do { _ = try await model.api.raw("DELETE", "/v1/github/token"); ghMsg = "Token entfernt."; await loadGH() } catch { ghMsg = error.localizedDescription }
     }
 
     func loadTemplate() async {

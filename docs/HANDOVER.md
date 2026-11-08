@@ -12,7 +12,7 @@ Die ursprüngliche Aufgabenstellung (Grundprinzipien, Architektur) steht in [`SP
 | M2 Datei-Anfragen | **fertig** | Index mit Sperrliste, `bergfried-mcp`, Kopie nach `shared/in`, Ordner-Import |
 | M3 SSH-Broker | **fertig** | ssh-agent-Protokoll mit Destination Constraints, Freigaben mit Ablauf, Hook für `ssh` im Terminal |
 | M4 Control-App | **fertig** (ohne Xcode gebaut) | Sessions, Agents, Anfragen, SSH-Freigaben, Protokoll, Einstellungen, Menüleiste, Mitteilungen |
-| Git-Push + CI über den Mac | **gebaut** (Branch `agent/git-push-ci`), gegen echtes GitHub noch ungeprüft | [`DESIGN-GIT.md`](DESIGN-GIT.md), [`git-test.md`](git-test.md) |
+| Git + CI mit Session-Token | **gebaut** (Branch `agent/git-push-ci`), gegen echtes GitHub noch ungeprüft | [`DESIGN-GIT.md`](DESIGN-GIT.md), [`git-test.md`](git-test.md) |
 | M5 VPS-Host | **zurückgestellt** (in einigen Wochen) | Plan: [`M5-PLAN.md`](M5-PLAN.md) |
 | M6 Datei-Browser/Editor | offen | „In VS Code öffnen“ wurde bewusst auf M6 verschoben (SSH-Befehl kopieren gibt es schon) |
 | M7 Handy-Freigaben | zurückgestellt | laut Spezifikation |
@@ -65,11 +65,13 @@ Alles ist auf `main` (GitHub: `DevertNet/bergfried`, privat). `make test` ist gr
 - **Sessionnamen:** neue max. 24 Zeichen, `base` reserviert (Kollision mit Basis-VM-Namen, Unix-Socket-Pfadlänge).
 - Go 1.26 (Docker-Image `golang:1.26`), reines Go (`modernc.org/sqlite`, kein cgo).
 
-## Git-Push und CI (kurz)
-Der **Mac pusht** für die VM (`request_git_push`: Bundle über `shared/out/.git-push/`, Prüfung, Bestätigung, Push nur nach `agent/…`, optional PR) und liest CI
-(`ci_status` ohne Rückfrage für selbst gepushte Branches, `ci_logs`/`ci_rerun` nach Bestätigung). Details, Regeln und offene Punkte: [`DESIGN-GIT.md`](DESIGN-GIT.md).
+## Git und CI (kurz)
+**Ein Fine-grained GitHub-Token pro Session**, in der VM (`~/.git-credentials`, `credential.helper store`) für alle Git-Aktionen per HTTPS und für Actions; kein Umbiegen von URLs, kein `gh`.
+Anlegen über vorausgefüllten Link (Repo-Auswahl nur als Hinweis möglich): beim Erstellen einer Session mit Repo (Token Pflicht) oder per Agent-Anfrage `request_github_token` bei `permission denied`.
+CI-Tools (`ci_status`/`ci_logs`/`ci_rerun`) ohne Rückfrage; keine CI-Buttons/-Badge in der App. Der Agent kann das Token lesen und auf jeden Branch pushen – bewusster Kompromiss, siehe [`DESIGN-GIT.md`](DESIGN-GIT.md)
+(dort auch: mehrere Besitzer/Konten später). Das frühere Mac-Push-Konzept (Bundles, Prüfblatt) ist ausgebaut.
 Testwerkzeug: `tools/fakegithub` (GitHub-Ersatz mit echtem Git-HTTP-Server). Fallstricke aus dem Bau: leere Listen als `null` ausliefern bricht die Swift-Dekodierung
-(`Detail.Normalize`); Namen wie `DB_PASSWORD` entgingen der Schwärzung (`\b` vor „password“ greift nach `_` nicht); `git` braucht `credential.helper=` leer, sonst legt macOS das Token im Schlüsselbund ab;
+(`Detail.Normalize`); Namen wie `DB_PASSWORD` entgingen der Schwärzung (`\b` vor „password“ greift nach `_` nicht);
 die Weiterleitung beim Log-Download zeigt bei GitHub auf eine andere Domain (Go entfernt den Authorization-Header).
 
 ## Sicherheitsinvarianten (nicht aufweichen, durch Tests abgesichert)
@@ -81,7 +83,7 @@ die Weiterleitung beim Log-Download zeigt bei GitHub auf eine andere Domain (Go 
 - Agent-Text (Begründung, Name, Benutzer, Host) ist nur Anzeige-Daten: bereinigt, nie in Shell/AppleScript-Quelltext eingebaut; Hostnamen und
   Benutzer werden per Regex validiert, bevor sie in `~/.ssh/config`-Blöcke gelangen.
 - Alle Sockets 0600 in 0700-Verzeichnissen; Datenverzeichnis `~/.bergfried` 0700.
-- GitHub-Zugangsdaten verlassen den Mac nie (Schlüsselbund); die VM bekommt nur Ergebnisse. Gepusht wird nur nach `agent/…`, nur Fast-Forward, nie Force; Workflow-Änderungen und mögliche Geheimnisse brauchen eine zusätzliche Bestätigung.
+- GitHub: Das Session-Token liegt bewusst in der VM (Agent kann es lesen, kann auf jeden Branch der gewählten Repos pushen). Begrenzung nur über Repo-Auswahl, Rechte (kein Workflows-Recht), Ablauf 1 Jahr, ein Token je Session.
 - Alles wird protokolliert (`audit`-Tabelle; App „Protokoll“, CSV mit Formel-Schutz). Audit-Fehler werden nicht verschluckt.
 
 ## Fallstricke (haben Zeit gekostet – bitte nicht erneut)
@@ -119,7 +121,7 @@ die Weiterleitung beim Log-Download zeigt bei GitHub auf eine andere Domain (Go 
   funktionieren, ist nur über die Entscheidungslogik (Unit-Test) abgesichert; geprüft wurde der Weg „Login → Neustart → Onboarding-Enter → RC aktiv“.
 - **„Jede Verbindung einzeln bestätigen“** (SSH-Freigabe-Option) gibt es nur im macOS-Dialog-Modus; in der App deaktiviert, der Daemon lehnt
   sie ohne Bestätigungsweg ab (sonst würde jede Verbindung scheitern). Sinnvoll: Bestätigung als eigene App-Anfrage.
-- **Git/CI gegen echtes GitHub** ungeprüft (Token-Rechte Contents/Pull requests, `GIT_ASKPASS` mit echtem GitHub), `pr_feedback` nicht gebaut, Oberfläche des Prüfblatts nicht gesehen.
+- **Git/CI gegen echtes GitHub** ungeprüft (Rechte-Namen Contents/Pull requests, Clone/Push privater Repos, nachträgliche Repo-Auswahl ohne neuen Token-Wert), mehrere Besitzer/Konten nicht gebaut, Oberfläche (Token-Schritt, Token-Karte) nicht gesehen.
 - Fehlt noch: Port-Anzeige je Session („Shop auf localhost:8080 öffnen“), Ressourcen-Limits/Idle-Auto-Stopp, `caffeinate`-Option,
   `propose_template_change` (Entwurf in `DESIGN-NOTES.md`), Aktualisieren von Claude Code in allen VMs,
   „Hosts“-Bereich in der App (kommt mit M5), launchd-Plist für den Daemon ohne App.

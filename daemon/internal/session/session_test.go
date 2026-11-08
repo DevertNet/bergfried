@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -140,5 +141,49 @@ func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("Hinweistext enthält %q nicht:\n%s", want, g)
 		}
+	}
+}
+
+type stdinRec struct {
+	args  [][]string
+	stdin []string
+}
+
+func (r *stdinRec) Run(_ context.Context, args ...string) ([]byte, error) {
+	r.args = append(r.args, args)
+	return nil, nil
+}
+func (r *stdinRec) RunStdin(_ context.Context, in io.Reader, args ...string) ([]byte, error) {
+	b, _ := io.ReadAll(in)
+	r.args = append(r.args, args)
+	r.stdin = append(r.stdin, string(b))
+	return nil, nil
+}
+
+func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
+	const tok = "github_pat_11ABCDEFG0abcdefghijklmnop"
+	rec := &stdinRec{}
+	m := &Manager{L: lima.Client{R: rec}}
+	if err := m.InstallGitToken(context.Background(), "bergfried-shop", " "+tok+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.stdin) != 1 || rec.stdin[0] != "https://x-access-token:"+tok+"@github.com\n" {
+		t.Fatalf("stdin: %q", rec.stdin)
+	}
+	all := strings.Join(rec.args[0], " ")
+	if strings.Contains(all, tok) {
+		t.Fatalf("Token in der Befehlszeile: %s", all)
+	}
+	for _, want := range []string{"umask 077", "chmod 600 ~/.git-credentials", "credential.helper store"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("%q fehlt: %s", want, all)
+		}
+	}
+}
+
+func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
+	g := guidance("/out")
+	if strings.Contains(g, "request_git_push") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Gib das Token nie aus") {
+		t.Fatal(g)
 	}
 }

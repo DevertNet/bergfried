@@ -1,27 +1,27 @@
-# Test: Git-Push und CI
+# Test: Git und CI mit Session-Token
 
 ## Automatisch
-`make test` (u. a. `gitpush` gegen einen echten `git http-backend` mit Basic-Auth, `ci`, `github`, `api`).
+`make test` (u. a. `ghtoken` mit lokalem GitHub-Ersatz, `ci`, `github`, `session` – Token nur über stdin –, `api` – Token nie in Antworten/Protokoll).
 
-## End-to-End ohne echtes GitHub (`tools/fakegithub`)
+## Mechanismus lokal (ohne VM, ohne echtes GitHub)
+Mit `tools/fakegithub` (REST + Git über HTTP, Basic-Auth):
 ```bash
-make build fakegithub
-# Bare-Repo mit Startcommit
-mkdir -p /private/tmp/bft/repos/o && git init -q --bare /private/tmp/bft/repos/o/r.git && git -C /private/tmp/bft/repos/o/r.git config http.receivepack true
-git clone -q /private/tmp/bft/repos/o/r.git /private/tmp/bft/seed && cd /private/tmp/bft/seed && git checkout -b main && echo "# r" > README.md && git add . && git commit -qm init && git push -q origin main && cd -
-./bin/fakegithub -addr 127.0.0.1:8099 -root /private/tmp/bft/repos -token e2e-token &
-# Checkout für den Import: Remote-URL wie bei GitHub, damit der Daemon sie versteht
-git clone -q /private/tmp/bft/repos/o/r.git ~/bergfried-e2e/proj && git -C ~/bergfried-e2e/proj remote set-url origin https://github.com/o/r.git
-# Daemon gegen den Ersatz
-BERGFRIED_GITHUB_API=http://127.0.0.1:8099 BERGFRIED_GITHUB_GIT=http://127.0.0.1:8099 BERGFRIED_GITHUB_TOKEN=e2e-token ./bin/bergfriedd serve --no-dialog
+make fakegithub
+S=/private/tmp/bft; mkdir -p $S/repos/o $S/home
+git init -q --bare $S/repos/o/r.git && git -C $S/repos/o/r.git config http.receivepack true
+./bin/fakegithub -addr 127.0.0.1:8099 -root $S/repos -token github_pat_TEST0123456789abcdef &
+# frisches HOME, damit weder ~/.gitconfig noch der Schlüsselbund berührt werden
+export HOME=$S/home GIT_TERMINAL_PROMPT=0
+printf 'http://x-access-token:github_pat_TEST0123456789abcdef@127.0.0.1:8099\n' > $HOME/.git-credentials && chmod 600 $HOME/.git-credentials
+git config --global credential.helper store
+git clone http://127.0.0.1:8099/o/r.git $S/work   # klappt; mit falschem Token: „Authentication failed“
 ```
-Dann: Session mit `import_path` anlegen (API `POST /v1/sessions/create`), in der VM `git checkout -b agent/e2e`, committen und `request_git_push` per JSON-RPC aufrufen
-(Muster `mcpcall2.sh` in `docs/m2-test.md`, Agent-Name `<session>/main`, im Projektordner ausführen). Entscheiden per `POST /v1/git/decide`. CI-Zustand setzt man mit
-`PUT /_fake/state` (Läufe/Jobs/Logs, `head_sha` = gepushter Commit), Ergebnisse stehen in `GET /_fake/log` (Pull Requests, Reruns).
-Danach alles abbauen (Session löschen, `fakegithub` beenden, `~/bergfried-e2e`, `/private/tmp/bft`, `~/.bergfried/repos`) und den Daemon normal neu starten.
+Danach `fakegithub` beenden und `/private/tmp/bft` löschen. (Belegt am 2026-11-08: Clone und Push mit `store`-Helper, falsches Token scheitert.)
 
-## Manuell mit echtem GitHub (einmalig)
-1. Test-Repo anlegen, fine-grained Token (nur dieses Repo; Actions R/W, Contents R/W, Pull requests R/W, Metadata R) → App → Einstellungen → GitHub.
-2. Session mit dem Repo (Ordner-Import eines lokalen Checkouts), Agent committet auf `agent/test`, `request_git_push` → Prüfblatt → „Pushen“ mit PR.
-3. Prüfen: Branch und PR auf GitHub, `git log` der Remote-Seite, Audit-Log. Ein Workflow, der absichtlich fehlschlägt: `ci_status`, `ci_logs` (Bestätigung), „Agent: CI fixen“.
-**Wenn Push oder PR an Rechten scheitert**, die Rechte-Namen in `docs/DESIGN-GIT.md` und der App-Einstellung korrigieren.
+## Manuell mit echtem GitHub (einmalig, noch nicht gemacht)
+1. Test-Repo anlegen (privat). Neue Session mit Git-Repo: Im Dialog „Token bei GitHub anlegen …“ – prüfen, dass das Formular vorausgefüllt ist (Name `bergfried-<session>`, Ablauf 1 Jahr,
+   Rechte Contents/Pull requests/Actions/Metadata), „Only select repositories“ → nur das Test-Repo, Token einfügen, erstellen.
+2. In der VM (`Shell in der VM`): `git -C ~/work/main push` auf einen Branch, `cat ~/.git-credentials` (0600), `ls -l`.
+3. Weiteres Repo: im Agent `git clone https://github.com/<owner>/<anderes-repo>` → scheitert → Agent ruft `request_github_token` → Karte in „Anfragen“ → bei GitHub das Repo zum Token hinzufügen → „Zugriff prüfen“.
+4. Workflow mit absichtlichem Fehler: `ci_status`, `ci_logs`, `ci_rerun` (ohne Rückfrage).
+5. Rechte-Namen/Verhalten prüfen und `docs/DESIGN-GIT.md` korrigieren, falls etwas abweicht. Test-Token danach bei GitHub widerrufen.

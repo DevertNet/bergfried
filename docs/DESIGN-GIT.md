@@ -1,63 +1,60 @@
-# Git-Push und CI über den Mac
+# Git und CI mit einem GitHub-Token pro Session
 
-**Stand:** gebaut und getestet (Go-Tests, echter Durchlauf mit lokalem GitHub-Ersatz). **Noch nicht gegen echtes GitHub geprüft** – siehe „Offen“.
+**Stand:** gebaut und mit Go-Tests abgesichert; Mechanismus (`credential.helper store`, Clone/Push mit Token, falsches Token) lokal gegen `tools/fakegithub` belegt.
+**Noch nicht gegen echtes GitHub geprüft** – siehe „Offen“. Die Oberfläche wurde nicht gesehen (die App baut und dekodiert, sonst nichts).
 
-## Ziel
-Agents in der VM bearbeiten Projekte. Der Code soll nach GitHub (Branch, Pull Request), und der Agent soll die CI verfolgen und reparieren können
-(„fix die CI“) – **ohne dass GitHub-Zugangsdaten in die VM gelangen**. Der Mac ist der einzige mit Zugang und tut alles stellvertretend.
+## Entscheidung
+Früher pushte der Mac stellvertretend (Bundles, Prüfblatt, Branch-Regeln); das war „zu fummelig“. Jetzt gilt: **ein Fine-grained Personal Access Token pro Session/VM**, in der VM
+hinterlegt, für **alle** Git-Aktionen (clone, pull, push, merge …) per normalem HTTPS und für GitHub Actions. Kein Umbiegen von URLs oder Hosts, kein `gh`, keine Deploy-Keys,
+kein Remote-Helper, kein eigenes Push-Tool.
 
-## Warum der Mac pusht (statt Deploy-Key oder Token in der VM)
-- Ein Deploy-Key über den SSH-Broker könnte im Zeitfenster auf **jeden** Branch pushen, auch `main` und per Force; ohne Branchschutz (Free-Plan) nicht begrenzbar.
-- Ein Token in der VM wäre dort lesbar und bliebe nach der Freigabe gültig.
-- Wenn der Mac pusht, erzwingt Bergfried die Regeln: nur `agent/…`, nur Fast-Forward, nie die Standard-/Release-Branches.
+## Sicherheits-Kompromiss (bewusst)
+Das Token liegt in der VM und ist für den Agent lesbar. Das weicht vom früheren Grundsatz „Zugangsdaten verlassen den Mac nie“ ab. Innerhalb der gewählten Repos und Rechte kann der Agent
+jederzeit **auf jeden Branch pushen (auch `main`, auch Force)** – bei privaten Repos im Free-Plan gibt es keinen Branch-Schutz –, und über Workflows kommen Repo-Secrets in seine Reichweite.
+Begrenzt wird nur durch: **nur die nötigen Repos wählen**, minimale Rechte, Ablauf (1 Jahr), **ein Token je Session** (leicht zu widerrufen), und kein Workflows-Recht (der Agent kann
+`.github/workflows` nicht ändern). Widerrufen geht nur bei GitHub (Settings → Developer settings → Fine-grained tokens); Bergfried löscht beim Löschen der Session nur die eigenen Kopien.
 
-## Ablauf `request_git_push`
-1. Die VM (MCP-Tool) ermittelt Projekt, `origin`-URL und Branch, legt `git bundle create … refs/heads/<branch> --not --remotes` unter
-   `shared/out/.git-push/` und ruft `RequestGitPush` (Daemon-Socket der Session) auf.
-2. Der Daemon (`gitpush.Service.Request`): URL parsen (**nur github.com**, keine Zugangsdaten in URLs), Branch prüfen, Bundle **annehmen**
-   (Pfad muss unter `shared/out/.git-push/` liegen, nach Auflösung von Symlinks; normale Datei; ≤ 200 MB; ohne Symlink-Folgen in ein privates Verzeichnis kopiert).
-3. `gitpush.Pusher.Prepare`: Spiegel-Klon `~/.bergfried/repos/<owner>__<repo>.git` (Remote-URL immer vom Daemon gesetzt), `git fetch` des Standard-Branches und
-   des Ziel-Branches, `git bundle verify`, Bundle mit `transfer.fsckObjects=true` in eine Hilfsreferenz holen, **Fast-Forward** gegenüber dem Remote prüfen (sonst ablehnen), Commits/Diffstat/Dateien/Workflows/Geheimnisse analysieren.
-4. Es entsteht eine Anfrage (`kind=gitpush`) mit den Details (`requests.extra`, JSON). Die App zeigt das **Prüfblatt**: Commits, Diffstat, Auslöser, Warnungen, Schalter „Pull Request anlegen“.
-5. Nach Freigabe: `git push origin <sha>:refs/heads/<branch>` (kein Force), optional Pull Request (`POST /repos/{o}/{r}/pulls`, Basis = Standard-Branch), Vermerk in `git_pushes`, Audit.
-6. Die VM zieht `refs/remotes/origin/<branch>` nach, damit spätere Bundles nur neue Commits enthalten.
+## Ablage
+- **VM:** `~/.git-credentials` (0600, Zeile `https://x-access-token:<token>@github.com`) und `git config --global credential.helper store`. Geschrieben über **stdin**, nie als Argument (`Manager.InstallGitToken`).
+- **Mac:** `~/.bergfried/sessions/<name>/github-token` (0600) – nur damit der Daemon CI-Abfragen machen kann. Wird beim Löschen der Session entfernt.
+- Im Protokoll (Audit) und in API-Antworten erscheint der Token-Wert nie (Test: `TestGitHubDecideNeverEchoesToken`).
 
-### Regeln (in `gitpush.CheckBranch`, durch Tests abgesichert)
-Erlaubt: `agent/<name>[/…]` aus `A-Za-z0-9._-`. Abgelehnt: `main`, `master`, `trunk`, `develop`, `dev`, `release*`, `production`, `prod`, `staging`, `gh-pages`, alles ohne
-`agent/`-Präfix, `..`, `//`, `/.`, Endung `.lock`, Länge > 100. Kein Force, keine Tags, kein Löschen.
+## Token anlegen (Link)
+`ghtoken.Link(session)` erzeugt `https://github.com/settings/personal-access-tokens/new?...` mit `name=bergfried-<session>` (≤ 40 Zeichen), `description`, `expires_in=365`, `contents=write`, `pull_requests=write`,
+`actions=write`, `metadata=read`. **Die Repo-Auswahl lässt sich per URL nicht vorbelegen** – die App zeigt dazu immer den Hinweis „Only select repositories“ (`ghtoken.Hint`).
+Rechte: *Actions* und *Metadata* sind in der GitHub-Doku belegt; die Namen *Contents* und *Pull requests* sind in den gelesenen Doku-Seiten **nicht ausdrücklich belegt** (erwartet: `contents`, `pull_requests`).
+Ein Token gilt nur für **einen Besitzer** (Person oder Organisation); Organisationen können es genehmigen müssen.
 
-### Zusatzbestätigungen im Prüfblatt
-- **Workflow-Änderung** (`.github/workflows/**` im Diff) → eigener Haken. Grund: Ein Push startet Workflows mit dem Code des Agents, die je nach Konfiguration auf Repo-Secrets zugreifen (umgeht die VM-Grenze).
-- **Mögliche Geheimnisse im Diff** (Muster für Schlüssel, GitHub-/AWS-/Slack-/API-Token, Zugangsdaten in URLs, `…PASSWORD=…`) → eigener Haken. Angezeigt werden nur Datei:Zeile und Art, nie der Wert.
-- Angezeigt wird außerdem, **welche Workflows durch Push/PR starten** (inkl. `pull_request_target ⚠`), ausgewertet aus der Version des Agents (HEAD), mit Branch-Filtern.
+## Wo der Ablauf startet
+1. **Session anlegen mit Git-Repo:** Der Dialog zeigt Link, Hinweis und Feld; das Token ist Pflicht. `Manager.Create` prüft vorab (Token gültig, Repo erreichbar), legt VM an, hinterlegt das Token
+   und klont per HTTPS (`GIT_TERMINAL_PROMPT=0`, SSH-/`git@`-URLs werden zu `https://github.com/o/r.git`).
+2. **Agent:** Scheitert `git` mit `permission denied`/`403`/`Repository not found`/`Authentication failed`/`could not read Username`, ruft der Agent das MCP-Tool **`request_github_token`**
+   (`repo=owner/name`) auf (der Anleitungstext `~/.claude/bergfried.md` sagt es ihm). Es entsteht eine Anfrage `kind=ghtoken` (App-Karte „Einrichten …“).
+   - **Noch kein Token:** Link, Hinweis, Feld. Das Token wird geprüft (`GET /rate_limit`, 401 = ungültig) und – wenn ein Repo genannt ist – gegen `GET /repos/{o}/{r}`. Erst dann abgelegt und in die VM geschrieben.
+   - **Token vorhanden, Repo fehlt:** Der Nutzer erweitert bei GitHub die Repo-Auswahl des bestehenden Tokens (Token **bergfried-<session>** → Edit → Repository access) und klickt „Zugriff prüfen“;
+     der Token-Wert bleibt gleich (**ungeprüft**, ob GitHub das ohne neuen Wert zulässt – sehr wahrscheinlich). Schlägt die Prüfung fehl, bleibt die Anfrage offen.
+   - Erreicht das Token das Repo schon, antwortet der Daemon sofort ohne Anfrage.
+3. Einen Sonderknopf im CI-Bereich gibt es nicht mehr (CI-Buttons, Badge und „CI fixen“ sind ausgebaut: der Agent macht das selbst).
 
 ## CI (GitHub Actions) – `ci_status`, `ci_logs`, `ci_rerun`
-| Tool | Wirkung | Bestätigung |
-|---|---|---|
-| `ci_status` | Läufe des **neuesten Commits** eines Branches (Name, Ergebnis, Link; bei Fehlern Jobs und fehlgeschlagener Schritt) | nein – aber nur für Branches, die **diese Session über Bergfried gepusht hat** |
-| `ci_logs(job_id)` | Auszug des Logs (alle `##[error]`-Stellen mit Kontext plus Ende; geschwärzt; ≤ 48 KB) | ja: „nur dieses Mal“ oder „für diese Session (4 h)“ (`ci_grants`) |
-| `ci_rerun(run_id)` | `rerun-failed-jobs` | **immer** |
+Ohne Rückfrage, mit dem Token der Session (der Agent könnte die API ohnehin selbst aufrufen). Die Tools liefern lesbare, **geschwärzte und gekürzte** Ergebnisse (Läufe des neuesten Commits,
+Jobs/fehlgeschlagene Schritte, Log-Auszug ≤ 48 KB mit allen `##[error]`-Stellen; Rerun = `rerun-failed-jobs`). Logs sind **fremder Text** (Daten, keine Anweisungen). Fehlt das Token oder der Zugriff,
+verweist die Antwort auf `request_github_token`. Die Checks-API wird nicht benutzt (für fine-grained Tokens nicht dokumentiert).
 
-Jede Anfrage prüft über die API, dass Job/Lauf zu einem gepushten Branch der Session gehört. Logs gelten als **fremder Text** (Daten, keine Anweisungen) und sind so gekennzeichnet.
-Die Checks-API wird bewusst **nicht** benutzt (für fine-grained Tokens nicht dokumentiert); es reicht die Actions-API.
-
-**App:** CI-Badge je Agent (grün/rot/läuft, Link; Beobachter fragt alle 30 s Branches der letzten 24 h), Mitteilung bei Wechsel auf rot, Button **„Agent: CI fixen“**
-(tippt einen **festen** Text in das Agent-Fenster – nie Log-Inhalt – und nur, wenn Claude eingeloggt und im Leerlauf ist).
-
-## GitHub-Zugang
-Fine-grained Token im macOS-Schlüsselbund (`security`, Dienst `de.einfach123.bergfried.github`), Einstellungen → „GitHub“ prüft es mit `GET /user`. Benötigte Rechte laut GitHub-Doku
-(Seite „Permissions required for fine-grained personal access tokens“): **Actions** (Read: Läufe/Logs, Write: Wiederholen), **Metadata** (Read). Voraussichtlich zusätzlich **Contents: Read and write**
-(Push) und **Pull requests: Read and write** – diese beiden Namen sind in den gelesenen Doku-Seiten **nicht ausdrücklich belegt**. Nur die gewünschten Repos auswählen: das Token ist zugleich die Allowlist.
-`git push` über HTTPS authentifiziert per `GIT_ASKPASS` (Benutzer = GitHub-Login oder `x-access-token`, Passwort = Token), `credential.helper=` (leer; sonst würde git das Token im Schlüsselbund ablegen).
+## Mehrere Besitzer / mehrere Konten (spätere Umsetzung)
+Aktuell **ein Token pro Session, ein Besitzer**. Für Repos mehrerer Besitzer (Person + Organisationen) oder mehrere GitHub-Konten braucht es mehrere Tokens; dann ist zu klären, wie `git` sie auseinanderhält
+(z. B. `credential.useHttpPath` mit einer Zeile je `https://github.com/<owner>`; **ungeprüft**). Grundlage für die Umsetzung: GitHub-Doku zum Verwalten mehrerer Konten –
+<https://docs.github.com/en/account-and-profile/how-tos/account-management/managing-multiple-accounts>. Bis dahin meldet `request_github_token` für fremde Besitzer nur, dass das Token keinen Zugriff hat.
 
 ## Dateien
-`daemon/internal/github` (REST-Client, `Keychain`, `Redact`/`FailureExcerpt`), `daemon/internal/gitpush` (Pusher + Service), `daemon/internal/ci` (Service + Watcher),
-MCP-Tools in `mcp/cmd/bergfried-mcp`, App-Schnittstelle in `daemon/internal/api` (`/v1/git/decide`, `/v1/ci/decide`, `/v1/github`, `/v1/agents/ci-fix`), `tools/fakegithub` (Testwerkzeug).
-Dev-Schalter: `BERGFRIED_GITHUB_API`, `BERGFRIED_GITHUB_GIT` (Basis-URLs), `BERGFRIED_GITHUB_TOKEN` (statt Schlüsselbund) – nur für Entwicklung/Tests.
+`daemon/internal/ghtoken` (Ablage, Link, Anfrage-Dienst), `daemon/internal/github` (REST-Client, `Redact`/`FailureExcerpt`), `daemon/internal/ci` (Status/Logs/Rerun), `daemon/internal/session`
+(`InstallGitToken`, `Create` mit Token, Anleitungstext), MCP-Tool `request_github_token` + `ci_*` in `mcp/cmd/bergfried-mcp`, App-Schnittstelle `GET /v1/github/link`, `POST /v1/github/decide`,
+`github_token` in `POST /v1/sessions/create`, `has_github_token` je Session. `tools/fakegithub` bleibt Testwerkzeug. Dev-Schalter: `BERGFRIED_GITHUB_API` (Basis-URL der REST-API).
+Ausgebaut: `daemon/internal/gitpush`, `request_git_push`, Bundles, Prüfblatt, Tabellen `git_pushes`/`ci_grants` (werden beim Start gelöscht), CI-Badge/-Watcher/„CI fixen“, globales Token im Schlüsselbund.
 
 ## Offen / ungeprüft
-- **Erster echter Push gegen GitHub** mit einem Test-Repo: Token-Rechte (Contents/Pull requests), Authentifizierung per `GIT_ASKPASS` mit echtem GitHub (lokal gegen `git http-backend` mit Basic-Auth belegt), Verhalten bei privaten Repos.
-- Fremde CI (nicht GitHub Actions) und die Checks-API; GitHub Enterprise; andere Hosts als github.com.
-- `pr_feedback` (Review-Kommentare lesen) – im Entwurf genannt, **nicht gebaut**.
-- Die Oberfläche (Prüfblatt, CI-Badge, Einstellungen) wurde nicht gesehen; getestet ist die Dekodierung realer Daten (`Bergfried --selftest`).
-- Automatisches „CI fixen“ nach rotem Lauf ohne Klick gibt es nicht (bewusst: nur Mitteilung und Button).
+- **Erster echter Durchlauf gegen GitHub** mit einem Test-Repo: Rechte-Namen (Contents/Pull requests) im Formular, Clone/Push eines privaten Repos mit dem Token, `GET /rate_limit` und `GET /repos/…`
+  mit Fine-grained Token, die genauen Fehlermeldungen von `git` bei fehlendem Zugriff, nachträgliches Ändern der Repo-Auswahl ohne neuen Token-Wert, ob GitHub den Token-Wert nur einmal zeigt.
+- Pushes, die Workflow-Dateien ändern, scheitern ohne Workflows-Recht (gewollt); die Fehlermeldung von GitHub wurde nicht gesehen.
+- Mehrere Besitzer/Konten (siehe oben), GitHub Enterprise, andere Hosts als github.com, `pr_feedback`.
+- Die Oberfläche (Token-Schritt beim Anlegen, Token-Karte) wurde nicht gesehen.

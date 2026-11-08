@@ -185,7 +185,6 @@ struct AgentRow: View {
                 Text(state.text).font(.caption).foregroundStyle(.secondary)
             }
             Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
-            ciBadge
             Spacer()
             if let b = busy {
                 ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary)
@@ -225,28 +224,6 @@ struct AgentRow: View {
             Button("Trotzdem löschen", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
             Button("Abbrechen", role: .cancel) {}
         } message: { Text(forceMsg ?? "") }
-    }
-
-    @ViewBuilder var ciBadge: some View {
-        if let ci = a.ci, ci.state != "none" {
-            let color: Color = ci.state == "success" ? .green : (ci.state == "failure" ? .red : .orange)
-            let text = ci.state == "success" ? "CI grün" : (ci.state == "failure" ? "CI rot" : "CI läuft")
-            HStack(spacing: 6) {
-                Button { if let u = URL(string: ci.url), !ci.url.isEmpty { NSWorkspace.shared.open(u) } } label: {
-                    Label(text, systemImage: ci.state == "success" ? "checkmark.circle.fill" : (ci.state == "failure" ? "xmark.circle.fill" : "clock.fill"))
-                }
-                .buttonStyle(.borderless).foregroundStyle(color).font(.caption.bold())
-                .help("\(ci.repo) · \(ci.branch) · \(ci.name) – im Browser öffnen")
-                if ci.state == "failure" {
-                    Button("Agent: CI fixen") {
-                        Task {
-                            do { try await model.api.post("/v1/agents/ci-fix", AgentBody(session: s.name, agent: a.name)) }
-                            catch { model.setBanner(error.localizedDescription) }
-                        }
-                    }.controlSize(.small).disabled(!s.running).help("Schickt dem Agent einen festen Hinweis: ci_status und ci_logs aufrufen, beheben, erneut pushen")
-                }
-            }
-        }
     }
 
     func remove(deleteDir: Bool, force: Bool) async {
@@ -295,11 +272,20 @@ struct CreateSessionSheet: View {
     @Local private var name = ""
     @Local private var source = 0            // 0 leer, 1 Git-Repo, 2 Ordner
     @Local private var repo = ""
+    @Local private var token = ""
+    @Local private var link = ""
+    @Local private var hint = ""
     @Local private var folder = ""
     @Local private var preview: ImportPreview?
     @Local private var previewError: String?
     var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,23}$"#, options: .regularExpression) != nil && name != "base" && !name.hasPrefix("base-") }
-    var sourceOK: Bool { source != 2 || (preview != nil && previewError == nil) }
+    var sourceOK: Bool {
+        switch source {
+        case 1: return !repo.trimmingCharacters(in: .whitespaces).isEmpty && !token.trimmingCharacters(in: .whitespaces).isEmpty
+        case 2: return preview != nil && previewError == nil
+        default: return true
+        }
+    }
 
     var body: some View {
         Form {
@@ -310,7 +296,10 @@ struct CreateSessionSheet: View {
                 Text("Git-Repo klonen").tag(1)
                 Text("Bestehenden Ordner kopieren").tag(2)
             }
-            if source == 1 { TextField("Git-URL (https://…)", text: $repo) }
+            if source == 1 {
+                TextField("Git-URL (https://github.com/owner/repo)", text: $repo)
+                GitHubTokenSteps(link: link, hint: hint, token: $token)
+            }
             if source == 2 {
                 HStack {
                     Text(folder.isEmpty ? "Kein Ordner gewählt" : folder).lineLimit(1).truncationMode(.middle).foregroundStyle(folder.isEmpty ? .secondary : .primary)
@@ -319,7 +308,7 @@ struct CreateSessionSheet: View {
                 }
                 if let p = preview { Label("\(p.files) Dateien, \(formatBytes(p.bytes)) werden kopiert", systemImage: "doc.on.doc").font(.callout) }
                 if let e = previewError { Label(e, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout) }
-                Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Ergebnisse kommen per git push oder über shared/out zurück.")
+                Text("Der Ordner wird **kopiert**, nicht eingebunden: Die VM sieht nie dein Home. Nicht kopiert werden Einträge der Sperrliste, .env-Dateien, Schlüssel, Symlinks sowie node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Ergebnisse kommen über shared/out zurück; für Git braucht der Agent später ein GitHub-Token (Anfrage `request_github_token`).")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Text("Wo liegt die Session? Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
@@ -330,10 +319,15 @@ struct CreateSessionSheet: View {
                 Button("Erstellen") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r, importPath: f)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 520)
+        }.padding(20).frame(width: 560)
+        .task(id: name) {
+            // Link mit dem Session-Namen vorbelegen (Token heißt dann bergfried-<name>)
+            let q = valid ? name : "neu"
+            if let l: GitHubLink = try? await model.api.get("/v1/github/link?session=\(q)") { link = l.url; hint = l.hint }
+        }
     }
 
     func chooseFolder() {

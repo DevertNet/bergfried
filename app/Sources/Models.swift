@@ -17,7 +17,6 @@ struct AgentInfo: Codable, Hashable {
     var rc: Bool
     var rcUrl: String
     var rcAction: String   // "", "activating", "failed"
-    var ci: CIState?
 }
 
 struct SessionInfo: Codable, Identifiable, Hashable {
@@ -38,6 +37,7 @@ struct SessionInfo: Codable, Identifiable, Hashable {
     var guestDiskUsed: Int64
     var guestDiskSize: Int64
     var probeError: String?
+    var hasGithubToken: Bool
     var id: String { name }
     var running: Bool { status == "Running" }
 }
@@ -51,43 +51,11 @@ struct SSHInfo: Codable, Hashable {
     var suggestedMinutes: Int
 }
 
-struct GitCommit: Codable, Hashable { var sha: String; var author: String; var subject: String }
-
-struct GitDetail: Codable, Hashable {
+struct GitHubDetail: Codable, Hashable {
     var repo: String
-    var branch: String
-    var defaultBranch: String
-    var newBranch: Bool
-    var base: String
-    var head: String
-    var commits: [GitCommit]
-    var diffstat: String
-    var files: Int
-    var additions: Int
-    var deletions: Int
-    var workflowFiles: [String]
-    var triggers: [String]
-    var secrets: [String]
-    var wantPr: Bool
-    var prTitle: String
-    var prBody: String
-}
-
-struct CIDetail: Codable, Hashable {
-    var repo: String
-    var branch: String
-    var jobId: Int64
-    var jobName: String
-    var runId: Int64
-    var runName: String
-}
-
-struct CIState: Codable, Hashable {
-    var state: String   // none | pending | success | failure
-    var name: String
-    var url: String
-    var branch: String
-    var repo: String
+    var hasToken: Bool
+    var link: String
+    var hint: String
 }
 
 struct RequestInfo: Codable, Identifiable, Hashable {
@@ -103,8 +71,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var files: Int64
     var large: Bool
     var ssh: SSHInfo?
-    var git: GitDetail?
-    var ci: CIDetail?
+    var github: GitHubDetail?
     var pending: Bool { status == "pending" }
 }
 
@@ -158,7 +125,7 @@ struct SSHDecideBody: Encodable {
 }
 struct IDBody: Encodable { var id: Int64 }
 struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
-struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = "" }
+struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = "" }
 struct PathBody: Encodable { var path: String }
 struct ImportPreview: Codable { var files: Int64; var bytes: Int64 }
 struct YAMLBody: Encodable { var yaml: String }
@@ -175,7 +142,5 @@ struct AgentRemoveBody: Encodable { var session: String; var agent: String; var 
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 
-struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var createPr: Bool; var confirmWorkflows: Bool; var confirmSecrets: Bool }
-struct CIDecideBody: Encodable { var id: Int64; var allow: Bool; var forSession: Bool }
-struct TokenBody: Encodable { var token: String }
-struct GitHubStatus: Codable { var hasToken: Bool; var login: String }
+struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String }
+struct GitHubLink: Codable { var url: String; var hint: String }
