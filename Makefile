@@ -24,3 +24,8 @@ proto: ## Protobuf/gRPC-Code für Go erzeugen (in Docker)
 	docker build -q -t bergfried-protogen -f proto/Dockerfile proto
 	docker run --rm -v "$(CURDIR)":/src -w /src bergfried-protogen sh -c \
 		'protoc -I proto --go_out=proto/gen --go_opt=paths=source_relative --go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative proto/bergfried/v1/bergfried.proto'
+
+.PHONY: fakegithub
+fakegithub: ## lokaler GitHub-Ersatz für Entwicklung/E2E-Tests (macOS arm64) -> bin/fakegithub
+	mkdir -p bin
+	$(DOCKER_GO) sh -c 'GOOS=darwin GOARCH=arm64 go build -o bin/fakegithub ./tools/fakegithub'

@@ -59,6 +59,8 @@ struct MenuContent: View {
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {
                 Button("SSH \(r.session)/\(r.agent) → \(r.path) …") { open() }
+            } else if r.kind == "gitpush" || r.kind == "cilogs" || r.kind == "cirerun" {
+                Button("\(r.kind == "gitpush" ? "Push" : "CI") \(r.session)/\(r.agent): \(r.path) …") { open() }
             } else {
                 Menu("\(r.session)/\(r.agent): ~/\(r.path)") {
                     Button("Erlauben") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
@@ -72,7 +74,7 @@ struct MenuContent: View {
         Button("Beenden") { NSApp.terminate(nil) }
     }
 
-    func open() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+    func open() { model.pane = .requests; openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 }
 
 @main

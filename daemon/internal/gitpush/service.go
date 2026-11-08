@@ -46,6 +46,18 @@ type Detail struct {
 	PRBody        string   `json:"pr_body"`
 }
 
+// Normalize ersetzt leere Listen durch [] (sonst null – das würde das Dekodieren in der App brechen).
+func (d *Detail) Normalize() {
+	if d.Commits == nil {
+		d.Commits = []Commit{}
+	}
+	for _, p := range []*[]string{&d.WorkflowFiles, &d.Triggers, &d.Secrets} {
+		if *p == nil {
+			*p = []string{}
+		}
+	}
+}
+
 type Decision struct {
 	Allow            bool
 	CreatePR         bool
@@ -179,6 +191,7 @@ func (s *Service) Request(ctx context.Context, session, agent string, in Input) 
 		Commits: a.Commits, DiffStat: a.DiffStat, Files: a.FilesChanged, Additions: a.Additions, Deletions: a.Deletions,
 		WorkflowFiles: a.WorkflowFiles, Triggers: a.Triggers, Secrets: a.SecretFindings, WantPR: in.WantPR,
 		PRTitle: truncate(in.PRTitle, 200), PRBody: truncate(in.PRBody, 4000)}
+	d.Normalize()
 	extra, _ := json.Marshal(d)
 	reason := truncate(strings.Map(func(r rune) rune {
 		if r < 32 && r != '\n' || r == 127 {

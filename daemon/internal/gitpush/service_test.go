@@ -107,6 +107,10 @@ func TestServiceAllowPushAndPR(t *testing.T) {
 	if err := json.Unmarshal([]byte(rs[0].Extra), &d); err != nil || len(d.Commits) != 1 || d.Repo != "o/r" || !d.WantPR {
 		t.Fatalf("%+v %v", d, err)
 	}
+	// Leere Listen müssen als [] gespeichert sein (null bricht die App)
+	if strings.Contains(rs[0].Extra, "null") {
+		t.Fatalf("Extra enthält null: %s", rs[0].Extra)
+	}
 	if _, err := e.svc.Decide(id, Decision{Allow: true, CreatePR: true}); err != nil {
 		t.Fatal(err)
 	}

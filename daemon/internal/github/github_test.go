@@ -128,9 +128,9 @@ func asAPI(err error, out **APIError) bool {
 }
 
 func TestRedactAndExcerpt(t *testing.T) {
-	in := "Authorization: Bearer abcdef123456\npassword=hunter22xx\nghp_" + strings.Repeat("a", 30) + "\nAKIAABCDEFGHIJKLMNOP\nhttps://user:pw123456@host/x\n-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\nnormaler Text"
+	in := "DB_PASSWORD=supersecret12345\nMY_API_KEY: abcdefghijkl123\nexport AWS_SECRET_ACCESS_KEY=\"wJalrXUtnFEMI/K7MDENG\"\nAuthorization: Bearer abcdef123456\npassword=hunter22xx\nghp_" + strings.Repeat("a", 30) + "\nAKIAABCDEFGHIJKLMNOP\nhttps://user:pw123456@host/x\n-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----\nnormaler Text"
 	out := Redact(in)
-	for _, leak := range []string{"abcdef123456", "hunter22xx", strings.Repeat("a", 30), "AKIAABCDEFGHIJKLMNOP", "pw123456", "MIIE"} {
+	for _, leak := range []string{"supersecret12345", "abcdefghijkl123", "wJalrXUtnFEMI", "abcdef123456", "hunter22xx", strings.Repeat("a", 30), "AKIAABCDEFGHIJKLMNOP", "pw123456", "MIIE"} {
 		if strings.Contains(out, leak) {
 			t.Fatalf("%q nicht geschwärzt:\n%s", leak, out)
 		}

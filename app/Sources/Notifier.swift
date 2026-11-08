@@ -78,6 +78,18 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
             c.body = "Zugriff auf \(r.path)\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
+        case "gitpush":
+            c.title = "Push-Anfrage: \(r.session)/\(r.agent)"
+            c.body = "\(r.git?.commits.count ?? 0) Commit(s) nach \(r.path)\n\(clip(r.reason, 140))"
+            c.categoryIdentifier = "OPEN"
+        case "cilogs":
+            c.title = "CI-Logs angefragt: \(r.session)/\(r.agent)"
+            c.body = "\(r.path)"
+            c.categoryIdentifier = "OPEN"
+        case "cirerun":
+            c.title = "CI wiederholen: \(r.session)/\(r.agent)"
+            c.body = "\(r.path)"
+            c.categoryIdentifier = "OPEN"
         default:
             c.title = "Datei-Anfrage: \(r.session)/\(r.agent)"
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
@@ -98,9 +110,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
             switch action {
             case "allow": Task { await m.decideFile(r, allow: true) }
             case "deny":
-                if r.kind == "ssh" {
-                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false)) }
-                } else { Task { await m.decideFile(r, allow: false) } }
+                Task { await m.deny(r) }
             case "ssh-allow":
                 if let s = r.ssh, s.source == "known_hosts", !s.defaultKey.isEmpty {
                     Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allAgents: false, perConnection: false, trustUnknownHost: false)) }

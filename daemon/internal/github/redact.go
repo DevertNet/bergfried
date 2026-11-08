@@ -16,7 +16,8 @@ var redactors = []struct {
 	{regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`), "[geschwärzt: API-Schlüssel]"},
 	{regexp.MustCompile(`\bxox[abprs]-[A-Za-z0-9-]{10,}\b`), "[geschwärzt: Slack-Token]"},
 	{regexp.MustCompile(`(?i)(authorization:\s*(?:bearer|basic|token)\s+)\S+`), "${1}[geschwärzt]"},
-	{regexp.MustCompile(`(?i)\b((?:password|passwd|secret|token|api[_-]?key|access[_-]?key)\s*[:=]\s*)["']?[^\s"']{6,}["']?`), "${1}[geschwärzt]"},
+	// Namen wie DB_PASSWORD, MY_API_KEY, github.token: Präfixe und Suffixe zulassen (kein \b: "_" zählt als Wortzeichen)
+	{regexp.MustCompile(`(?i)([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*)["']?[^\s"']{6,}["']?`), "${1}[geschwärzt]"},
 	{regexp.MustCompile(`(?i)(https?://)[^/\s:@]+:[^/\s@]+@`), "${1}[geschwärzt]@"},
 }
 

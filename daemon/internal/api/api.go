@@ -506,7 +506,11 @@ func (s *Server) agentCIFix(w http.ResponseWriter, r *http.Request) {
 	}
 	st, ok := s.Mon.Get(q.Session)
 	a := st.Agents[q.Agent]
-	if !ok || !a.Running || !a.Idle {
+	if !ok || st.LoggedIn == nil || !*st.LoggedIn {
+		fail(w, 409, fmt.Errorf("Claude ist in dieser VM nicht eingeloggt – der Hinweis würde in einer Auswahl landen"))
+		return
+	}
+	if !a.Running || !a.Idle {
 		fail(w, 409, fmt.Errorf("Der Agent arbeitet gerade oder wartet auf eine Eingabe – bitte später erneut versuchen"))
 		return
 	}
@@ -698,6 +702,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 		case "gitpush":
 			var d gitpush.Detail
 			if json.Unmarshal([]byte(q.Extra), &d) == nil {
+				d.Normalize()
 				j.Git = &d
 			}
 		case "cilogs", "cirerun":

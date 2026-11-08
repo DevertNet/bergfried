@@ -17,6 +17,7 @@ struct AgentInfo: Codable, Hashable {
     var rc: Bool
     var rcUrl: String
     var rcAction: String   // "", "activating", "failed"
+    var ci: CIState?
 }
 
 struct SessionInfo: Codable, Identifiable, Hashable {
@@ -50,6 +51,45 @@ struct SSHInfo: Codable, Hashable {
     var suggestedMinutes: Int
 }
 
+struct GitCommit: Codable, Hashable { var sha: String; var author: String; var subject: String }
+
+struct GitDetail: Codable, Hashable {
+    var repo: String
+    var branch: String
+    var defaultBranch: String
+    var newBranch: Bool
+    var base: String
+    var head: String
+    var commits: [GitCommit]
+    var diffstat: String
+    var files: Int
+    var additions: Int
+    var deletions: Int
+    var workflowFiles: [String]
+    var triggers: [String]
+    var secrets: [String]
+    var wantPr: Bool
+    var prTitle: String
+    var prBody: String
+}
+
+struct CIDetail: Codable, Hashable {
+    var repo: String
+    var branch: String
+    var jobId: Int64
+    var jobName: String
+    var runId: Int64
+    var runName: String
+}
+
+struct CIState: Codable, Hashable {
+    var state: String   // none | pending | success | failure
+    var name: String
+    var url: String
+    var branch: String
+    var repo: String
+}
+
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var session: String
@@ -63,6 +103,8 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var files: Int64
     var large: Bool
     var ssh: SSHInfo?
+    var git: GitDetail?
+    var ci: CIDetail?
     var pending: Bool { status == "pending" }
 }
 
@@ -132,3 +174,8 @@ struct AgentBody: Encodable { var session: String; var agent: String }
 struct AgentRemoveBody: Encodable { var session: String; var agent: String; var deleteDir: Bool; var force: Bool }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
+
+struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var createPr: Bool; var confirmWorkflows: Bool; var confirmSecrets: Bool }
+struct CIDecideBody: Encodable { var id: Int64; var allow: Bool; var forSession: Bool }
+struct TokenBody: Encodable { var token: String }
+struct GitHubStatus: Codable { var hasToken: Bool; var login: String }

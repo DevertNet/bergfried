@@ -415,7 +415,7 @@ var secretRes = []struct {
 	{"API-Schlüssel", regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}\b`)},
 	{"Slack-Token", regexp.MustCompile(`\bxox[abprs]-[A-Za-z0-9-]{10,}\b`)},
 	{"Zugangsdaten in URL", regexp.MustCompile(`(?i)https?://[^/\s:@]+:[^/\s@]{4,}@`)},
-	{"Passwort/Token-Zuweisung", regexp.MustCompile(`(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?key|token)\s*[:=]\s*["']?[A-Za-z0-9/+_\-]{12,}`)},
+	{"Passwort/Token-Zuweisung", regexp.MustCompile(`(?i)[A-Za-z0-9_.-]*(password|passwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|token)[A-Za-z0-9_.-]*\s*[:=]\s*["']?[A-Za-z0-9/+_\-]{12,}`)},
 }
 
 func (p *Pusher) scanSecrets(ctx context.Context, m, from, to string) []string {

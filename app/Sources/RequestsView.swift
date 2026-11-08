@@ -6,12 +6,13 @@ struct RequestsView: View {
     @Local private var showHistory = false
     @Local private var sshFor: RequestInfo?
     @Local private var largeFor: RequestInfo?
+    @Local private var gitFor: RequestInfo?
 
     var body: some View {
         List {
             Section("Offene Anfragen") {
                 if model.requests.isEmpty { Text("Keine offenen Anfragen.").foregroundStyle(.secondary) }
-                ForEach(model.requests) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }) }
+                ForEach(model.requests) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }) }
             }
             Section("Aktive SSH-Freigaben") {
                 if model.grants.isEmpty { Text("Keine aktiven Freigaben.").foregroundStyle(.secondary) }
@@ -25,6 +26,7 @@ struct RequestsView: View {
         .onChange(of: showHistory) { _, on in if on { Task { await loadHistory() } } }
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
+        .sheet(item: $gitFor) { r in GitPushSheet(r: r) }
         .confirmationDialog("Große Freigabe", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
             Button("Ja, \(largeFor.map { formatBytes($0.bytes) } ?? "") kopieren") { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
         } message: { Text("\(largeFor?.files ?? 0) Dateien, \(formatBytes(largeFor?.bytes ?? 0)). Wirklich kopieren?") }
@@ -40,22 +42,47 @@ struct PendingRow: View {
     let r: RequestInfo
     let decideSSH: () -> Void
     let confirmLarge: () -> Void
+    let decideGit: () -> Void
+
+    var icon: String {
+        switch r.kind {
+        case "ssh": return "key.fill"
+        case "folder": return "folder"
+        case "gitpush": return "arrow.up.doc.fill"
+        case "cilogs": return "text.alignleft"
+        case "cirerun": return "arrow.clockwise"
+        default: return "doc"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: r.kind == "ssh" ? "key.fill" : (r.kind == "folder" ? "folder" : "doc"))
+                Image(systemName: icon)
                 Text("\(r.session) / \(r.agent)").font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
             if r.kind == "ssh" { Text("möchte per SSH auf **\(r.path)** zugreifen") }
+            else if r.kind == "gitpush" { Text("möchte **\(r.git?.commits.count ?? 0) Commit(s)** nach **\(r.path)** pushen (der Mac pusht)") }
+            else if r.kind == "cilogs" { Text("möchte die CI-Logs von **\(r.path)** lesen (Branch \(r.ci?.branch ?? r.reason))") }
+            else if r.kind == "cirerun" { Text("möchte einen CI-Lauf wiederholen: **\(r.path)**") }
             else { Text("möchte \(r.kind == "folder" ? "den Ordner" : "die Datei") **~/\(r.path)** (\(r.files) Datei(en), \(formatBytes(r.bytes)))") }
             Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
             HStack {
-                if r.kind == "ssh" {
+                if r.kind == "gitpush" {
+                    Button("Prüfen und entscheiden …", action: decideGit).buttonStyle(.borderedProminent)
+                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
+                } else if r.kind == "cilogs" {
+                    Button("Für diese Session erlauben (4 h)") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: true)) } }.buttonStyle(.borderedProminent)
+                    Button("Nur dieses Mal") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: false)) } }
+                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
+                } else if r.kind == "cirerun" {
+                    Button("Wiederholen erlauben") { Task { await model.decideCI(CIDecideBody(id: r.id, allow: true, forSession: false)) } }.buttonStyle(.borderedProminent)
+                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
+                } else if r.kind == "ssh" {
                     Button("Entscheiden …", action: decideSSH).buttonStyle(.borderedProminent)
-                    Button("Ablehnen", role: .destructive) { Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false)) } }
+                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
                 } else {
                     Button("Erlauben") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
                     Button("Ablehnen", role: .destructive) { Task { await model.decideFile(r, allow: false) } }
@@ -70,9 +97,9 @@ struct HistoryRow: View {
     var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" ? .red : .secondary) }
     var body: some View {
         HStack {
-            Image(systemName: r.kind == "ssh" ? "key" : "doc").foregroundStyle(.secondary)
+            Image(systemName: ["ssh": "key", "gitpush": "arrow.up.doc", "cilogs": "text.alignleft", "cirerun": "arrow.clockwise"][r.kind] ?? "doc").foregroundStyle(.secondary)
             Text("\(r.session)/\(r.agent)")
-            Text(r.kind == "ssh" ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+            Text(["ssh", "gitpush", "cilogs", "cirerun"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(r.status).foregroundStyle(color)
             Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
@@ -178,5 +205,80 @@ struct SSHDecisionSheet: View {
                 key = resp.keys.first(where: { $0.fingerprint == r.ssh?.defaultKey })?.fingerprint ?? resp.keys.first?.fingerprint ?? ""
             }
         }
+    }
+}
+
+struct GitPushSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let r: RequestInfo
+    @Local private var createPR = false
+    @Local private var okWorkflows = false
+    @Local private var okSecrets = false
+    @Local private var error: String?
+    var d: GitDetail? { r.git }
+    var needWorkflows: Bool { !(d?.workflowFiles.isEmpty ?? true) }
+    var needSecrets: Bool { !(d?.secrets.isEmpty ?? true) }
+    var canPush: Bool { (!needWorkflows || okWorkflows) && (!needSecrets || okSecrets) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Push nach GitHub – \(r.session) / \(r.agent)").font(.headline)
+            if let d {
+                Text("**\(d.repo)** · Branch **\(d.branch)** (\(d.newBranch ? "neu" : "bestehend"), Basis \(d.defaultBranch))")
+                Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
+                GroupBox("\(d.commits.count) Commit(s) · \(d.files) Datei(en) · +\(d.additions) −\(d.deletions)") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(d.commits, id: \.sha) { c in
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(String(c.sha.prefix(7))).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    Text(c.subject).lineLimit(2)
+                                    Spacer()
+                                    Text(c.author).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(maxHeight: 110)
+                }
+                GroupBox("Änderungen") {
+                    ScrollView { Text(d.diffstat).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 110)
+                }
+                if !d.triggers.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Dieser Push startet Workflows: \(d.triggers.joined(separator: ", "))", systemImage: "play.circle").foregroundStyle(.orange)
+                        Text("Workflows laufen mit dem Code des Agents und können je nach Konfiguration auf Repo-Secrets zugreifen.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if needWorkflows {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Ändert Workflow-Dateien: \(d.workflowFiles.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                        Toggle("Ich habe die Workflow-Änderungen geprüft", isOn: $okWorkflows)
+                    }
+                }
+                if needSecrets {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Mögliche Geheimnisse im Diff:", systemImage: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                        ForEach(d.secrets, id: \.self) { Text($0).font(.caption.monospaced()) }
+                        Toggle("Ich habe die Funde geprüft (kein echtes Geheimnis)", isOn: $okSecrets)
+                    }
+                }
+                Toggle("Pull Request anlegen (Basis \(d.defaultBranch))\(d.wantPr && !d.prTitle.isEmpty ? " – Titel: \(d.prTitle)" : "")", isOn: $createPR)
+            }
+            if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+            HStack {
+                Spacer()
+                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Ablehnen", role: .destructive) { Task { await model.deny(r); dismiss() } }
+                Button("Pushen") {
+                    Task {
+                        let e = await model.decideGit(GitDecideBody(id: r.id, allow: true, createPr: createPR, confirmWorkflows: okWorkflows, confirmSecrets: okSecrets))
+                        if let e { error = e } else { dismiss() }
+                    }
+                }.disabled(!canPush).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 640)
+        .task { createPR = r.git?.wantPr ?? false }
     }
 }

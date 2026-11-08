@@ -253,3 +253,24 @@ func TestTriggerFiltering(t *testing.T) {
 		t.Fatal("Glob-Verhalten")
 	}
 }
+
+func TestSecretPatternsCatchPrefixedNames(t *testing.T) {
+	for _, line := range []string{"+DB_PASSWORD=supersecret12345", "+MY_API_KEY: abcdefghijkl1234", "+AWS_SECRET_ACCESS_KEY=\"wJalrXUtnFEMI/K7MDENG\"", "+github.token = abcdefghijkl1234"} {
+		hit := false
+		for _, s := range secretRes {
+			if s.re.MatchString(line) {
+				hit = true
+			}
+		}
+		if !hit {
+			t.Errorf("nicht erkannt: %s", line)
+		}
+	}
+	for _, line := range []string{"+password = ", "+# bitte das Passwort setzen", "+tokenizer = simple"} {
+		for _, s := range secretRes {
+			if s.re.MatchString(line) {
+				t.Errorf("Fehlalarm: %s (%s)", line, s.name)
+			}
+		}
+	}
+}

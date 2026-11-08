@@ -185,6 +185,7 @@ struct AgentRow: View {
                 Text(state.text).font(.caption).foregroundStyle(.secondary)
             }
             Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+            ciBadge
             Spacer()
             if let b = busy {
                 ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary)
@@ -224,6 +225,28 @@ struct AgentRow: View {
             Button("Trotzdem löschen", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
             Button("Abbrechen", role: .cancel) {}
         } message: { Text(forceMsg ?? "") }
+    }
+
+    @ViewBuilder var ciBadge: some View {
+        if let ci = a.ci, ci.state != "none" {
+            let color: Color = ci.state == "success" ? .green : (ci.state == "failure" ? .red : .orange)
+            let text = ci.state == "success" ? "CI grün" : (ci.state == "failure" ? "CI rot" : "CI läuft")
+            HStack(spacing: 6) {
+                Button { if let u = URL(string: ci.url), !ci.url.isEmpty { NSWorkspace.shared.open(u) } } label: {
+                    Label(text, systemImage: ci.state == "success" ? "checkmark.circle.fill" : (ci.state == "failure" ? "xmark.circle.fill" : "clock.fill"))
+                }
+                .buttonStyle(.borderless).foregroundStyle(color).font(.caption.bold())
+                .help("\(ci.repo) · \(ci.branch) · \(ci.name) – im Browser öffnen")
+                if ci.state == "failure" {
+                    Button("Agent: CI fixen") {
+                        Task {
+                            do { try await model.api.post("/v1/agents/ci-fix", AgentBody(session: s.name, agent: a.name)) }
+                            catch { model.setBanner(error.localizedDescription) }
+                        }
+                    }.controlSize(.small).disabled(!s.running).help("Schickt dem Agent einen festen Hinweis: ci_status und ci_logs aufrufen, beheben, erneut pushen")
+                }
+            }
+        }
     }
 
     func remove(deleteDir: Bool, force: Bool) async {

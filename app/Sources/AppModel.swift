@@ -92,6 +92,32 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
+    /// Lehnt eine Anfrage beliebiger Art ab (Datei/Ordner, SSH, Git-Push, CI).
+    func deny(_ r: RequestInfo) async {
+        do {
+            switch r.kind {
+            case "ssh":
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false))
+            case "gitpush":
+                try await api.post("/v1/git/decide", GitDecideBody(id: r.id, allow: false, createPr: false, confirmWorkflows: false, confirmSecrets: false))
+            case "cilogs", "cirerun":
+                try await api.post("/v1/ci/decide", CIDecideBody(id: r.id, allow: false, forSession: false))
+            default:
+                try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false))
+            }
+        } catch { banner = error.localizedDescription }
+        await refresh()
+    }
+
+    func decideGit(_ b: GitDecideBody) async -> String? {
+        do { try await api.post("/v1/git/decide", b); await refresh(); return nil } catch { return error.localizedDescription }
+    }
+
+    func decideCI(_ b: CIDecideBody) async {
+        do { try await api.post("/v1/ci/decide", b) } catch { banner = error.localizedDescription }
+        await refresh()
+    }
+
     func revoke(_ g: GrantInfo) async {
         do { try await api.post("/v1/ssh/revoke", IDBody(id: g.id)) } catch { banner = error.localizedDescription }
         await refresh()
