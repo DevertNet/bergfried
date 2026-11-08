@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
+	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
@@ -249,6 +250,14 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	am := *m
+	am.Actor = "app"
+	apiSrv := &api.Server{M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	go func() {
+		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
+			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)
+		}
+	}()
 	_ = m.S.Audit("daemon", "serve.start", "", "", fmt.Sprintf("dialog=%v", !noDialog))
 	fmt.Println("bergfriedd serve läuft (Strg-C beendet). Admin-Socket:", d.AdminSock)
 	err = d.Run(ctx)

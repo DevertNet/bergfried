@@ -23,6 +23,7 @@ type Entry struct {
 
 type Index struct {
 	home    string // aufgelöster echter Pfad
+	blMu    sync.RWMutex
 	bl      Blocklist
 	mu      sync.RWMutex
 	entries []Entry
@@ -39,6 +40,23 @@ func New(home string, bl Blocklist) (*Index, error) {
 }
 
 func (ix *Index) Ready() bool { return ix.ready.Load() }
+
+func (ix *Index) blocklist() Blocklist {
+	ix.blMu.RLock()
+	defer ix.blMu.RUnlock()
+	return ix.bl
+}
+
+// Blocklist liefert die aktuelle Sperrliste.
+func (ix *Index) Blocklist() Blocklist { return ix.blocklist() }
+
+// SetBlocklist ersetzt die Sperrliste sofort (für Prüfungen) und baut den Index neu auf.
+func (ix *Index) SetBlocklist(bl Blocklist) {
+	ix.blMu.Lock()
+	ix.bl = bl
+	ix.blMu.Unlock()
+	go func() { _ = ix.Refresh() }()
+}
 
 var ErrBlocked = errors.New("Pfad ist gesperrt")
 var ErrInvalid = errors.New("ungültiger Pfad")
@@ -73,7 +91,7 @@ func (ix *Index) Refresh() error {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		if ix.bl.BlockedRel(rel) {
+		if ix.blocklist().BlockedRel(rel) {
 			if d.IsDir() {
 				return fs.SkipDir
 			}
@@ -132,7 +150,7 @@ func (ix *Index) List(rel, pattern string) ([]Entry, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if ix.bl.BlockedRel(c) {
+	if ix.blocklist().BlockedRel(c) {
 		return nil, false, ErrBlocked
 	}
 	var out []Entry
@@ -189,7 +207,7 @@ func (ix *Index) Resolve(rel string) (abs string, relClean string, err error) {
 	if err != nil || c == "" {
 		return "", "", ErrInvalid
 	}
-	if ix.bl.BlockedRel(c) {
+	if ix.blocklist().BlockedRel(c) {
 		return "", "", ErrBlocked
 	}
 	real, err := filepath.EvalSymlinks(filepath.Join(ix.home, filepath.FromSlash(c)))
@@ -200,7 +218,7 @@ func (ix *Index) Resolve(rel string) (abs string, relClean string, err error) {
 	if err != nil || rr == ".." || strings.HasPrefix(rr, ".."+string(os.PathSeparator)) {
 		return "", "", ErrBlocked
 	}
-	if ix.bl.BlockedRel(filepath.ToSlash(rr)) {
+	if ix.blocklist().BlockedRel(filepath.ToSlash(rr)) {
 		return "", "", ErrBlocked
 	}
 	return real, c, nil

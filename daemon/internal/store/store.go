@@ -307,3 +307,26 @@ func (s *Store) SetGrantExpiry(id int64, t time.Time) error {
 	_, err := s.DB.Exec(`UPDATE ssh_grants SET expires=? WHERE id=? AND revoked=0`, t.Unix(), id)
 	return err
 }
+
+// AuditSearch: neueste zuerst, optional Textfilter über alle Felder.
+func (s *Store) AuditSearch(limit int, q string) ([]AuditEntry, error) {
+	like := "%" + strings.ReplaceAll(strings.ReplaceAll(q, "%", ""), "_", "") + "%"
+	rows, err := s.DB.Query(`SELECT ts,actor,event,COALESCE(session,''),COALESCE(agent,''),COALESCE(detail,'') FROM audit
+		WHERE ?='%%' OR actor LIKE ? OR event LIKE ? OR session LIKE ? OR agent LIKE ? OR detail LIKE ? ORDER BY id DESC LIMIT ?`,
+		like, like, like, like, like, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var t int64
+		if err := rows.Scan(&t, &e.Actor, &e.Event, &e.Session, &e.Agent, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.TS = time.Unix(t, 0)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}

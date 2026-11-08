@@ -459,3 +459,14 @@ func (h *HostConfig) Remember(host, key, user string) {
 		_ = os.WriteFile(h.file, b, 0o600)
 	}
 }
+
+// PendingInfo liefert die Entscheidungshilfen einer offenen SSH-Anfrage.
+func (s *Service) PendingInfo(id int64) (SSHInfo, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.waiters[id]
+	if !ok {
+		return SSHInfo{}, false
+	}
+	return p.info, true
+}
