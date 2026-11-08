@@ -1,4 +1,4 @@
-// bergfriedd (M1): CLI zum Verwalten von Bergfried-Sessions.
+// bergfriedd (M1): CLI zum Verwalten von Bergfried-Sandboxes.
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/notify"
 	"github.com/DevertNet/bergfried/daemon/internal/rpc"
-	"github.com/DevertNet/bergfried/daemon/internal/session"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
 	"google.golang.org/grpc"
@@ -34,16 +34,16 @@ import (
 const usage = `bergfriedd – Bergfried-CLI (M1)
 
   base build [--rebuild]        Basis-VM aus der Vorlage bauen
-  create <name> [--repo URL | --import ORDNER]   Session aus Basis-VM klonen
+  create <name> [--repo URL | --import ORDNER]   Sandbox aus Basis-VM klonen
   start|stop <name>
   delete <name> [--force]       warnt bei ungepushten Commits
-  list                          Sessions mit VM-Status und Agents
-  agent add <session> <agent>   neuer Agent (tmux-Fenster + Worktree + Remote Control)
-  login <session>               claude auth login in der VM (einmal pro VM)
-  attach <session>              tmux der Session öffnen
-  shell <session>               Shell in der VM
+  list                          Sandboxes mit VM-Status und Agents
+  agent add <sandbox> <agent>   neuer Agent (tmux-Fenster + Worktree + Remote Control)
+  login <sandbox>               claude auth login in der VM (einmal pro VM)
+  attach <sandbox>              tmux der Sandbox öffnen
+  shell <sandbox>               Shell in der VM
   audit [-n 50]                 Audit-Log
-  serve [--no-dialog]           Daemon: Index, Sockets je Session, Freigabe-Dialog (läuft im Vordergrund)
+  serve [--no-dialog]           Daemon: Index, Sockets je Sandbox, Freigabe-Dialog (läuft im Vordergrund)
   ssh keys|grants|allow|deny|revoke|extend   SSH-Freigaben
   requests [list|allow|deny] [id] [--confirm-large] [--all]   Anfragen ansehen/entscheiden
 
@@ -72,14 +72,20 @@ func run(cmd string, args []string) error {
 	ctx := context.Background()
 	h, _ := os.UserHomeDir()
 	home := getenv("BERGFRIED_HOME", filepath.Join(h, ".bergfried"))
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return err
+	}
+	if err := sandbox.MigrateHome(home); err != nil {
+		return err
+	}
 	st, err := store.Open(home)
 	if err != nil {
 		return err
 	}
-	m := &session.Manager{L: lima.Client{R: lima.ExecRunner{}}, S: st, Home: home,
+	m := &sandbox.Manager{L: lima.Client{R: lima.ExecRunner{}}, S: st, Home: home,
 		Template: getenv("BERGFRIED_TEMPLATE", "vm/bergfried.yaml"), Actor: "cli"}
 	// Vorlage im Datenverzeichnis (änderbar in der App); CLI und Daemon nutzen dieselbe Revision.
-	ts := session.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
+	ts := sandbox.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
 	if err := ts.Ensure(); err == nil {
 		m.Tpl = &ts
 	} else if cmd == "base" || cmd == "create" || cmd == "serve" {
@@ -138,14 +144,14 @@ func run(cmd string, args []string) error {
 		return list(ctx, m)
 	case "agent":
 		if err := need(3); err != nil || args[0] != "add" {
-			return errors.New("nutze: agent add <session> <agent>")
+			return errors.New("nutze: agent add <sandbox> <agent>")
 		}
 		return m.AgentAdd(ctx, args[1], args[2])
 	case "login", "attach", "shell":
 		if err := need(1); err != nil {
 			return err
 		}
-		s, err := st.GetSession(args[0])
+		s, err := st.GetSandbox(args[0])
 		if err != nil {
 			return err
 		}
@@ -158,7 +164,7 @@ func run(cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		_ = st.Audit("cli", "session."+cmd, args[0], "", "")
+		_ = st.Audit("cli", "sandbox."+cmd, args[0], "", "")
 		return syscall.Exec(lc, append([]string{"limactl", "shell", s.VM, "--"}, inner...), os.Environ())
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
@@ -180,7 +186,7 @@ func run(cmd string, args []string) error {
 			return err
 		}
 		for _, e := range es {
-			fmt.Printf("%s  %-8s %-16s %s/%s %s\n", e.TS.Format("2006-01-02 15:04:05"), e.Actor, e.Event, e.Session, e.Agent, e.Detail)
+			fmt.Printf("%s  %-8s %-16s %s/%s %s\n", e.TS.Format("2006-01-02 15:04:05"), e.Actor, e.Event, e.Sandbox, e.Agent, e.Detail)
 		}
 		return nil
 	default:
@@ -189,8 +195,8 @@ func run(cmd string, args []string) error {
 	}
 }
 
-func list(ctx context.Context, m *session.Manager) error {
-	ss, err := m.S.ListSessions()
+func list(ctx context.Context, m *sandbox.Manager) error {
+	ss, err := m.S.ListSandboxes()
 	if err != nil {
 		return err
 	}
@@ -202,7 +208,7 @@ func list(ctx context.Context, m *session.Manager) error {
 	for _, v := range vms {
 		status[v.Name] = v.Status
 	}
-	fmt.Printf("%-16s %-10s %-4s %s\n", "SESSION", "STATUS", "TPL", "AGENTS")
+	fmt.Printf("%-16s %-10s %-4s %s\n", "SANDBOX", "STATUS", "TPL", "AGENTS")
 	for _, s := range ss {
 		st := status[s.VM]
 		if st == "" {
@@ -218,7 +224,7 @@ func list(ctx context.Context, m *session.Manager) error {
 	return nil
 }
 
-func serve(ctx context.Context, m *session.Manager, home, userHome string, noDialog bool, upstream, knownHosts string) error {
+func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDialog bool, upstream, knownHosts string) error {
 	lock, err := os.OpenFile(filepath.Join(home, "serve.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
@@ -260,12 +266,12 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	}
 	br := &broker.Broker{St: m.S, Up: broker.SocketUpstream{Path: upstream}}
 	sshSvc := broker.NewService(br, broker.ResolveHostKeys(knownHosts),
-		session.Hooks{M: m, Render: broker.RenderSSHConfig}, nil, hc)
+		sandbox.Hooks{M: m, Render: broker.RenderSSHConfig}, nil, hc)
 	if !noDialog {
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
 	}
-	// GitHub: ein Fine-grained Token pro Session (liegt in der VM, Kopie auf dem Mac für Repo-Prüfungen; siehe docs/DESIGN-GIT.md).
+	// GitHub: ein Fine-grained Token pro Sandbox (liegt in der VM, Kopie auf dem Mac für Repo-Prüfungen; siehe docs/DESIGN-GIT.md).
 	tokStore := ghtoken.Store{Home: home}
 	mkClient := func(tok string) *github.Client {
 		c := github.New(github.StaticToken(tok))
@@ -274,8 +280,8 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 		}
 		return c
 	}
-	ghSvc := ghtoken.NewService(m.S, tokStore, func(ctx context.Context, session, tok string) error {
-		s, err := m.S.GetSession(session)
+	ghSvc := ghtoken.NewService(m.S, tokStore, func(ctx context.Context, sandbox, tok string) error {
+		s, err := m.S.GetSandbox(sandbox)
 		if err != nil {
 			return err
 		}
@@ -340,9 +346,9 @@ func requests(ctx context.Context, home string, args []string) error {
 			return fmt.Errorf("Daemon nicht erreichbar (läuft `bergfriedd serve`?): %w", err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSTATUS\tSESSION/AGENT\tART\tPFAD\tGRÖSSE\tBEGRÜNDUNG")
+		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/AGENT\tART\tPFAD\tGRÖSSE\tBEGRÜNDUNG")
 		for _, q := range r.Requests {
-			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d Dat., %.1f MB\t%s\n", q.Id, q.Status, q.Session, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
+			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d Dat., %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
 		}
 		return tw.Flush()
 	case "allow", "deny":
@@ -406,7 +412,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			return unreachable(err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSESSION\tAGENT\tHOST\tUSER\tBIS\tMODUS\tSTATUS")
+		fmt.Fprintln(tw, "ID\tSANDBOX\tAGENT\tHOST\tUSER\tBIS\tMODUS\tSTATUS")
 		for _, g := range r.Grants {
 			st := "aktiv"
 			if g.Revoked {
@@ -422,7 +428,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			if g.PerConnection {
 				mode = "einzeln"
 			}
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Session, ag, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Sandbox, ag, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
 		}
 		return tw.Flush()
 	case "allow", "deny":

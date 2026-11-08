@@ -14,7 +14,7 @@ export BERGFRIED_TEMPLATE=vm/bergfried.yaml
    Mit Repo: `--repo https://github.com/<user>/<repo>.git` (landet in `~/work/main`).
 2. `./bin/bergfriedd login shop` – **einmal pro VM**: `claude auth login` (claude.ai-Abo). Remote Control geht nicht mit `setup-token`.
 3. `./bin/bergfriedd agent add shop main` – tmux-Fenster, Worktree, `COMPOSE_PROJECT_NAME=shop-main`, `claude --remote-control 'shop/main'`.
-4. In Claude-App (Handy) oder claude.ai/code die Session `shop/main` öffnen und etwas schreiben.
+4. In Claude-App (Handy) oder claude.ai/code die Sandbox `shop/main` öffnen und etwas schreiben.
 5. `./bin/bergfriedd stop shop`, danach `start shop`: Agents starten per `claude --continue` neu, der Verlauf ist da.
 6. `./bin/bergfriedd delete shop` – warnt bei ungepushten Commits (`--force` überspringt).
 7. `./bin/bergfriedd list`, `./bin/bergfriedd audit` – Status und Protokoll.
@@ -23,7 +23,7 @@ export BERGFRIED_TEMPLATE=vm/bergfried.yaml
 
 - In der VM: `mount | grep shared` zeigt genau zwei virtiofs-Mounts, `in` mit `ro`; `ls /Users` zeigt nichts von deinem Home.
 - `docker ps` in der VM funktioniert; auf dem Mac ist kein VM-Docker-Socket weitergeleitet.
-- Zwei Sessions haben verschiedene `/etc/machine-id`.
+- Zwei Sandboxes haben verschiedene `/etc/machine-id`.
 
 ## Bekannte Punkte
 

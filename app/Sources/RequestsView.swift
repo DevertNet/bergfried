@@ -57,7 +57,7 @@ struct PendingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: icon)
-                Text("\(r.session) / \(r.agent)").font(.headline)
+                Text("\(r.sandbox) / \(r.agent)").font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -91,7 +91,7 @@ struct HistoryRow: View {
     var body: some View {
         HStack {
             Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
-            Text("\(r.session)/\(r.agent)")
+            Text("\(r.sandbox)/\(r.agent)")
             Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(r.status).foregroundStyle(color)
@@ -107,7 +107,7 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text("Sandbox \(g.session) · \(g.agent.isEmpty ? "alle Agents" : "Agent " + g.agent) · \(g.perConnection ? "jede Verbindung einzeln" : "still im Zeitfenster")").font(.caption).foregroundStyle(.secondary)
+                Text("Sandbox \(g.sandbox) · \(g.agent.isEmpty ? "alle Agents" : "Agent " + g.agent) · \(g.perConnection ? "jede Verbindung einzeln" : "still im Zeitfenster")").font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -144,7 +144,7 @@ struct SSHDecisionSheet: View {
 
     var body: some View {
         Form {
-            Text("SSH-Zugriff für \(r.session)/\(r.agent)").font(.headline)
+            Text("SSH-Zugriff für \(r.sandbox)/\(r.agent)").font(.headline)
             Text("Ziel: **\(r.path)**")
             Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
             if unknownHost {
@@ -213,11 +213,11 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("GitHub-Zugriff für \(r.session) / \(r.agent)").font(.headline)
+            Text("GitHub-Zugriff für \(r.sandbox) / \(r.agent)").font(.headline)
             if let repo = d?.repo, !repo.isEmpty { Text("Repo: **\(repo)**") }
             Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
             if hasToken {
-                Text("Die Sandbox hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.session)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
+                Text("Die Sandbox hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.sandbox)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
                 Button("Token-Liste bei GitHub öffnen …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
                 Text("Danach „Zugriff prüfen“ – oder ein neues Token einfügen, falls du lieber eins neu anlegst:").font(.caption).foregroundStyle(.secondary)
             } else {

@@ -11,7 +11,7 @@ open app/build/Bergfried.app
 1. **Einstellungen → „Daemon installieren und starten“** legt einen LaunchAgent an (`~/Library/LaunchAgents/de.einfach123.bergfried.plist`,
    `bergfriedd serve --no-dialog`, Log `~/.bergfried/daemon.log`). Alternativ im Terminal `bergfriedd serve --no-dialog`.
 2. **Einstellungen → Basis-VM → „Jetzt bauen“** (einmalig, einige Minuten).
-3. **Sessions → „Neue Session“**, danach „Agent +“, „Terminal → Claude-Login“ (einmal pro VM), Start/Stopp, Löschen
+3. **Sandboxes → „Neue Sandbox“**, danach „Agent +“, „Terminal → Claude-Login“ (einmal pro VM), Start/Stopp, Löschen
    (Warnung bei ungepushten Commits, „Trotzdem löschen“ nach Bestätigung).
 4. **Anfragen:** Datei-/Ordner-Anfragen erlauben/ablehnen (große Ordner mit zweiter Bestätigung). SSH-Anfragen: „Entscheiden …“
    → Dauer, Key, Benutzer, Geltung, Einzelbestätigung; bei neuem Host-Key muss der Fingerprint bestätigt werden.
@@ -25,28 +25,28 @@ open app/build/Bergfried.app
 - **Vorlage bearbeiten:** Einstellungen → „VM-Vorlage“. Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt
   (keine Mounts/Home, kein `forwardAgent`, kein Docker-Socket, beide Bergfried-Sockets bleiben). Die Basis-VM heißt
   `bergfried-base-<Inhalts-Hash>`: geänderter Inhalt = neue Basis (einmal bauen), Zurücksetzen nutzt die vorhandene wieder.
-  Bestehende Sessions bleiben unverändert; ältere Basis-VMs werden nach einem Neubau entfernt. Datei: `~/.bergfried/template/bergfried.yaml`.
-- **Bestehenden Ordner nutzen:** „Neue Session“ → Quelle „Bestehenden Ordner kopieren“ (CLI: `create <name> --import ORDNER`).
+  Bestehende Sandboxes bleiben unverändert; ältere Basis-VMs werden nach einem Neubau entfernt. Datei: `~/.bergfried/template/bergfried.yaml`.
+- **Bestehenden Ordner nutzen:** „Neue Sandbox“ → Quelle „Bestehenden Ordner kopieren“ (CLI: `create <name> --import ORDNER`).
   Der Ordner wird **kopiert** (nicht gemountet) nach `~/work/main` der VM: nur unterhalb des Homes, nie das Home selbst, nie gesperrte Pfade;
   ohne `.env`/Schlüssel/Symlinks/`node_modules`/Caches; Zugangsdaten in `.git/config` werden entfernt. Vorschau zeigt Dateien und Größe vorab.
   Ergebnisse kommen per `git push` oder über `shared/out` zurück.
-- **Wo liegen Sessions?** VM-Platte `~/.lima/bergfried-<name>` (ältere Sessions behalten `bf-<name>`), Austausch `~/.bergfried/sessions/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
+- **Wo liegen Sandboxes?** VM-Platte `~/.lima/bergfried-<name>` (ältere Sandboxes behalten `bf-<name>`), Austausch `~/.bergfried/sandboxes/<name>/shared/{in,out}`, Code in der VM `~/work/main`.
 - **Icon:** `app/icon/make-icon.swift` zeichnet es, `app/icon/AppIcon.icns` liegt im Repo.
 
 ## Statusanzeige und Login
-- **Neue Session:** erscheint sofort als Zeile mit Fortschritt (klonen → starten → Erstkonfiguration → Hilfsprogramm …).
-- **Übersicht je Session:** „Claude eingeloggt“ bzw. Button „jetzt einloggen“; je Agent „RC aktiv“ (mit Link öffnen/kopieren), „wartet auf Login“,
+- **Neue Sandbox:** erscheint sofort als Zeile mit Fortschritt (klonen → starten → Erstkonfiguration → Hilfsprogramm …).
+- **Übersicht je Sandbox:** „Claude eingeloggt“ bzw. Button „jetzt einloggen“; je Agent „RC aktiv“ (mit Link öffnen/kopieren), „wartet auf Login“,
   „RC startet …“ oder „kein Fenster“; Platte: auf dem Mac **real belegte** Bytes (sparse) und Belegung in der VM.
   Der Daemon fragt laufende VMs alle 5 s (instabil) bzw. 20 s (alles grün) ab.
 - **Login:** Button öffnet iTerm (falls installiert, sonst Terminal) mit `claude auth login`. Erkennt der Daemon danach den Login, startet er die
-  Agents der Session automatisch neu (`--continue --remote-control`); beantwortet dabei die Theme-Frage mit der Vorauswahl. Hängt ein Agent,
+  Agents der Sandbox automatisch neu (`--continue --remote-control`); beantwortet dabei die Theme-Frage mit der Vorauswahl. Hängt ein Agent,
   hilft „Agent neu starten“ im Agent-Menü.
 
 ## Terminal und Remote-Control-Überwachung
 - **Terminal-App:** Einstellungen → Terminal (Automatisch = iTerm, falls installiert). Gestartet wird über eine temporäre `.command`-Datei
   (`open -a iTerm|Terminal`, löscht sich selbst) – ohne AppleScript-Automationsrechte. Fehler erscheinen als Hinweis in der App.
   iTerm öffnet dabei einen neuen Tab im bestehenden Fenster.
-- **Statusabfrage erst wenn die VM bereit ist:** Während Start/Stopp/Erstellen wird die Session nicht abgefragt; ein Fehler wird erst nach
+- **Statusabfrage erst wenn die VM bereit ist:** Während Start/Stopp/Erstellen wird die Sandbox nicht abgefragt; ein Fehler wird erst nach
   mehreren fehlgeschlagenen Abfragen (ca. 30 s) als dezenter Hinweis gezeigt.
 - **RC wird überwacht und aktiviert:** Ist Claude eingeloggt und ein Agent hat nach ca. 15–20 s keine aktive Remote Control, handelt der Daemon:
   offene Rückfrage „Enable Remote Control?“ → mit `y` beantworten; Claude läuft nicht (nur Shell) → Agent neu starten;
@@ -54,7 +54,7 @@ open app/build/Bergfried.app
   Alles steht im Protokoll (`agent.rc_enable`). Ein Agent, der gerade arbeitet, wird nicht gestört.
 
 ## Agents, erster Agent und RC-Automatik (Stand 2)
-- **Erster Agent:** Eine neue Session startet automatisch den Agent `main` (tmux-Fenster, Remote Control). Ältere Sessions ohne Agent bekommen
+- **Erster Agent:** Eine neue Sandbox startet automatisch den Agent `main` (tmux-Fenster, Remote Control). Ältere Sandboxes ohne Agent bekommen
   `main` einmalig nachträglich (danach nie wieder automatisch – auch nicht, wenn du alle Agents entfernst).
 - **Login → RC:** Nach dem Login erkennt der Daemon „eingeloggt“ und startet die Agents neu; Onboarding-Fragen (Theme,
   „Press Enter to continue“) bestätigt er mit Enter. Wartet Claude auf etwas anderes, zeigt die App „wartet vermutlich auf eine Eingabe – tmux öffnen“.
@@ -62,21 +62,21 @@ open app/build/Bergfried.app
 - **Agents anzeigen/entfernen:** Je Agent eine Zeile mit Status, Verzeichnis, „RC-Link öffnen“ und Menü (Link kopieren, Neu starten, tmux, Entfernen …).
   Entfernen: „nur Agent beenden“ (Verzeichnis bleibt) oder „Agent und Verzeichnis löschen“ (Worktree, Branch `agent/<name>`, Docker-Stack) –
   mit Prüfung auf ungepushte/ungesicherte Arbeit und separater Bestätigung; das Verzeichnis von `main` wird nie gelöscht.
-- **VM-Namen:** neue Sessions heißen `bergfried-<name>` (max. 24 Zeichen; `base` ist reserviert). Die Aufräum-Logik löscht nur Basis-VMs mit Hash-Namen.
+- **VM-Namen:** neue Sandboxes heißen `bergfried-<name>` (max. 24 Zeichen; `base` ist reserviert). Die Aufräum-Logik löscht nur Basis-VMs mit Hash-Namen.
 
 ## Benachrichtigungen, Hinweise für Claude, SSH-Benutzer (Stand 3)
 - **Mitteilungen:** macOS lieferte die Mitteilungen zwar aus, zeigte sie aber mit Stil „Ohne“ (ad-hoc signierte App; die Berechtigungsanfrage
   schlägt mit `UNErrorDomain 1` fehl). Das lässt sich nur in den Systemeinstellungen ändern. Einstellungen → „Benachrichtigungen bei Anfragen“
   zeigt den Stand, sendet eine Testmitteilung und öffnet die Systemeinstellungen. **Unabhängig davon** erscheint bei jeder offenen Anfrage ein
   Dock-Badge, springendes Dock-Symbol und ein Zähler in der Menüleiste. (Das zwischenzeitlich gebaute eigene Popup-Fenster wurde auf Wunsch wieder entfernt.)
-- **Hinweise für Claude (damit „such auf meinem Computer“ über Bergfried läuft):** Beim Erstellen und Starten einer Session legt der Daemon
+- **Hinweise für Claude (damit „such auf meinem Computer“ über Bergfried läuft):** Beim Erstellen und Starten einer Sandbox legt der Daemon
   `~/.claude/bergfried.md` in der VM an (per `@`-Import in `~/.claude/CLAUDE.md`; eigener Inhalt dort bleibt erhalten) und der MCP-Server liefert
   dieselben Hinweise als MCP-Instructions. Sie erklären: „mein Computer/Mac/Dateien“ = Mac außerhalb der VM, erst `list_files`/`search_files`,
   dann `request_file`, SSH nur über `request_ssh`, Ergebnisse nach `shared/out`. **Bereits laufende Agents** lesen das erst nach einem Neustart
   (Agent-Menü → Neu starten).
 - **SSH-Benutzer vom Agent:** `request_ssh` hat jetzt den Parameter `user`. Der Dialog füllt das Feld mit dem Wunsch des Agents vor („Vom Agent
   angefragt“); eine Eingabe des Nutzers hat Vorrang, sonst gilt der Standard des Hosts. Ungültige Namen (Großbuchstaben, Sonderzeichen) werden abgelehnt.
-- **Anzeige:** Agents stehen eingerückt in einer eigenen Fläche mit Führungslinie unter der Session; `main` erscheint sofort mit „wird gestartet …“.
+- **Anzeige:** Agents stehen eingerückt in einer eigenen Fläche mit Führungslinie unter der Sandbox; `main` erscheint sofort mit „wird gestartet …“.
 
 ## SSH-Versuche im Terminal, Shell, Mitteilungs-Berechtigung (Stand 4)
 - **`ssh` im Terminal löst eine Anfrage aus:** In jeder VM liegt `/etc/ssh/ssh_config.d/51-bergfried-hook.conf` (root-eigen) mit einem
@@ -85,7 +85,7 @@ open app/build/Bergfried.app
   aus dem Befehl). `ssh` selbst läuft unverändert weiter und wird abgelehnt; im Terminal steht: „SSH-Freigabe für … angefragt – bitte in der App
   bestätigen, danach den Befehl wiederholen.“ Nach einer Ablehnung wird derselbe Host 60 s lang nicht erneut gemeldet. Laufende VMs bekommen den
   Hook einmal je Daemon-Start nachgezogen (`vm.refresh` im Protokoll).
-- **Shell/SSH in die VM:** Session-Zeile → „Shell / SSH“: normale Shell (`limactl shell`) in iTerm/Terminal, „SSH-Befehl kopieren“
+- **Shell/SSH in die VM:** Sandbox-Zeile → „Shell / SSH“: normale Shell (`limactl shell`) in iTerm/Terminal, „SSH-Befehl kopieren“
   (`ssh -F ~/.lima/<vm>/ssh.config lima-<vm>`, auch für VS Code Remote-SSH nutzbar). Den Claude-Login gibt es dort ebenfalls.
 - **Terminal-Button pro Agent:** In der Agent-Zeile öffnet „iTerm: Claude-Fenster“ das tmux-Fenster genau dieses Agents.
 - **Mitteilungs-Berechtigung:** Der Auslöser ist `requestAuthorization` beim App-Start. Die frühere Kennung war bei macOS als „abgelehnt“
@@ -107,6 +107,6 @@ open app/build/Bergfried.app
 - Die Oberfläche wurde **nicht visuell getestet** (keine Bildschirm-/Bedienungshilfen-Rechte in der Entwicklungsumgebung):
   kompiliert, startet, spricht mit dem Daemon (Selftest, Lebenszyklus per API). Layout-Feinheiten, Mitteilungs-Buttons und
   Menüleiste bitte einmal ansehen.
-- Ports je Session („Shop auf localhost:8080 öffnen“), Ressourcen-Auslastung (nur konfigurierte Werte), Hosts-Bereich
+- Ports je Sandbox („Shop auf localhost:8080 öffnen“), Ressourcen-Auslastung (nur konfigurierte Werte), Hosts-Bereich
   (VPS, M5) und „In VS Code öffnen“ (M6) fehlen noch.
 - Mitteilungen brauchen ein ad-hoc signiertes Bundle; ohne Apple-Entwickler-Zertifikat kann macOS sie strenger behandeln.

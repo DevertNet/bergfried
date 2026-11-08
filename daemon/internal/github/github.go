@@ -1,4 +1,4 @@
-// Package github: schmaler REST-Client für das, was der Daemon mit dem Token einer Session erledigt
+// Package github: schmaler REST-Client für das, was der Daemon mit dem Token einer Sandbox erledigt
 // (Zugriff prüfen, Actions-Läufe/-Jobs/-Logs lesen, Läufe wiederholen). Die Agents bekommen nur Ergebnisse (geschwärzt, gekürzt).
 package github
 

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sessions = "Sandboxes", requests = "Anfragen", audit = "Protokoll", settings = "Einstellungen"
+    case sandboxes = "Sandboxes", requests = "Anfragen", audit = "Protokoll", settings = "Einstellungen"
     var id: String { rawValue }
     var icon: String { ["Sandboxes": "shield", "Anfragen": "bell", "Protokoll": "list.bullet.rectangle", "Einstellungen": "gearshape"][rawValue] ?? "circle" }
 }
@@ -28,13 +28,13 @@ struct ContentView: View {
                     HStack { Text(b).textSelection(.enabled); Spacer(); Button("Schließen") { model.banner = nil } }
                         .padding(8).background(.orange.opacity(0.2))
                 }
-                switch model.pane ?? .sessions {
-                case .sessions: SessionsView()
+                switch model.pane ?? .sandboxes {
+                case .sandboxes: SandboxesView()
                 case .requests: RequestsView()
                 case .audit: AuditView()
                 case .settings: SettingsView()
                 }
-            }.navigationTitle((model.pane ?? .sessions).rawValue)
+            }.navigationTitle((model.pane ?? .sandboxes).rawValue)
         }
     }
 }
@@ -58,11 +58,11 @@ struct MenuContent: View {
         else if model.requests.isEmpty { Text("Keine offenen Anfragen") }
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {
-                Button("SSH \(r.session)/\(r.agent) → \(r.path) …") { open() }
+                Button("SSH \(r.sandbox)/\(r.agent) → \(r.path) …") { open() }
             } else if r.kind == "ghtoken" {
-                Button("GitHub \(r.session)/\(r.agent): \(r.path) …") { open() }
+                Button("GitHub \(r.sandbox)/\(r.agent): \(r.path) …") { open() }
             } else {
-                Menu("\(r.session)/\(r.agent): ~/\(r.path)") {
+                Menu("\(r.sandbox)/\(r.agent): ~/\(r.path)") {
                     Button("Erlauben") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
                     Button("Ablehnen") { Task { await model.decideFile(r, allow: false) } }
                 }
@@ -87,11 +87,11 @@ struct BergfriedApp: App {
                 do {
                     let api = API(socket: API.defaultSocket)
                     let st: DaemonStatus = try await api.get("/v1/status")
-                    let ss: [SessionInfo] = try await api.get("/v1/sessions")
+                    let ss: [SandboxInfo] = try await api.get("/v1/sandboxes")
                     let rq: [RequestInfo] = try await api.get("/v1/requests?all=1")
                     let au: [AuditEntry] = try await api.get("/v1/audit?limit=2000")
                     let bl: Blocklist = try await api.get("/v1/blocklist")
-                    print("selftest ok: version=\(st.version) base=\(st.baseReady) index=\(st.indexReady) sessions=\(ss.count) requests=\(rq.count) audit=\(au.count) blocklist=\(bl.paths.count)")
+                    print("selftest ok: version=\(st.version) base=\(st.baseReady) index=\(st.indexReady) sandboxes=\(ss.count) requests=\(rq.count) audit=\(au.count) blocklist=\(bl.paths.count)")
                     exit(0)
                 } catch { print("selftest FEHLER: \(error.localizedDescription)"); exit(1) }
             }

@@ -74,16 +74,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         c.sound = .default
         switch r.kind {
         case "ssh":
-            c.title = "SSH-Anfrage: \(r.session)/\(r.agent)"
+            c.title = "SSH-Anfrage: \(r.sandbox)/\(r.agent)"
             c.body = "Zugriff auf \(r.path)\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
         case "ghtoken":
-            c.title = "GitHub-Zugriff: \(r.session)/\(r.agent)"
+            c.title = "GitHub-Zugriff: \(r.sandbox)/\(r.agent)"
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
         default:
-            c.title = "Datei-Anfrage: \(r.session)/\(r.agent)"
+            c.title = "Datei-Anfrage: \(r.sandbox)/\(r.agent)"
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
             c.categoryIdentifier = r.large ? "OPEN" : "FILE"
         }

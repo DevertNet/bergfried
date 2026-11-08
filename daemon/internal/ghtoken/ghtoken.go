@@ -1,5 +1,5 @@
-// Package ghtoken: das GitHub-Token einer Session (Fine-grained Personal Access Token).
-// Es liegt in der VM (~/.git-credentials, 0600) und für CI-Abfragen des Daemons in ~/.bergfried/sessions/<name>/github-token (0600).
+// Package ghtoken: das GitHub-Token einer Sandbox (Fine-grained Personal Access Token).
+// Es liegt in der VM (~/.git-credentials, 0600) und für CI-Abfragen des Daemons in ~/.bergfried/sandboxes/<name>/github-token (0600).
 // Es dient für alle Git-Aktionen per HTTPS und für GitHub Actions. Der Agent in der VM kann es lesen – das ist Absicht und
 // ein bewusster Kompromiss (siehe docs/DESIGN-GIT.md): begrenzt wird es nur über Repo-Auswahl, Rechte und Ablaufdatum des Tokens.
 package ghtoken
@@ -23,15 +23,15 @@ import (
 // ExpiresDays: Gültigkeit des vorgeschlagenen Tokens (GitHub erlaubt 1–366 Tage).
 const ExpiresDays = 365
 
-// Store: Mac-seitige Kopie je Session.
+// Store: Mac-seitige Kopie je Sandbox.
 type Store struct{ Home string }
 
-func (s Store) path(session string) string {
-	return filepath.Join(s.Home, "sessions", session, "github-token")
+func (s Store) path(sandbox string) string {
+	return filepath.Join(s.Home, "sandboxes", sandbox, "github-token")
 }
 
-func (s Store) Get(session string) (string, error) {
-	b, err := os.ReadFile(s.path(session))
+func (s Store) Get(sandbox string) (string, error) {
+	b, err := os.ReadFile(s.path(sandbox))
 	if err != nil {
 		return "", github.ErrNoToken
 	}
@@ -42,13 +42,13 @@ func (s Store) Get(session string) (string, error) {
 	return t, nil
 }
 
-func (s Store) Has(session string) bool { _, err := s.Get(session); return err == nil }
+func (s Store) Has(sandbox string) bool { _, err := s.Get(sandbox); return err == nil }
 
-func (s Store) Set(session, token string) error {
+func (s Store) Set(sandbox, token string) error {
 	if err := ValidToken(token); err != nil {
 		return err
 	}
-	p := s.path(session)
+	p := s.path(sandbox)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (s Store) Set(session, token string) error {
 	return os.Rename(tmp, p)
 }
 
-func (s Store) Delete(session string) { _ = os.Remove(s.path(session)) }
+func (s Store) Delete(sandbox string) { _ = os.Remove(s.path(sandbox)) }
 
 // ValidToken: nur druckbare Zeichen ohne Leerraum – das Token wird später in eine Datei geschrieben, nie in eine Befehlszeile.
 func ValidToken(t string) error {
@@ -82,14 +82,14 @@ func CredentialsLine(token string) string {
 
 // Link: GitHub-Formular „Neues Fine-grained Token“, soweit per URL vorbelegbar. Die Repo-Auswahl lässt sich nicht vorbelegen.
 // Workflows-Recht fehlt bewusst: Der Agent soll .github/workflows nicht ändern können.
-func Link(session string) string {
-	name := "bergfried-" + session
+func Link(sandbox string) string {
+	name := "bergfried-" + sandbox
 	if len(name) > 40 {
 		name = name[:40]
 	}
 	q := url.Values{}
 	q.Set("name", name)
-	q.Set("description", "Bergfried-Sandbox "+session+": Git (clone/push/pull) und GitHub Actions für den Agent in der VM")
+	q.Set("description", "Bergfried-Sandbox "+sandbox+": Git (clone/push/pull) und GitHub Actions für den Agent in der VM")
 	q.Set("expires_in", fmt.Sprint(ExpiresDays))
 	q.Set("contents", "write")
 	q.Set("pull_requests", "write")
@@ -113,8 +113,8 @@ type Detail struct {
 type Service struct {
 	S      *store.Store
 	Tokens Store
-	// Install schreibt das Token in die VM der Session.
-	Install func(ctx context.Context, session, token string) error
+	// Install schreibt das Token in die VM der Sandbox.
+	Install func(ctx context.Context, sandbox, token string) error
 	// Client liefert einen GitHub-Client für das Token (Tests: lokaler Ersatz).
 	Client  func(token string) *github.Client
 	Timeout time.Duration
@@ -130,13 +130,13 @@ func NewService(st *store.Store, tokens Store, install func(context.Context, str
 		Client: func(t string) *github.Client { return github.New(github.StaticToken(t)) }}
 }
 
-func (s *Service) audit(event, session, agent, detail string) {
-	if err := s.S.Audit("daemon", event, session, agent, detail); err != nil {
+func (s *Service) audit(event, sandbox, agent, detail string) {
+	if err := s.S.Audit("daemon", event, sandbox, agent, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
 
-// CheckRepo: erreicht das Token der Session dieses Repo?
+// CheckRepo: erreicht das Token der Sandbox dieses Repo?
 func (s *Service) CheckRepo(ctx context.Context, token string, repo github.Repo) error {
 	_, err := s.Client(token).DefaultBranch(ctx, repo)
 	var ae *github.APIError
@@ -162,7 +162,7 @@ func (s *Service) Validate(ctx context.Context, token string) error {
 }
 
 // Deposit prüft das Token, legt es auf dem Mac ab und installiert es in der VM. repo (optional, owner/name) muss erreichbar sein.
-func (s *Service) Deposit(ctx context.Context, session, token, repo string) error {
+func (s *Service) Deposit(ctx context.Context, sandbox, token, repo string) error {
 	token = strings.TrimSpace(token)
 	if err := s.Validate(ctx, token); err != nil {
 		return err
@@ -176,21 +176,21 @@ func (s *Service) Deposit(ctx context.Context, session, token, repo string) erro
 			return err
 		}
 	}
-	if err := s.Tokens.Set(session, token); err != nil {
+	if err := s.Tokens.Set(sandbox, token); err != nil {
 		return err
 	}
 	if s.Install != nil {
-		if err := s.Install(ctx, session, token); err != nil {
+		if err := s.Install(ctx, sandbox, token); err != nil {
 			return fmt.Errorf("Token konnte nicht in die VM geschrieben werden: %w", err)
 		}
 	}
-	s.audit("ghtoken.set", session, "", repo)
+	s.audit("ghtoken.set", sandbox, "", repo)
 	return nil
 }
 
 // Request: Der Agent braucht ein Token (repo leer) oder Zugriff auf repo. Blockiert bis zur Entscheidung.
 // Liefert (erledigt, Meldung). Ein Repo, das das Token schon erreicht, wird ohne Rückfrage bestätigt.
-func (s *Service) Request(ctx context.Context, session, agent, repo, reason string) (bool, string, error) {
+func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason string) (bool, string, error) {
 	var gr github.Repo
 	if repo != "" {
 		r, err := github.ParseRemote("https://github.com/" + strings.TrimPrefix(repo, "https://github.com/"))
@@ -199,9 +199,9 @@ func (s *Service) Request(ctx context.Context, session, agent, repo, reason stri
 		}
 		gr, repo = r, r.String()
 	}
-	has := s.Tokens.Has(session)
+	has := s.Tokens.Has(sandbox)
 	if has && repo != "" {
-		tok, _ := s.Tokens.Get(session)
+		tok, _ := s.Tokens.Get(sandbox)
 		if err := s.CheckRepo(ctx, tok, gr); err == nil {
 			return true, "Das Token der Sandbox hat bereits Zugriff auf " + repo + ".", nil
 		}
@@ -209,13 +209,13 @@ func (s *Service) Request(ctx context.Context, session, agent, repo, reason stri
 	if has && repo == "" {
 		return true, "Für diese Sandbox ist bereits ein Token hinterlegt. Nenne das Repo (owner/name), auf das der Zugriff fehlt.", nil
 	}
-	d := Detail{Repo: repo, HasToken: has, Link: Link(session), Hint: Hint}
+	d := Detail{Repo: repo, HasToken: has, Link: Link(sandbox), Hint: Hint}
 	extra, _ := json.Marshal(d)
 	path := repo
 	if path == "" {
 		path = "GitHub-Token"
 	}
-	id, err := s.S.AddRequest(store.Request{Session: session, Agent: agent, Kind: "ghtoken", Path: path, Reason: reason, Status: "pending", Extra: string(extra)})
+	id, err := s.S.AddRequest(store.Request{Sandbox: sandbox, Agent: agent, Kind: "ghtoken", Path: path, Reason: reason, Status: "pending", Extra: string(extra)})
 	if err != nil {
 		return false, "", err
 	}
@@ -224,7 +224,7 @@ func (s *Service) Request(ctx context.Context, session, agent, repo, reason stri
 	s.waiters[id] = ch
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
-	s.audit("ghtoken.requested", session, agent, fmt.Sprintf("id=%d %s", id, path))
+	s.audit("ghtoken.requested", sandbox, agent, fmt.Sprintf("id=%d %s", id, path))
 	timer := time.NewTimer(s.Timeout)
 	defer timer.Stop()
 	select {
@@ -235,7 +235,7 @@ func (s *Service) Request(ctx context.Context, session, agent, repo, reason stri
 		return false, "Der Nutzer hat die Einrichtung abgelehnt.", nil
 	case <-timer.C:
 		if ok, _ := s.S.SetRequestStatus(id, "expired"); ok {
-			s.audit("ghtoken.expired", session, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ghtoken.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
 		return false, "Keine Antwort, Anfrage abgelaufen.", nil
 	case <-ctx.Done():
@@ -266,11 +266,11 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token string
 		_ = json.Unmarshal([]byte(r.Extra), &d)
 		token = strings.TrimSpace(token)
 		if token != "" {
-			if err := s.Deposit(ctx, r.Session, token, d.Repo); err != nil {
+			if err := s.Deposit(ctx, r.Sandbox, token, d.Repo); err != nil {
 				return err
 			}
 		} else {
-			tok, err := s.Tokens.Get(r.Session)
+			tok, err := s.Tokens.Get(r.Sandbox)
 			if err != nil {
 				return errors.New("Bitte das Token einfügen")
 			}
@@ -287,7 +287,7 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token string
 	if ok, _ := s.S.SetRequestStatus(id, status); !ok {
 		return errors.New("Anfrage nicht mehr offen")
 	}
-	s.audit("ghtoken."+status, r.Session, r.Agent, fmt.Sprintf("id=%d", id))
+	s.audit("ghtoken."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d", id))
 	ch <- result{ok: allow}
 	return nil
 }

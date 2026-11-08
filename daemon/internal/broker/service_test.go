@@ -276,8 +276,8 @@ func TestAttemptIgnoresGrantedAndInvalid(t *testing.T) {
 	}
 }
 
-func att(s *Service, session, host, port, user string) string {
-	_, m := s.Attempt(context.Background(), session, host, port, user, false)
+func att(s *Service, sandbox, host, port, user string) string {
+	_, m := s.Attempt(context.Background(), sandbox, host, port, user, false)
 	return m
 }
 

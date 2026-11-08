@@ -1,20 +1,20 @@
 import SwiftUI
 import AppKit
 
-struct SessionsView: View {
+struct SandboxesView: View {
     @EnvironmentObject var model: AppModel
     @Local private var showCreate = false
-    @Local private var addAgentFor: SessionInfo?
-    @Local private var deleteFor: SessionInfo?
+    @Local private var addAgentFor: SandboxInfo?
+    @Local private var deleteFor: SandboxInfo?
     @Local private var forceDeleteMsg: String?
-    @Local private var forceDeleteFor: SessionInfo?
+    @Local private var forceDeleteFor: SandboxInfo?
 
-    /// Sessions, die gerade erstellt werden und noch nicht in der Liste stehen (sofortiges Feedback).
+    /// Sandboxes, die gerade erstellt werden und noch nicht in der Liste stehen (sofortiges Feedback).
     var creating: [(name: String, step: String)] {
         model.running.compactMap { k, v in
             guard k.hasPrefix("create-") else { return nil }
             let n = String(k.dropFirst("create-".count))
-            return model.sessions.contains(where: { $0.name == n }) ? nil : (n, v)
+            return model.sandboxes.contains(where: { $0.name == n }) ? nil : (n, v)
         }.sorted { $0.name < $1.name }
     }
 
@@ -24,7 +24,7 @@ struct SessionsView: View {
                 Label("Basis-VM fehlt – sie wird beim ersten Erstellen gebaut (einige Minuten).", systemImage: "info.circle")
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.yellow.opacity(0.15))
             }
-            if model.sessions.isEmpty && creating.isEmpty {
+            if model.sandboxes.isEmpty && creating.isEmpty {
                 ContentUnavailableView("Keine Sandboxes", systemImage: "shield", description: Text("Lege mit „Neue Sandbox“ eine isolierte VM an."))
             } else {
                 List {
@@ -36,8 +36,8 @@ struct SessionsView: View {
                             Spacer()
                         }.padding(.vertical, 10).frame(minHeight: 44).fixedSize(horizontal: false, vertical: true)
                     }
-                    ForEach(model.sessions) { s in
-                        SessionRow(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
+                    ForEach(model.sandboxes) { s in
+                        SandboxRow(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -45,8 +45,8 @@ struct SessionsView: View {
             }
         }
         .toolbar { Button { showCreate = true } label: { Label("Neue Sandbox", systemImage: "plus") } }
-        .sheet(isPresented: $showCreate) { CreateSessionSheet() }
-        .sheet(item: $addAgentFor) { s in AddAgentSheet(session: s) }
+        .sheet(isPresented: $showCreate) { CreateSandboxSheet() }
+        .sheet(item: $addAgentFor) { s in AddAgentSheet(sandbox: s) }
         .confirmationDialog("Sandbox „\(deleteFor?.name ?? "")“ löschen?", isPresented: Binding(get: { deleteFor != nil }, set: { if !$0 { deleteFor = nil } })) {
             Button("Löschen", role: .destructive) {
                 if let s = deleteFor { Task { await delete(s, force: false) } }
@@ -58,17 +58,17 @@ struct SessionsView: View {
         } message: { Text(forceDeleteMsg ?? "") }
     }
 
-    func delete(_ s: SessionInfo, force: Bool) async {
-        let err = await model.runJob("del-\(s.name)", "\(s.name) wird gelöscht …", "/v1/sessions/delete", NameBody(name: s.name, force: force))
+    func delete(_ s: SandboxInfo, force: Bool) async {
+        let err = await model.runJob("del-\(s.name)", "\(s.name) wird gelöscht …", "/v1/sandboxes/delete", NameBody(name: s.name, force: force))
         if let err {
             if err.contains("ungepushte") { forceDeleteFor = s; forceDeleteMsg = err } else { model.setBanner(err) }
         }
     }
 }
 
-struct SessionRow: View {
+struct SandboxRow: View {
     @EnvironmentObject var model: AppModel
-    let s: SessionInfo
+    let s: SandboxInfo
     let addAgent: () -> Void
     let delete: () -> Void
 
@@ -95,7 +95,7 @@ struct SessionRow: View {
             }.font(.caption).foregroundStyle(.secondary)
             if s.probeError != nil, s.running { Text("Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).").font(.caption).foregroundStyle(.secondary) }
             if !s.agents.isEmpty {
-                // Agents gehören zur Session: eingerückt, mit Führungslinie und eigener Fläche.
+                // Agents gehören zur Sandbox: eingerückt, mit Führungslinie und eigener Fläche.
                 HStack(alignment: .top, spacing: 0) {
                     RoundedRectangle(cornerRadius: 1).fill(Color.accentColor.opacity(0.5)).frame(width: 3).padding(.leading, 4)
                     VStack(alignment: .leading, spacing: 0) {
@@ -138,7 +138,7 @@ struct SessionRow: View {
 
     @ViewBuilder var actions: some View {
         if s.running {
-            Button("Stoppen") { Task { report(await model.runJob("stop-\(s.name)", "Stoppt …", "/v1/sessions/stop", NameBody(name: s.name))) } }
+            Button("Stoppen") { Task { report(await model.runJob("stop-\(s.name)", "Stoppt …", "/v1/sandboxes/stop", NameBody(name: s.name))) } }
             Button("Agent +", action: addAgent)
             Menu {
                 Button("Shell in der VM (\(Terminal.appName))") { report(Terminal.shell(vm: s.vm)) }
@@ -149,7 +149,7 @@ struct SessionRow: View {
                 Button("Claude-Login (einmal pro VM)") { report(Terminal.login(vm: s.vm)) }
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
-            Button("Starten") { Task { report(await model.runJob("start-\(s.name)", "Startet …", "/v1/sessions/start", NameBody(name: s.name))) } }
+            Button("Starten") { Task { report(await model.runJob("start-\(s.name)", "Startet …", "/v1/sandboxes/start", NameBody(name: s.name))) } }
         }
         Button(role: .destructive, action: delete) { Image(systemName: "trash") }
     }
@@ -159,14 +159,14 @@ struct SessionRow: View {
 
 struct AgentRow: View {
     @EnvironmentObject var model: AppModel
-    let s: SessionInfo
+    let s: SandboxInfo
     let a: AgentInfo
     @Local private var removeOpen = false
     @Local private var forceMsg: String?
 
     var state: (color: Color, text: String) {
         if a.rc { return (.green, "Remote Control aktiv") }
-        if !a.window && sessionBusy { return (.orange, "wird gestartet …") }
+        if !a.window && sandboxBusy { return (.orange, "wird gestartet …") }
         if s.claudeLoggedIn == false { return (.orange, "wartet auf Claude-Login") }
         if a.rcAction == "failed" { return (.red, "RC nicht aktivierbar – bitte neu starten") }
         if a.rcAction == "activating" { return (.orange, "aktiviere Remote Control …") }
@@ -176,8 +176,8 @@ struct AgentRow: View {
     }
 
     var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(a.name)") })?.value }
-    /// Für die Session läuft gerade ein Job (Erstellen, Starten, Agent hinzufügen …).
-    var sessionBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
+    /// Für die Sandbox läuft gerade ein Job (Erstellen, Starten, Agent hinzufügen …).
+    var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -205,13 +205,13 @@ struct AgentRow: View {
                     if !a.rc {
                         Button("Remote Control läuft – als aktiv markieren") {
                             Task {
-                                do { try await model.api.post("/v1/agents/rc-ok", AgentBody(session: s.name, agent: a.name)); await model.refresh() }
+                                do { try await model.api.post("/v1/agents/rc-ok", AgentBody(sandbox: s.name, agent: a.name)); await model.refresh() }
                                 catch { model.setBanner(error.localizedDescription) }
                             }
                         }.disabled(!s.running || !a.window)
                     }
                     Button("Neu starten") {
-                        Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
+                        Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "startet neu …", "/v1/agents/restart", AgentBody(sandbox: s.name, agent: a.name)) { model.setBanner(e) } }
                     }.disabled(!s.running)
 
                     Divider()
@@ -229,7 +229,7 @@ struct AgentRow: View {
     }
 
     func remove(deleteDir: Bool, force: Bool) async {
-        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(session: s.name, agent: a.name, deleteDir: deleteDir, force: force))
+        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(sandbox: s.name, agent: a.name, deleteDir: deleteDir, force: force))
         if let err { model.setBanner(err) }
     }
 }
@@ -237,7 +237,7 @@ struct AgentRow: View {
 struct RemoveAgentSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    let s: SessionInfo
+    let s: SandboxInfo
     let a: AgentInfo
     let onForce: (String) -> Void
     @Local private var deleteDir = false
@@ -259,7 +259,7 @@ struct RemoveAgentSheet: View {
                     let dd = deleteDir
                     dismiss()
                     Task {
-                        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(session: s.name, agent: a.name, deleteDir: dd, force: false))
+                        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", "wird entfernt …", "/v1/agents/remove", AgentRemoveBody(sandbox: s.name, agent: a.name, deleteDir: dd, force: false))
                         if let err { if err.contains("ungesicherte Arbeit") { onForce(err) } else { model.setBanner(err) } }
                     }
                 }.keyboardShortcut(.defaultAction)
@@ -268,7 +268,7 @@ struct RemoveAgentSheet: View {
     }
 }
 
-struct CreateSessionSheet: View {
+struct CreateSandboxSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @Local private var name = ""
@@ -329,7 +329,7 @@ struct CreateSessionSheet: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
                 }
             }
-            Text("Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sessions/<name>/shared/{in,out}.")
+            Text("Die VM-Platte liegt unter ~/.lima/bergfried-<name> (Code in der VM unter ~/work/main), die Austausch-Ordner unter ~/.bergfried/sandboxes/<name>/shared/{in,out}.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
@@ -337,14 +337,14 @@ struct CreateSessionSheet: View {
                 Button("Erstellen") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sessions/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("create-\(n)", "\(n) wird erstellt …", "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
         .task(id: name) {
-            // Link mit dem Session-Namen vorbelegen (Token heißt dann bergfried-<name>)
+            // Link mit dem Sandbox-Namen vorbelegen (Token heißt dann bergfried-<name>)
             let q = valid ? name : "neu"
-            if let l: GitHubLink = try? await model.api.get("/v1/github/link?session=\(q)") { link = l.url; hint = l.hint }
+            if let l: GitHubLink = try? await model.api.get("/v1/github/link?sandbox=\(q)") { link = l.url; hint = l.hint }
         }
     }
 
@@ -366,22 +366,22 @@ struct CreateSessionSheet: View {
 struct AddAgentSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    let session: SessionInfo
+    let sandbox: SandboxInfo
     @Local private var name = ""
     var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil }
 
     var body: some View {
         Form {
-            Text("Neuer Agent in „\(session.name)“").font(.headline)
+            Text("Neuer Agent in „\(sandbox.name)“").font(.headline)
             TextField("Agent-Name", text: $name)
             Text("Jeder Agent bekommt ein tmux-Fenster, eine Remote-Control-Session und ein Git-Worktree.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Hinzufügen") {
-                    let n = name, s = session.name
+                    let n = name, s = sandbox.name
                     dismiss()
-                    Task { if let e = await model.runJob("agent-\(s)", "Agent \(n) startet …", "/v1/agents/add", AgentBody(session: s, agent: n)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("agent-\(s)", "Agent \(n) startet …", "/v1/agents/add", AgentBody(sandbox: s, agent: n)) { model.setBanner(e) } }
                 }.disabled(!valid).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 440)

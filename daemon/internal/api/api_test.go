@@ -15,7 +15,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
-	"github.com/DevertNet/bergfried/daemon/internal/session"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -31,7 +31,7 @@ func srv(t *testing.T) (*Server, *httptest.Server) {
 	}
 	home := t.TempDir()
 	ix, _ := index.Build(home, index.DefaultBlocklist())
-	s := &Server{M: &session.Manager{L: lima.Client{R: fakeLima{}}, S: st, Home: dir, Actor: "app"}, Ix: ix,
+	s := &Server{M: &sandbox.Manager{L: lima.Client{R: fakeLima{}}, S: st, Home: dir, Actor: "app"}, Ix: ix,
 		BlocklistFile: filepath.Join(dir, "bl.json")}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -87,7 +87,7 @@ func TestInvalidNamesRejected(t *testing.T) {
 	_, ts := srv(t)
 	for _, n := range []string{"", "A", "a b", "a;rm", "../x"} {
 		b, _ := json.Marshal(map[string]string{"name": n})
-		if code, _ := do(t, "POST", ts.URL+"/v1/sessions/create", string(b)); code != 400 {
+		if code, _ := do(t, "POST", ts.URL+"/v1/sandboxes/create", string(b)); code != 400 {
 			t.Fatalf("%q: code %d", n, code)
 		}
 	}
@@ -95,7 +95,7 @@ func TestInvalidNamesRejected(t *testing.T) {
 
 func TestJobLifecycleAndAuditSearch(t *testing.T) {
 	s, ts := srv(t)
-	code, body := do(t, "POST", ts.URL+"/v1/sessions/start", `{"name":"nix"}`)
+	code, body := do(t, "POST", ts.URL+"/v1/sandboxes/start", `{"name":"nix"}`)
 	if code != 202 {
 		t.Fatal(code, body)
 	}
@@ -127,11 +127,11 @@ func TestJobLifecycleAndAuditSearch(t *testing.T) {
 
 func TestGitHubLink(t *testing.T) {
 	_, ts := srv(t)
-	code, body := do(t, "GET", ts.URL+"/v1/github/link?session=shop", "")
+	code, body := do(t, "GET", ts.URL+"/v1/github/link?sandbox=shop", "")
 	if code != 200 || !strings.Contains(body, "personal-access-tokens/new") || !strings.Contains(body, "name%3Dbergfried-shop") && !strings.Contains(body, "name=bergfried-shop") {
 		t.Fatalf("%d %s", code, body)
 	}
-	if code, _ := do(t, "GET", ts.URL+"/v1/github/link?session=x%3By", ""); code != 400 {
+	if code, _ := do(t, "GET", ts.URL+"/v1/github/link?sandbox=x%3By", ""); code != 400 {
 		t.Fatal("ungültiger Name")
 	}
 }
@@ -148,7 +148,7 @@ func TestGitHubDecideNeverEchoesToken(t *testing.T) {
 	}))
 	defer gh.Close()
 	s, ts := srv(t)
-	_ = s.M.S.AddSession(store.Session{Name: "shop", VM: "bergfried-shop", TemplateVersion: 1})
+	_ = s.M.S.AddSandbox(store.Sandbox{Name: "shop", VM: "bergfried-shop", TemplateVersion: 1})
 	var installed string
 	s.GH = ghtoken.NewService(s.M.S, ghtoken.Store{Home: t.TempDir()}, func(_ context.Context, _, t string) error { installed = t; return nil })
 	s.GH.Client = func(token string) *github.Client {
@@ -183,9 +183,9 @@ func TestGitHubDecideNeverEchoesToken(t *testing.T) {
 	if !<-done || installed != tok {
 		t.Fatal("Token nicht in die VM geschrieben")
 	}
-	_, sessions := do(t, "GET", ts.URL+"/v1/sessions", "")
-	if !strings.Contains(sessions, `"has_github_token":true`) || strings.Contains(sessions, tok) {
-		t.Fatalf("%s", sessions)
+	_, sandboxes := do(t, "GET", ts.URL+"/v1/sandboxes", "")
+	if !strings.Contains(sandboxes, `"has_github_token":true`) || strings.Contains(sandboxes, tok) {
+		t.Fatalf("%s", sandboxes)
 	}
 	_, list = do(t, "GET", ts.URL+"/v1/requests?all=1", "")
 	_, audit := do(t, "GET", ts.URL+"/v1/audit?q=ghtoken", "")

@@ -1,7 +1,7 @@
-# Test: Git und CI mit Session-Token
+# Test: Git und CI mit Sandbox-Token
 
 ## Automatisch
-`make test` (u. a. `ghtoken` mit lokalem GitHub-Ersatz, `github`, `session` – Token nur über stdin –, `api` – Token nie in Antworten/Protokoll).
+`make test` (u. a. `ghtoken` mit lokalem GitHub-Ersatz, `github`, `sandbox` – Token nur über stdin –, `api` – Token nie in Antworten/Protokoll).
 
 ## Mechanismus lokal (ohne VM, ohne echtes GitHub)
 Mit `tools/fakegithub` (REST + Git über HTTP, Basic-Auth):
@@ -19,7 +19,7 @@ git clone http://127.0.0.1:8099/o/r.git $S/work   # klappt; mit falschem Token: 
 Danach `fakegithub` beenden und `/private/tmp/bft` löschen. (Belegt am 2026-11-08: Clone und Push mit `store`-Helper, falsches Token scheitert.)
 
 ## Manuell mit echtem GitHub (einmalig, noch nicht gemacht)
-1. Test-Repo anlegen (privat). Neue Session mit Git-Repo: Im Dialog „Token bei GitHub anlegen …“ – prüfen, dass das Formular vorausgefüllt ist (Name `bergfried-<session>`, Ablauf 1 Jahr,
+1. Test-Repo anlegen (privat). Neue Sandbox mit Git-Repo: Im Dialog „Token bei GitHub anlegen …“ – prüfen, dass das Formular vorausgefüllt ist (Name `bergfried-<sandbox>`, Ablauf 1 Jahr,
    Rechte Contents/Pull requests/Actions/Metadata), „Only select repositories“ → nur das Test-Repo, Token einfügen, erstellen.
 2. In der VM (`Shell in der VM`): `git -C ~/work/main push` auf einen Branch, `cat ~/.git-credentials` (0600), `ls -l`.
 3. Weiteres Repo: im Agent `git clone https://github.com/<owner>/<anderes-repo>` → scheitert → Agent ruft `request_github_token` → Karte in „Anfragen“ → bei GitHub das Repo zum Token hinzufügen → „Zugriff prüfen“.

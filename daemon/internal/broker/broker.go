@@ -1,6 +1,6 @@
 // Package broker: ssh-agent-Protokoll für VMs. Der Broker hält keine Keys; er signiert über den
-// echten Agent des Macs (Upstream) und nur, wenn eine aktive Freigabe zu Session, Key und
-// Ziel-Host-Key passt (Destination Constraints analog OpenSSH >= 8.9, session-bind@openssh.com).
+// echten Agent des Macs (Upstream) und nur, wenn eine aktive Freigabe zu Sandbox, Key und
+// Ziel-Host-Key passt (Destination Constraints analog OpenSSH >= 8.9, sandbox-bind@openssh.com).
 package broker
 
 import (
@@ -19,7 +19,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-const sessionBindExt = "session-bind@openssh.com"
+const sandboxBindExt = "sandbox-bind@openssh.com"
 
 var errDenied = errors.New("ssh-broker: keine passende Freigabe")
 
@@ -64,20 +64,20 @@ func (b *Broker) now() time.Time {
 	return time.Now()
 }
 
-func (b *Broker) audit(event, session, detail string) {
-	if err := b.St.Audit("broker", event, session, "", detail); err != nil {
+func (b *Broker) audit(event, sandbox, detail string) {
+	if err := b.St.Audit("broker", event, sandbox, "", detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
 
-func (b *Broker) active(session string) []store.SSHGrant {
+func (b *Broker) active(sandbox string) []store.SSHGrant {
 	gs, err := b.St.ListGrants(true, b.now())
 	if err != nil {
 		return nil
 	}
 	var out []store.SSHGrant
 	for _, g := range gs {
-		if g.Session == session {
+		if g.Sandbox == sandbox {
 			out = append(out, g)
 		}
 	}
@@ -85,7 +85,7 @@ func (b *Broker) active(session string) []store.SSHGrant {
 }
 
 type binding struct {
-	sessionID  []byte
+	sandboxID  []byte
 	hostKeyFP  string
 	forwarding bool
 }
@@ -93,18 +93,18 @@ type binding struct {
 // Conn ist der Agent einer einzelnen Client-Verbindung (implementiert agent.ExtendedAgent).
 type Conn struct {
 	b       *Broker
-	session string
+	sandbox string
 	mu      sync.Mutex
 	bound   *binding
 }
 
-func (b *Broker) NewConn(session string) *Conn { return &Conn{b: b, session: session} }
+func (b *Broker) NewConn(sandbox string) *Conn { return &Conn{b: b, sandbox: sandbox} }
 
 // Serve bedient eine Verbindung bis zum Ende.
 func (c *Conn) Serve(rw io.ReadWriter) error { return agent.ServeAgent(c, rw) }
 
 func (c *Conn) List() ([]*agent.Key, error) {
-	gs := c.b.active(c.session)
+	gs := c.b.active(c.sandbox)
 	if len(gs) == 0 {
 		return nil, nil // ohne Freigabe: leere Liste
 	}
@@ -114,7 +114,7 @@ func (c *Conn) List() ([]*agent.Key, error) {
 	}
 	ks, err := c.b.Up.List()
 	if err != nil {
-		c.b.audit("ssh.list_failed", c.session, err.Error())
+		c.b.audit("ssh.list_failed", c.sandbox, err.Error())
 		return nil, nil
 	}
 	var out []*agent.Key
@@ -130,7 +130,7 @@ func (c *Conn) Sign(key ssh.PublicKey, data []byte) (*ssh.Signature, error) {
 	return c.SignWithFlags(key, data, 0)
 }
 
-func parseSessionID(data []byte) ([]byte, error) {
+func parseSandboxID(data []byte) ([]byte, error) {
 	if len(data) < 4 {
 		return nil, errors.New("zu kurz")
 	}
@@ -142,7 +142,7 @@ func parseSessionID(data []byte) ([]byte, error) {
 }
 
 func (c *Conn) deny(reason, keyFP string) (*ssh.Signature, error) {
-	c.b.audit("ssh.sign_denied", c.session, fmt.Sprintf("key=%s: %s", keyFP, reason))
+	c.b.audit("ssh.sign_denied", c.sandbox, fmt.Sprintf("key=%s: %s", keyFP, reason))
 	return nil, errDenied
 }
 
@@ -152,17 +152,17 @@ func (c *Conn) SignWithFlags(key ssh.PublicKey, data []byte, flags agent.Signatu
 	bd := c.bound
 	c.mu.Unlock()
 	if bd == nil {
-		return c.deny("kein session-bind (Client zu alt oder Host-Key unbekannt)", fp)
+		return c.deny("kein sandbox-bind (Client zu alt oder Host-Key unbekannt)", fp)
 	}
 	if bd.forwarding {
 		return c.deny("Agent-Weiterleitung ist nicht erlaubt", fp)
 	}
-	sid, err := parseSessionID(data)
-	if err != nil || !bytes.Equal(sid, bd.sessionID) {
+	sid, err := parseSandboxID(data)
+	if err != nil || !bytes.Equal(sid, bd.sandboxID) {
 		return c.deny("Signaturdaten passen nicht zur gebundenen Verbindung", fp)
 	}
 	var match *store.SSHGrant
-	for _, g := range c.b.active(c.session) {
+	for _, g := range c.b.active(c.sandbox) {
 		if g.KeyFP != fp {
 			continue
 		}
@@ -183,46 +183,46 @@ func (c *Conn) SignWithFlags(key ssh.PublicKey, data []byte, flags agent.Signatu
 	}
 	sig, err := c.b.Up.Sign(key, data, flags)
 	if err != nil {
-		c.b.audit("ssh.sign_failed", c.session, err.Error())
+		c.b.audit("ssh.sign_failed", c.sandbox, err.Error())
 		return nil, errors.New("ssh-broker: Signatur fehlgeschlagen")
 	}
-	c.b.audit("ssh.sign", c.session, fmt.Sprintf("grant=%d host=%s key=%s", match.ID, match.Host, fp))
+	c.b.audit("ssh.sign", c.sandbox, fmt.Sprintf("grant=%d host=%s key=%s", match.ID, match.Host, fp))
 	return sig, nil
 }
 
-// Extension: session-bind@openssh.com – Host-Key des Ziels mit Signatur über die Session-ID.
+// Extension: sandbox-bind@openssh.com – Host-Key des Ziels mit Signatur über die Sandbox-ID.
 func (c *Conn) Extension(extType string, contents []byte) ([]byte, error) {
-	if extType != sessionBindExt {
+	if extType != sandboxBindExt {
 		return nil, agent.ErrExtensionUnsupported
 	}
 	var m struct {
 		HostKey      []byte
-		SessionID    []byte
+		SandboxID    []byte
 		Signature    []byte
 		IsForwarding bool
 	}
 	if err := ssh.Unmarshal(contents, &m); err != nil {
-		return nil, errors.New("session-bind ungültig")
+		return nil, errors.New("sandbox-bind ungültig")
 	}
 	hk, err := ssh.ParsePublicKey(m.HostKey)
 	if err != nil {
-		return nil, errors.New("session-bind: Host-Key ungültig")
+		return nil, errors.New("sandbox-bind: Host-Key ungültig")
 	}
 	var s struct {
 		Format string
 		Blob   []byte
 	}
 	if err := ssh.Unmarshal(m.Signature, &s); err != nil {
-		return nil, errors.New("session-bind: Signatur ungültig")
+		return nil, errors.New("sandbox-bind: Signatur ungültig")
 	}
-	if err := hk.Verify(m.SessionID, &ssh.Signature{Format: s.Format, Blob: s.Blob}); err != nil {
-		c.b.audit("ssh.bind_invalid", c.session, "Signatur des Host-Keys falsch")
-		return nil, errors.New("session-bind: Verifikation fehlgeschlagen")
+	if err := hk.Verify(m.SandboxID, &ssh.Signature{Format: s.Format, Blob: s.Blob}); err != nil {
+		c.b.audit("ssh.bind_invalid", c.sandbox, "Signatur des Host-Keys falsch")
+		return nil, errors.New("sandbox-bind: Verifikation fehlgeschlagen")
 	}
 	c.mu.Lock()
 	// Weiterleitungs-Kette: sobald ein Bind "forwarding" ist, bleibt die Verbindung gesperrt.
 	fw := m.IsForwarding || (c.bound != nil && c.bound.forwarding)
-	c.bound = &binding{sessionID: m.SessionID, hostKeyFP: ssh.FingerprintSHA256(hk), forwarding: fw}
+	c.bound = &binding{sandboxID: m.SandboxID, hostKeyFP: ssh.FingerprintSHA256(hk), forwarding: fw}
 	c.mu.Unlock()
 	return nil, nil
 }

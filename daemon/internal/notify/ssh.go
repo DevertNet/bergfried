@@ -64,7 +64,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	if user == "" {
 		user = info.DefaultUser
 	}
-	text := fmt.Sprintf("Sandbox „%s“ / Agent „%s“ möchte per SSH auf %s zugreifen (Benutzer: %s).%s\n\nBegründung (vom Agent, ungeprüft):\n%s", r.Session, r.Agent, r.Path, user, warn, r.Reason)
+	text := fmt.Sprintf("Sandbox „%s“ / Agent „%s“ möchte per SSH auf %s zugreifen (Benutzer: %s).%s\n\nBegründung (vom Agent, ungeprüft):\n%s", r.Sandbox, r.Agent, r.Path, user, warn, r.Reason)
 	if !ask(text, "Ablehnen", "Weiter …") {
 		no()
 		return
@@ -129,5 +129,5 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 
 // ConfirmEach: Einzelbestätigung je Verbindung.
 func ConfirmEach(g store.SSHGrant, hostKeyFP string) bool {
-	return ask(fmt.Sprintf("SSH-Verbindung zu %s (Freigabe #%d, Sandbox „%s“) erlauben?", g.Host, g.ID, g.Session), "Ablehnen", "Erlauben")
+	return ask(fmt.Sprintf("SSH-Verbindung zu %s (Freigabe #%d, Sandbox „%s“) erlauben?", g.Host, g.ID, g.Sandbox), "Ablehnen", "Erlauben")
 }

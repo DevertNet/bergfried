@@ -39,7 +39,7 @@ func Text(r store.Request) string {
 		what = "den Ordner"
 	}
 	return fmt.Sprintf("Sandbox „%s“ / Agent „%s“ möchte %s kopiert haben:\n\n~/%s\n(%d Datei(en), %.1f MB)\n\nBegründung (vom Agent, ungeprüft):\n%s",
-		r.Session, r.Agent, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
+		r.Sandbox, r.Agent, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
 }
 
 func (d *Dialog) Ask(r store.Request) {

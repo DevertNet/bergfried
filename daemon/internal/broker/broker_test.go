@@ -59,8 +59,8 @@ func setup(t *testing.T) *fx {
 	return f
 }
 
-func (f *fx) grant(t *testing.T, session string, mins int, perConn bool) int64 {
-	id, err := f.b.St.AddGrant(store.SSHGrant{Session: session, Host: "srv", KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey()),
+func (f *fx) grant(t *testing.T, sandbox string, mins int, perConn bool) int64 {
+	id, err := f.b.St.AddGrant(store.SSHGrant{Sandbox: sandbox, Host: "srv", KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey()),
 		User: "claude", HostKeys: []string{ssh.FingerprintSHA256(f.host.PublicKey())}, Expires: f.now.Add(time.Duration(mins) * time.Minute), PerConn: perConn})
 	if err != nil {
 		t.Fatal(err)
@@ -69,9 +69,9 @@ func (f *fx) grant(t *testing.T, session string, mins int, perConn bool) int64 {
 }
 
 // client verbindet sich wie ssh: eigener Agent-Client gegen Conn.
-func (f *fx) client(session string) agent.ExtendedAgent {
+func (f *fx) client(sandbox string) agent.ExtendedAgent {
 	c, s := net.Pipe()
-	go f.b.NewConn(session).Serve(s)
+	go f.b.NewConn(sandbox).Serve(s)
 	return agent.NewClient(c)
 }
 
@@ -81,13 +81,13 @@ func bind(t *testing.T, a agent.ExtendedAgent, host ssh.Signer, sid []byte, forw
 		t.Fatal(err)
 	}
 	m := struct {
-		HostKey, SessionID, Signature []byte
+		HostKey, SandboxID, Signature []byte
 		IsForwarding                  bool
 	}{host.PublicKey().Marshal(), sid, ssh.Marshal(struct {
 		Format string
 		Blob   []byte
 	}{sig.Format, sig.Blob}), forwarding}
-	_, err = a.Extension(sessionBindExt, ssh.Marshal(m))
+	_, err = a.Extension(sandboxBindExt, ssh.Marshal(m))
 	return err
 }
 
@@ -118,7 +118,7 @@ func TestSignOnlyWithGrantAndMatchingHost(t *testing.T) {
 	}
 	sid := []byte("sid-2")
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("ohne session-bind muss abgelehnt werden (fail closed)")
+		t.Fatal("ohne sandbox-bind muss abgelehnt werden (fail closed)")
 	}
 	if err := bind(t, a, f.host, sid, false, f.host); err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestWrongHostForwardingAndForgedBind(t *testing.T) {
 	}
 	a = f.client("shop")
 	if err := bind(t, a, f.host, sid, false, f.host2); err == nil { // gefälschte Signatur
-		t.Fatal("gefälschtes session-bind muss scheitern")
+		t.Fatal("gefälschtes sandbox-bind muss scheitern")
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, true, f.host) // Weiterleitung
@@ -155,12 +155,12 @@ func TestWrongHostForwardingAndForgedBind(t *testing.T) {
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, false, f.host)
-	if _, err := a.Sign(f.userKey.PublicKey(), authData([]byte("andere-session"))); err == nil {
+	if _, err := a.Sign(f.userKey.PublicKey(), authData([]byte("andere-sandbox"))); err == nil {
 		t.Fatal("Daten einer anderen Verbindung dürfen nicht signiert werden")
 	}
 }
 
-func TestExpiryRevokeAndOtherSession(t *testing.T) {
+func TestExpiryRevokeAndOtherSandbox(t *testing.T) {
 	f := setup(t)
 	id := f.grant(t, "shop", 10, false)
 	sid := []byte("sid-4")
@@ -169,11 +169,11 @@ func TestExpiryRevokeAndOtherSession(t *testing.T) {
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err != nil {
 		t.Fatal(err)
 	}
-	// andere Session
+	// andere Sandbox
 	b := f.client("other")
 	_ = bind(t, b, f.host, sid, false, f.host)
 	if _, err := b.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("Freigabe gilt nur für die eigene Session")
+		t.Fatal("Freigabe gilt nur für die eigene Sandbox")
 	}
 	// Ablauf
 	f.now = f.now.Add(11 * time.Minute)

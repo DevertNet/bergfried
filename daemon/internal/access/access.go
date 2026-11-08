@@ -43,15 +43,15 @@ func New(s *store.Store, ix *index.Index, dataDir string, a Asker) *Service {
 	return &Service{S: s, Ix: ix, DataDir: dataDir, Asker: a, Timeout: 10 * time.Minute, waiters: map[int64]chan decision{}}
 }
 
-func (v *Service) audit(event, session, agent, detail string) {
-	if err := v.S.Audit("daemon", event, session, agent, detail); err != nil {
+func (v *Service) audit(event, sandbox, agent, detail string) {
+	if err := v.S.Audit("daemon", event, sandbox, agent, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
 
-// Dest: Zielordner in shared/in der Session (in der VM unter demselben Pfad sichtbar).
-func (v *Service) Dest(session string) string {
-	return filepath.Join(v.DataDir, "sessions", session, "shared", "in", session)
+// Dest: Zielordner in shared/in der Sandbox (in der VM unter demselben Pfad sichtbar).
+func (v *Service) Dest(sandbox string) string {
+	return filepath.Join(v.DataDir, "sandboxes", sandbox, "shared", "in", sandbox)
 }
 
 func measure(abs string, isDir bool, size int64, ix *index.Index, relBase string) (bytes, files int64) {
@@ -83,7 +83,7 @@ func measure(abs string, isDir bool, size int64, ix *index.Index, relBase string
 }
 
 // Request verarbeitet request_file (folder=false) bzw. request_folder (folder=true).
-func (v *Service) Request(ctx context.Context, session, agent string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
+func (v *Service) Request(ctx context.Context, sandbox, agent string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
 	kind := "file"
 	if folder {
 		kind = "folder"
@@ -93,11 +93,11 @@ func (v *Service) Request(ctx context.Context, session, agent string, folder boo
 	abs, rel, err := v.Ix.Resolve(relPath)
 	if err != nil {
 		if errors.Is(err, index.ErrBlocked) {
-			id, _ := v.S.AddRequest(store.Request{Session: session, Agent: agent, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
-			v.audit("request.blocked", session, agent, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
+			id, _ := v.S.AddRequest(store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
+			v.audit("request.blocked", sandbox, agent, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_BLOCKED, Message: "Pfad steht auf der Sperrliste und wird nicht freigegeben."}, nil
 		}
-		v.audit("request.invalid", session, agent, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
+		v.audit("request.invalid", sandbox, agent, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ungültig oder nicht vorhanden."}, nil
 	}
 	info, err := os.Lstat(abs)
@@ -108,7 +108,7 @@ func (v *Service) Request(ctx context.Context, session, agent string, folder boo
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ist " + map[bool]string{true: "ein Ordner (nutze request_folder)", false: "keine normale Datei (nutze request_file)"}[info.IsDir()]}, nil
 	}
 	b, n := measure(abs, info.IsDir(), info.Size(), v.Ix, rel)
-	req := store.Request{Session: session, Agent: agent, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
+	req := store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
 	id, err := v.S.AddRequest(req)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (v *Service) Request(ctx context.Context, session, agent string, folder boo
 	v.waiters[id] = ch
 	v.mu.Unlock()
 	defer func() { v.mu.Lock(); delete(v.waiters, id); v.mu.Unlock() }()
-	v.audit("request.created", session, agent, fmt.Sprintf("id=%d %s %s bytes=%d files=%d", id, kind, rel, b, n))
+	v.audit("request.created", sandbox, agent, fmt.Sprintf("id=%d %s %s bytes=%d files=%d", id, kind, rel, b, n))
 	if v.Asker != nil {
 		v.Asker.Ask(req)
 	}
@@ -130,21 +130,21 @@ func (v *Service) Request(ctx context.Context, session, agent string, folder boo
 		if !d.allow {
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Der Nutzer hat abgelehnt."}, nil
 		}
-		dst, err := v.copyOut(session, rel, abs, info.IsDir())
+		dst, err := v.copyOut(sandbox, rel, abs, info.IsDir())
 		if err != nil {
-			v.audit("request.copy_failed", session, agent, fmt.Sprintf("id=%d %v", id, err))
+			v.audit("request.copy_failed", sandbox, agent, fmt.Sprintf("id=%d %v", id, err))
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Kopieren fehlgeschlagen: " + err.Error()}, nil
 		}
-		v.audit("request.copied", session, agent, fmt.Sprintf("id=%d -> %s", id, dst))
+		v.audit("request.copied", sandbox, agent, fmt.Sprintf("id=%d -> %s", id, dst))
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, VmPath: dst, Message: "Freigegeben und kopiert."}, nil
 	case <-timer.C:
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
-			v.audit("request.expired", session, agent, fmt.Sprintf("id=%d", id))
+			v.audit("request.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_EXPIRED, Message: "Keine Antwort, Anfrage abgelaufen."}, nil
 	case <-ctx.Done():
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
-			v.audit("request.cancelled", session, agent, fmt.Sprintf("id=%d", id))
+			v.audit("request.cancelled", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
 		return nil, ctx.Err()
 	}
@@ -175,15 +175,15 @@ func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
 	if ok, err := v.S.SetRequestStatus(id, status); err != nil || !ok {
 		return "", fmt.Errorf("Anfrage %d ist nicht mehr offen", id)
 	}
-	v.audit("request."+status, r.Session, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
+	v.audit("request."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
 	ch <- decision{allow: allow}
 	return status, nil
 }
 
 func Large(r store.Request) bool { return r.Bytes > LargeBytes || r.Files > LargeFiles }
 
-func (v *Service) copyOut(session, rel, abs string, isDir bool) (string, error) {
-	base := v.Dest(session)
+func (v *Service) copyOut(sandbox, rel, abs string, isDir bool) (string, error) {
+	base := v.Dest(sandbox)
 	dst := filepath.Join(base, filepath.FromSlash(rel))
 	if !strings.HasPrefix(dst, base+string(os.PathSeparator)) {
 		return "", errors.New("Zielpfad außerhalb von shared/in")

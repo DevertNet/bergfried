@@ -4,9 +4,9 @@ package bergfried.v1;
 
 option go_package = "github.com/DevertNet/bergfried/proto/gen/bergfried/v1;bergfriedv1";
 
-// SessionAPI: VM -> Daemon. Die Session ergibt sich aus dem Socket, nie aus einem Feld.
+// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
 // Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
-service SessionAPI {
+service SandboxAPI {
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse);
   // Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
@@ -17,7 +17,7 @@ service SessionAPI {
   // Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
   rpc SSHAttempt(SSHAttemptRequest) returns (SSHAttemptResult);
 
-  // GitHub-Zugriff (Token pro Session, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
+  // GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
   // in der App; blockiert, bis der Nutzer entschieden hat.
   rpc RequestGitHubToken(GitHubTokenRequest) returns (GitHubTokenResult);
 }
@@ -78,8 +78,8 @@ message DecideSSHRequest {
 }
 message Grant {
   int64 id = 1;
-  string session = 2;
-  string agent = 3;      // leer = alle Agents der Session
+  string sandbox = 2;
+  string agent = 3;      // leer = alle Agents der Sandbox
   string host = 4;
   string key_fingerprint = 5;
   string user = 6;
@@ -133,13 +133,13 @@ enum Verdict {
 
 message AccessResult {
   Verdict verdict = 1;
-  string vm_path = 2;    // Pfad in der VM unter shared/in/<session>/...
+  string vm_path = 2;    // Pfad in der VM unter shared/in/<sandbox>/...
   string message = 3;
 }
 
 message Request {
   int64 id = 1;
-  string session = 2;
+  string sandbox = 2;
   string agent = 3;
   string kind = 4;       // file | folder
   string path = 5;

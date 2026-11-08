@@ -1,9 +1,10 @@
-package session
+package sandbox
 
 import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,17 +42,17 @@ func TestErrUnpushed(t *testing.T) {
 	_ = context.Background()
 }
 
-func TestSessionNamesAndBaseProtection(t *testing.T) {
+func TestSandboxNamesAndBaseProtection(t *testing.T) {
 	if VMName("shop") != "bergfried-shop" {
 		t.Fatal(VMName("shop"))
 	}
 	for _, ok := range []string{"shop", "a", "my-app-2", "x23456789012345678901234"} {
-		if ValidSessionName(ok) != nil {
+		if ValidSandboxName(ok) != nil {
 			t.Fatalf("%q muss gültig sein", ok)
 		}
 	}
 	for _, bad := range []string{"base", "base-aa94f061", "x234567890123456789012345", "Shop", "a b", ""} {
-		if ValidSessionName(bad) == nil {
+		if ValidSandboxName(bad) == nil {
 			t.Fatalf("%q muss abgelehnt werden", bad)
 		}
 	}
@@ -82,9 +83,9 @@ func mgr(t *testing.T, out string) (*Manager, *shellFake) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = st.AddSession(store.Session{Name: "shop", VM: "bergfried-shop", TemplateVersion: 3, Created: time.Now()})
-	_ = st.AddAgent(store.Agent{Session: "shop", Name: "api", Worktree: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
-	_ = st.AddAgent(store.Agent{Session: "shop", Name: "main", Worktree: "~/work/main", ComposeProject: "shop-main", Created: time.Now()})
+	_ = st.AddSandbox(store.Sandbox{Name: "shop", VM: "bergfried-shop", TemplateVersion: 3, Created: time.Now()})
+	_ = st.AddAgent(store.Agent{Sandbox: "shop", Name: "api", Worktree: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
+	_ = st.AddAgent(store.Agent{Sandbox: "shop", Name: "main", Worktree: "~/work/main", ComposeProject: "shop-main", Created: time.Now()})
 	f := &shellFake{out: out}
 	return &Manager{L: lima.Client{R: f}, S: st, Actor: "t"}, f
 }
@@ -136,7 +137,7 @@ func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
 }
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
-	g := guidance("/Users/x/.bergfried/sessions/shop/shared/out")
+	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
 	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "nie \"ich habe keinen Zugriff"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("Hinweistext enthält %q nicht:\n%s", want, g)
@@ -185,5 +186,41 @@ func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
 	g := guidance("/out")
 	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Gib das Token nie aus") {
 		t.Fatal(g)
+	}
+}
+
+func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
+	home := t.TempDir()
+	if err := MigrateHome(home); err != nil { // nichts da: kein Fehler, nichts angelegt
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, "sandboxes")); err == nil {
+		t.Fatal("ohne alten Ordner darf nichts entstehen")
+	}
+	if err := os.MkdirAll(filepath.Join(home, "sessions", "shop", "shared", "out"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(home, "sessions", "shop", "shared", "out", "x.txt"), []byte("hi"), 0o600)
+	if err := MigrateHome(home); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(home, "sandboxes", "shop", "shared", "out", "x.txt")); err != nil || string(b) != "hi" {
+		t.Fatal(string(b), err)
+	}
+	if b, err := os.ReadFile(filepath.Join(home, "sessions", "shop", "shared", "out", "x.txt")); err != nil || string(b) != "hi" {
+		t.Fatalf("alter Pfad (Lima-Mounts) muss weiter funktionieren: %v", err)
+	}
+	if fi, _ := os.Lstat(filepath.Join(home, "sessions")); fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("alter Name muss Symlink sein")
+	}
+	if err := MigrateHome(home); err != nil { // idempotent
+		t.Fatal(err)
+	}
+	// beide echte Ordner: nicht raten
+	h2 := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(h2, "sessions"), 0o700)
+	_ = os.MkdirAll(filepath.Join(h2, "sandboxes"), 0o700)
+	if err := MigrateHome(h2); err == nil {
+		t.Fatal("beide vorhanden: Fehler erwartet")
 	}
 }

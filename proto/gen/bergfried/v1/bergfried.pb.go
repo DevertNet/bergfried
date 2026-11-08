@@ -540,8 +540,8 @@ func (x *DecideSSHRequest) GetTrustUnknownHost() bool {
 type Grant struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Session             string                 `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
-	Agent               string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"` // leer = alle Agents der Session
+	Sandbox             string                 `protobuf:"bytes,2,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
+	Agent               string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"` // leer = alle Agents der Sandbox
 	Host                string                 `protobuf:"bytes,4,opt,name=host,proto3" json:"host,omitempty"`
 	KeyFingerprint      string                 `protobuf:"bytes,5,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
 	User                string                 `protobuf:"bytes,6,opt,name=user,proto3" json:"user,omitempty"`
@@ -590,9 +590,9 @@ func (x *Grant) GetId() int64 {
 	return 0
 }
 
-func (x *Grant) GetSession() string {
+func (x *Grant) GetSandbox() string {
 	if x != nil {
-		return x.Session
+		return x.Sandbox
 	}
 	return ""
 }
@@ -1308,7 +1308,7 @@ func (x *AccessRequest) GetReason() string {
 type AccessResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Verdict       Verdict                `protobuf:"varint,1,opt,name=verdict,proto3,enum=bergfried.v1.Verdict" json:"verdict,omitempty"`
-	VmPath        string                 `protobuf:"bytes,2,opt,name=vm_path,json=vmPath,proto3" json:"vm_path,omitempty"` // Pfad in der VM unter shared/in/<session>/...
+	VmPath        string                 `protobuf:"bytes,2,opt,name=vm_path,json=vmPath,proto3" json:"vm_path,omitempty"` // Pfad in der VM unter shared/in/<sandbox>/...
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1368,7 +1368,7 @@ func (x *AccessResult) GetMessage() string {
 type Request struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Session       string                 `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	Sandbox       string                 `protobuf:"bytes,2,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
 	Agent         string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
 	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"` // file | folder
 	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
@@ -1418,9 +1418,9 @@ func (x *Request) GetId() int64 {
 	return 0
 }
 
-func (x *Request) GetSession() string {
+func (x *Request) GetSandbox() string {
 	if x != nil {
-		return x.Session
+		return x.Sandbox
 	}
 	return ""
 }
@@ -1714,7 +1714,7 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\x12trust_unknown_host\x18\b \x01(\bR\x10trustUnknownHost\"\xb0\x02\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
-	"\asession\x18\x02 \x01(\tR\asession\x12\x14\n" +
+	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x14\n" +
 	"\x05agent\x18\x03 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04host\x18\x04 \x01(\tR\x04host\x12'\n" +
 	"\x0fkey_fingerprint\x18\x05 \x01(\tR\x0ekeyFingerprint\x12\x12\n" +
@@ -1768,7 +1768,7 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"\x86\x02\n" +
 	"\aRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
-	"\asession\x18\x02 \x01(\tR\asession\x12\x14\n" +
+	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x14\n" +
 	"\x05agent\x18\x03 \x01(\tR\x05agent\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x05 \x01(\tR\x04path\x12\x16\n" +
@@ -1797,7 +1797,7 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\x0fVERDICT_BLOCKED\x10\x03\x12\x13\n" +
 	"\x0fVERDICT_EXPIRED\x10\x042\xb5\x04\n" +
 	"\n" +
-	"SessionAPI\x12L\n" +
+	"SandboxAPI\x12L\n" +
 	"\tListFiles\x12\x1e.bergfried.v1.ListFilesRequest\x1a\x1f.bergfried.v1.ListFilesResponse\x12R\n" +
 	"\vSearchFiles\x12 .bergfried.v1.SearchFilesRequest\x1a!.bergfried.v1.SearchFilesResponse\x12F\n" +
 	"\vRequestFile\x12\x1b.bergfried.v1.AccessRequest\x1a\x1a.bergfried.v1.AccessResult\x12H\n" +
@@ -1870,13 +1870,13 @@ var file_bergfried_v1_bergfried_proto_depIdxs = []int32{
 	16, // 5: bergfried.v1.SearchFilesResponse.entries:type_name -> bergfried.v1.FileEntry
 	0,  // 6: bergfried.v1.AccessResult.verdict:type_name -> bergfried.v1.Verdict
 	23, // 7: bergfried.v1.ListRequestsResponse.requests:type_name -> bergfried.v1.Request
-	17, // 8: bergfried.v1.SessionAPI.ListFiles:input_type -> bergfried.v1.ListFilesRequest
-	19, // 9: bergfried.v1.SessionAPI.SearchFiles:input_type -> bergfried.v1.SearchFilesRequest
-	21, // 10: bergfried.v1.SessionAPI.RequestFile:input_type -> bergfried.v1.AccessRequest
-	21, // 11: bergfried.v1.SessionAPI.RequestFolder:input_type -> bergfried.v1.AccessRequest
-	5,  // 12: bergfried.v1.SessionAPI.RequestSSH:input_type -> bergfried.v1.SSHAccessRequest
-	3,  // 13: bergfried.v1.SessionAPI.SSHAttempt:input_type -> bergfried.v1.SSHAttemptRequest
-	1,  // 14: bergfried.v1.SessionAPI.RequestGitHubToken:input_type -> bergfried.v1.GitHubTokenRequest
+	17, // 8: bergfried.v1.SandboxAPI.ListFiles:input_type -> bergfried.v1.ListFilesRequest
+	19, // 9: bergfried.v1.SandboxAPI.SearchFiles:input_type -> bergfried.v1.SearchFilesRequest
+	21, // 10: bergfried.v1.SandboxAPI.RequestFile:input_type -> bergfried.v1.AccessRequest
+	21, // 11: bergfried.v1.SandboxAPI.RequestFolder:input_type -> bergfried.v1.AccessRequest
+	5,  // 12: bergfried.v1.SandboxAPI.RequestSSH:input_type -> bergfried.v1.SSHAccessRequest
+	3,  // 13: bergfried.v1.SandboxAPI.SSHAttempt:input_type -> bergfried.v1.SSHAttemptRequest
+	1,  // 14: bergfried.v1.SandboxAPI.RequestGitHubToken:input_type -> bergfried.v1.GitHubTokenRequest
 	24, // 15: bergfried.v1.Admin.ListRequests:input_type -> bergfried.v1.ListRequestsRequest
 	26, // 16: bergfried.v1.Admin.Decide:input_type -> bergfried.v1.DecideRequest
 	7,  // 17: bergfried.v1.Admin.DecideSSH:input_type -> bergfried.v1.DecideSSHRequest
@@ -1884,13 +1884,13 @@ var file_bergfried_v1_bergfried_proto_depIdxs = []int32{
 	11, // 19: bergfried.v1.Admin.RevokeGrant:input_type -> bergfried.v1.GrantRef
 	12, // 20: bergfried.v1.Admin.ExtendGrant:input_type -> bergfried.v1.ExtendGrantRequest
 	14, // 21: bergfried.v1.Admin.ListKeys:input_type -> bergfried.v1.ListKeysRequest
-	18, // 22: bergfried.v1.SessionAPI.ListFiles:output_type -> bergfried.v1.ListFilesResponse
-	20, // 23: bergfried.v1.SessionAPI.SearchFiles:output_type -> bergfried.v1.SearchFilesResponse
-	22, // 24: bergfried.v1.SessionAPI.RequestFile:output_type -> bergfried.v1.AccessResult
-	22, // 25: bergfried.v1.SessionAPI.RequestFolder:output_type -> bergfried.v1.AccessResult
-	6,  // 26: bergfried.v1.SessionAPI.RequestSSH:output_type -> bergfried.v1.SSHAccessResult
-	4,  // 27: bergfried.v1.SessionAPI.SSHAttempt:output_type -> bergfried.v1.SSHAttemptResult
-	2,  // 28: bergfried.v1.SessionAPI.RequestGitHubToken:output_type -> bergfried.v1.GitHubTokenResult
+	18, // 22: bergfried.v1.SandboxAPI.ListFiles:output_type -> bergfried.v1.ListFilesResponse
+	20, // 23: bergfried.v1.SandboxAPI.SearchFiles:output_type -> bergfried.v1.SearchFilesResponse
+	22, // 24: bergfried.v1.SandboxAPI.RequestFile:output_type -> bergfried.v1.AccessResult
+	22, // 25: bergfried.v1.SandboxAPI.RequestFolder:output_type -> bergfried.v1.AccessResult
+	6,  // 26: bergfried.v1.SandboxAPI.RequestSSH:output_type -> bergfried.v1.SSHAccessResult
+	4,  // 27: bergfried.v1.SandboxAPI.SSHAttempt:output_type -> bergfried.v1.SSHAttemptResult
+	2,  // 28: bergfried.v1.SandboxAPI.RequestGitHubToken:output_type -> bergfried.v1.GitHubTokenResult
 	25, // 29: bergfried.v1.Admin.ListRequests:output_type -> bergfried.v1.ListRequestsResponse
 	27, // 30: bergfried.v1.Admin.Decide:output_type -> bergfried.v1.DecideResponse
 	27, // 31: bergfried.v1.Admin.DecideSSH:output_type -> bergfried.v1.DecideResponse

@@ -60,7 +60,7 @@ func TestAllowedFileIsCopiedIntoSharedIn(t *testing.T) {
 	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
 		t.Fatalf("%v %v", res, err)
 	}
-	want := filepath.Join(data, "sessions/shop/shared/in/shop/Documents/a.txt")
+	want := filepath.Join(data, "sandboxes/shop/shared/in/shop/Documents/a.txt")
 	if res.VmPath != want {
 		t.Fatalf("%s != %s", res.VmPath, want)
 	}
@@ -75,7 +75,7 @@ func TestDeniedCopiesNothing(t *testing.T) {
 	if res.Verdict != pb.Verdict_VERDICT_DENIED {
 		t.Fatal(res)
 	}
-	if _, err := os.Stat(filepath.Join(data, "sessions")); err == nil {
+	if _, err := os.Stat(filepath.Join(data, "sandboxes")); err == nil {
 		t.Fatal("es darf nichts kopiert worden sein")
 	}
 }
@@ -102,7 +102,7 @@ func TestFolderSkipsBlockedAndSymlinks(t *testing.T) {
 	if res.Verdict != pb.Verdict_VERDICT_ALLOWED {
 		t.Fatal(res)
 	}
-	root := filepath.Join(data, "sessions/shop/shared/in/shop/proj")
+	root := filepath.Join(data, "sandboxes/shop/shared/in/shop/proj")
 	if _, err := os.Stat(filepath.Join(root, "main.go")); err != nil {
 		t.Fatal("main.go fehlt")
 	}
@@ -146,7 +146,7 @@ func TestTimeoutExpires(t *testing.T) {
 func TestLargeNeedsSecondConfirmation(t *testing.T) {
 	svc, _, _ := env(t, true)
 	svc.Asker = silentAsker{}
-	id, _ := svc.S.AddRequest(store.Request{Session: "s", Kind: "folder", Path: "big", Status: "pending", Bytes: LargeBytes + 1, Files: 1})
+	id, _ := svc.S.AddRequest(store.Request{Sandbox: "s", Kind: "folder", Path: "big", Status: "pending", Bytes: LargeBytes + 1, Files: 1})
 	svc.waiters[id] = make(chan decision, 1)
 	if _, err := svc.Decide(id, true, false); err == nil || !strings.Contains(err.Error(), "zweite Bestätigung") {
 		t.Fatalf("ohne confirm_large muss es scheitern: %v", err)

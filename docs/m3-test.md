@@ -30,8 +30,8 @@ Im Agent: „Ich brauche SSH-Zugriff auf `server.example.com`, um X zu prüfen�
 - **Hoster-Seite:** Während einer Freigabe könnte ein Agent einen eigenen Key in `authorized_keys` des Ziels eintragen.
   Für wichtige Server einen eingeschränkten User `claude` verwenden, dessen `authorized_keys` root gehört
   (`AuthorizedKeysFile /etc/ssh/authorized_keys/%u` in `sshd_config`).
-- **Agent-Geltung:** „Nur dieser Agent“ dient Anzeige und Protokoll; technisch gilt die Freigabe für die Session
+- **Agent-Geltung:** „Nur dieser Agent“ dient Anzeige und Protokoll; technisch gilt die Freigabe für die Sandbox
   (gleicher Linux-User in der VM).
-- Das Broker-Verhalten (kein session-bind → ablehnen, Weiterleitung → ablehnen, kein Schreiben in den Agent) ist durch
+- Das Broker-Verhalten (kein sandbox-bind → ablehnen, Weiterleitung → ablehnen, kein Schreiben in den Agent) ist durch
   Tests in `daemon/internal/broker` abgesichert.
 - Die Vorlage nutzt `IdentityAgent /run/user/%i/bergfried-agent.sock` (systemweit) – ein vorhandener `SSH_AUTH_SOCK` der VM wird nicht benutzt.

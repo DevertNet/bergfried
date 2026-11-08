@@ -13,7 +13,7 @@ Auf dem Entwickler-Mac ist **kein Xcode** installiert, nur die Command Line Tool
 - Der Datei-Editor (CodeEditSourceEditor) und „In VS Code öffnen“ gehören laut Roadmap zu M6.
 
 ## Umfang M4
-- Daemon: `internal/api` (Sessions, Agents, Anfragen, SSH-Freigaben, Protokoll inkl. CSV, Sperrliste, Status, Jobs für lange Aktionen).
-- App: Menüleisten-Icon mit Zähler offener Anfragen, Fenster mit Sessions / Anfragen / Protokoll / Einstellungen,
+- Daemon: `internal/api` (Sandboxes, Agents, Anfragen, SSH-Freigaben, Protokoll inkl. CSV, Sperrliste, Status, Jobs für lange Aktionen).
+- App: Menüleisten-Icon mit Zähler offener Anfragen, Fenster mit Sandboxes / Anfragen / Protokoll / Einstellungen,
   Mitteilungen mit Aktions-Buttons (Erlauben/Ablehnen), Daemon als LaunchAgent installieren/starten, Terminal öffnen.
 - Der Daemon der App läuft mit `--no-dialog`; Entscheidungen trifft die App.

@@ -9,10 +9,10 @@ final class AppModel: ObservableObject {
 
     @Published var online = false
     @Published var status: DaemonStatus?
-    @Published var sessions: [SessionInfo] = []
+    @Published var sandboxes: [SandboxInfo] = []
     @Published var requests: [RequestInfo] = []   // offene
     @Published var grants: [GrantInfo] = []       // aktive SSH-Freigaben
-    @Published var pane: Pane? = .sessions
+    @Published var pane: Pane? = .sandboxes
     @Published var banner: String?
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
 
@@ -42,10 +42,10 @@ final class AppModel: ObservableObject {
     func refresh() async {
         do {
             let st: DaemonStatus = try await api.get("/v1/status")
-            let ss: [SessionInfo] = try await api.get("/v1/sessions")
+            let ss: [SandboxInfo] = try await api.get("/v1/sandboxes")
             let rq: [RequestInfo] = try await api.get("/v1/requests")
             let gr: [GrantInfo] = try await api.get("/v1/ssh/grants")
-            status = st; sessions = ss; requests = rq; grants = gr
+            status = st; sandboxes = ss; requests = rq; grants = gr
             online = true
             // Beim ersten Laden nicht für Altbestand benachrichtigen.
             for r in rq where !notified.contains(r.id) {

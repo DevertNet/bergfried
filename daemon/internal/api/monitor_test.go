@@ -117,7 +117,7 @@ func TestStickyRCSurvivesScrolledOffBanner(t *testing.T) {
 
 func TestMarkRCClearsFailed(t *testing.T) {
 	mo := NewMonitor(nil)
-	mo.state["s"] = &SessionState{Agents: map[string]AgentState{"a": {Window: true, Running: true, PID: 55}}}
+	mo.state["s"] = &SandboxState{Agents: map[string]AgentState{"a": {Window: true, Running: true, PID: 55}}}
 	mo.actions["s/a"], mo.attempts["s/a"] = "failed", 3
 	if err := mo.MarkRC("s", "a"); err != nil {
 		t.Fatal(err)

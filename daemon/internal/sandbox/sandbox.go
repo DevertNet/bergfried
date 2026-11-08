@@ -1,5 +1,5 @@
-// Package session steuert den Lebenszyklus: Basis-VM, Klon je Session, Agents in tmux.
-package session
+// Package sandbox steuert den Lebenszyklus: Basis-VM, Klon je Sandbox, Agents in tmux.
+package sandbox
 
 import (
 	"context"
@@ -24,8 +24,8 @@ const (
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 
-// newSessionRe: Namen neuer Sessions (kürzer, damit Socket-Pfade unter dem Unix-Limit bleiben).
-var newSessionRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
+// newSandboxRe: Namen neuer Sandboxes (kürzer, damit Socket-Pfade unter dem Unix-Limit bleiben).
+var newSandboxRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}$`)
 
 // baseVMRe erkennt ausschließlich echte Basis-VMs (Hash oder alte vN-Namen) – für das Aufräumen.
 var baseVMRe = regexp.MustCompile(`^bergfried-base-([0-9a-f]{8}|v[0-9]+)$`)
@@ -41,6 +41,23 @@ func progress(ctx context.Context, msg string) {
 	if f, ok := ctx.Value(progressKey{}).(func(string)); ok {
 		f(msg)
 	}
+}
+
+// MigrateHome benennt ~/.bergfried/sessions (alter Name) in sandboxes um und lässt unter dem alten Namen einen Symlink zurück:
+// Lima-Mounts bestehender VMs enthalten den alten Pfad. Idempotent; ohne alten Ordner passiert nichts.
+func MigrateHome(home string) error {
+	old, nw := filepath.Join(home, "sessions"), filepath.Join(home, "sandboxes")
+	fi, err := os.Lstat(old)
+	if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return nil
+	}
+	if _, err := os.Lstat(nw); err == nil {
+		return fmt.Errorf("%s und %s existieren beide – bitte von Hand zusammenführen", old, nw)
+	}
+	if err := os.Rename(old, nw); err != nil {
+		return err
+	}
+	return os.Symlink("sandboxes", old)
 }
 
 // ErrUnpushed wird von Delete geliefert, wenn ungesicherte Arbeit in der VM liegt.
@@ -65,10 +82,10 @@ type Manager struct {
 	Tpl      *TemplateStore
 	Actor    string
 	// GitHub-Token (optional verdrahtet): PreCheck prüft Token (und Repo-Zugriff, wenn repo != ""), SaveToken legt die Mac-Kopie ab,
-	// DropToken löscht sie beim Löschen der Session.
+	// DropToken löscht sie beim Löschen der Sandbox.
 	PreCheck  func(ctx context.Context, token, repoURL string) error
-	SaveToken func(session, token string) error
-	DropToken func(session string)
+	SaveToken func(sandbox, token string) error
+	DropToken func(sandbox string)
 }
 
 // Rev: Vorlagen-Revision (Zähler der Änderungen, nur zur Anzeige).
@@ -100,12 +117,12 @@ func ValidName(n string) error {
 	return nil
 }
 
-// VMName: Name der Lima-VM einer neuen Session. (Bestehende Sessions behalten den Namen aus der Datenbank.)
-func VMName(session string) string { return "bergfried-" + session }
+// VMName: Name der Lima-VM einer neuen Sandbox. (Bestehende Sandboxes behalten den Namen aus der Datenbank.)
+func VMName(sandbox string) string { return "bergfried-" + sandbox }
 
-// ValidSessionName gilt für NEUE Sessions; "base" ist reserviert (Kollision mit Basis-VMs).
-func ValidSessionName(n string) error {
-	if !newSessionRe.MatchString(n) {
+// ValidSandboxName gilt für NEUE Sandboxes; "base" ist reserviert (Kollision mit Basis-VMs).
+func ValidSandboxName(n string) error {
+	if !newSandboxRe.MatchString(n) {
 		return fmt.Errorf("ungültiger Name %q (erlaubt: a-z, 0-9, -; max. 24 Zeichen, mit Buchstabe beginnen)", n)
 	}
 	if n == "base" || strings.HasPrefix(n, "base-") {
@@ -114,8 +131,8 @@ func ValidSessionName(n string) error {
 	return nil
 }
 
-func (m *Manager) audit(event, session, agent, detail string) {
-	if err := m.S.Audit(m.Actor, event, session, agent, detail); err != nil {
+func (m *Manager) audit(event, sandbox, agent, detail string) {
+	if err := m.S.Audit(m.Actor, event, sandbox, agent, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
@@ -161,7 +178,7 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
 		return err
 	}
 	m.audit("base.build", "", "", base)
-	// Ältere Basis-VMs aufräumen (Sessions sind unabhängige Klone).
+	// Ältere Basis-VMs aufräumen (Sandboxes sind unabhängige Klone).
 	if vms, err := m.L.List(ctx); err == nil {
 		for _, v := range vms {
 			if baseVMRe.MatchString(v.Name) && v.Name != base {
@@ -221,7 +238,7 @@ func guidance(outDir string) string {
 }
 
 // InstallMCP kopiert bergfried-mcp in die VM, trägt es in Claude Code ein und legt den Hinweistext an (idempotent).
-func (m *Manager) InstallMCP(ctx context.Context, vm, sessionName string) error {
+func (m *Manager) InstallMCP(ctx context.Context, vm, sandboxName string) error {
 	bin := McpBin()
 	if _, err := os.Stat(bin); err != nil {
 		return fmt.Errorf("bergfried-mcp nicht gefunden (%s) – `make build` ausführen: %w", bin, err)
@@ -229,7 +246,7 @@ func (m *Manager) InstallMCP(ctx context.Context, vm, sessionName string) error 
 	if _, err := m.L.R.Run(ctx, "cp", bin, vm+":/tmp/bergfried-mcp"); err != nil {
 		return err
 	}
-	outDir := filepath.Join(m.Home, "sessions", sessionName, "shared", "out")
+	outDir := filepath.Join(m.Home, "sandboxes", sandboxName, "shared", "out")
 	b64 := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
 	_, err := m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
 mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp.new && mv -f ~/.local/bin/bergfried-mcp.new ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
@@ -245,11 +262,11 @@ git config --global --get user.email >/dev/null 2>&1 || git config --global user
 git config --global --get init.defaultBranch >/dev/null 2>&1 || git config --global init.defaultBranch main
 export PATH="$HOME/.local/bin:$PATH"
 claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
-claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64, sessionName, sessionName))
+claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64, sandboxName, sandboxName))
 	return err
 }
 
-// InstallGitToken legt das GitHub-Token der Session in der VM ab: ~/.git-credentials (0600, über stdin, nie als Argument)
+// InstallGitToken legt das GitHub-Token der Sandbox in der VM ab: ~/.git-credentials (0600, über stdin, nie als Argument)
 // und der Credential-Helper „store“. Dadurch funktioniert git über HTTPS ohne URL-Umbau.
 func (m *Manager) InstallGitToken(ctx context.Context, vm, token string) error {
 	line := "https://x-access-token:" + strings.TrimSpace(token) + "@github.com\n"
@@ -274,9 +291,9 @@ func (m *Manager) importFolder(ctx context.Context, vm, path string) (files, byt
 	return files, bytes, err
 }
 
-// Create legt Session und VM an. token (optional, Fine-grained PAT) wird vorab geprüft, in der VM hinterlegt und für git clone genutzt.
+// Create legt Sandbox und VM an. token (optional, Fine-grained PAT) wird vorab geprüft, in der VM hinterlegt und für git clone genutzt.
 func (m *Manager) Create(ctx context.Context, name, repo, importPath, token string) error {
-	if err := ValidSessionName(name); err != nil {
+	if err := ValidSandboxName(name); err != nil {
 		return err
 	}
 	if repo != "" && importPath != "" {
@@ -316,7 +333,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 	if err := m.BuildBase(ctx, false); err != nil {
 		return err
 	}
-	dir := filepath.Join(m.Home, "sessions", name)
+	dir := filepath.Join(m.Home, "sandboxes", name)
 	in, out := filepath.Join(dir, "shared", "in"), filepath.Join(dir, "shared", "out")
 	for _, d := range []string{in, out} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -375,14 +392,14 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 		if err != nil {
 			return fmt.Errorf("Import: %w", err)
 		}
-		m.audit("session.import", name, "", fmt.Sprintf("%s files=%d bytes=%d", importPath, files, bytes))
+		m.audit("sandbox.import", name, "", fmt.Sprintf("%s files=%d bytes=%d", importPath, files, bytes))
 	}
-	if err := m.S.AddSession(store.Session{Name: name, VM: vm, Repo: repo, TemplateVersion: m.Rev(), Created: time.Now()}); err != nil {
+	if err := m.S.AddSandbox(store.Sandbox{Name: name, VM: vm, Repo: repo, TemplateVersion: m.Rev(), Created: time.Now()}); err != nil {
 		return err
 	}
-	m.audit("session.create", name, "", repo)
+	m.audit("sandbox.create", name, "", repo)
 	// "main" sofort eintragen, damit er in der Übersicht gleich erscheint (das Fenster folgt gleich danach).
-	_ = m.S.AddAgent(store.Agent{Session: name, Name: "main", Worktree: "~/work/main", ComposeProject: name + "-main", Created: time.Now()})
+	_ = m.S.AddAgent(store.Agent{Sandbox: name, Name: "main", Worktree: "~/work/main", ComposeProject: name + "-main", Created: time.Now()})
 	// Erster Agent startet gleich mit (tmux-Fenster, Worktree/Verzeichnis, Remote Control). Ohne Login wartet er,
 	// der Daemon startet ihn nach dem Login automatisch neu.
 	progress(ctx, "Ersten Agent „main“ starten")
@@ -394,7 +411,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 }
 
 func (m *Manager) Start(ctx context.Context, name string) error {
-	s, err := m.S.GetSession(name)
+	s, err := m.S.GetSandbox(name)
 	if err != nil {
 		return err
 	}
@@ -416,19 +433,19 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 			return fmt.Errorf("Agent %s: %w", a.Name, err)
 		}
 	}
-	m.audit("session.start", name, "", fmt.Sprintf("agents=%d", len(ags)))
+	m.audit("sandbox.start", name, "", fmt.Sprintf("agents=%d", len(ags)))
 	return nil
 }
 
 func (m *Manager) Stop(ctx context.Context, name string) error {
-	s, err := m.S.GetSession(name)
+	s, err := m.S.GetSandbox(name)
 	if err != nil {
 		return err
 	}
 	if err := m.L.Stop(ctx, s.VM); err != nil {
 		return err
 	}
-	m.audit("session.stop", name, "", "")
+	m.audit("sandbox.stop", name, "", "")
 	return nil
 }
 
@@ -438,7 +455,7 @@ const unpushedCheck = `for d in ~/work/*/; do [ -d "$d/.git" ] || [ -f "$d/.git"
 done`
 
 func (m *Manager) Delete(ctx context.Context, name string, force bool) error {
-	s, err := m.S.GetSession(name)
+	s, err := m.S.GetSandbox(name)
 	if err != nil {
 		return err
 	}
@@ -457,41 +474,41 @@ func (m *Manager) Delete(ctx context.Context, name string, force bool) error {
 	if err := m.L.Delete(ctx, s.VM); err != nil {
 		return err
 	}
-	if err := m.S.DeleteSession(name); err != nil {
+	if err := m.S.DeleteSandbox(name); err != nil {
 		return err
 	}
 	if m.DropToken != nil {
 		m.DropToken(name)
 	}
-	m.audit("session.delete", name, "", fmt.Sprintf("force=%v", force))
+	m.audit("sandbox.delete", name, "", fmt.Sprintf("force=%v", force))
 	return nil
 }
 
 // AgentCmd baut die Shell-Zeile für ein tmux-Fenster. Namen sind validiert (nur [a-z0-9-]).
 // --continue holt den Verlauf; gibt es keinen (neuer Agent), startet der Fallback frisch.
-func AgentCmd(session, agent string) string {
-	rc := fmt.Sprintf("--remote-control '%s/%s'", session, agent)
-	return fmt.Sprintf(`cd ~/work/%[2]s && export COMPOSE_PROJECT_NAME=%[1]s-%[2]s BERGFRIED_AGENT=%[1]s/%[2]s && (~/.local/bin/claude --continue %[3]s || exec ~/.local/bin/claude %[3]s)`, session, agent, rc)
+func AgentCmd(sandbox, agent string) string {
+	rc := fmt.Sprintf("--remote-control '%s/%s'", sandbox, agent)
+	return fmt.Sprintf(`cd ~/work/%[2]s && export COMPOSE_PROJECT_NAME=%[1]s-%[2]s BERGFRIED_AGENT=%[1]s/%[2]s && (~/.local/bin/claude --continue %[3]s || exec ~/.local/bin/claude %[3]s)`, sandbox, agent, rc)
 }
 
 // ensureWindow legt tmux-Session/-Fenster an, falls nicht vorhanden, und startet den Agent darin.
-func (m *Manager) ensureWindow(ctx context.Context, vm, session, agent string) error {
+func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, agent string) error {
 	script := fmt.Sprintf(`set -e
 f=~/.claude.json; [ -f "$f" ] || echo '{}' > "$f"
 jq --arg d "$HOME/work/%[1]s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 if ! tmux has-session -t %[2]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[2]s -n %[1]s
 elif ! tmux list-windows -t %[2]s -F '#W' | grep -qx %[1]s; then tmux new-window -t %[2]s -n %[1]s
 else exit 0; fi
-tmux send-keys -t %[2]s:%[1]s %[3]q Enter`, agent, tmuxSession, AgentCmd(session, agent))
+tmux send-keys -t %[2]s:%[1]s %[3]q Enter`, agent, tmuxSession, AgentCmd(sandbox, agent))
 	_, err := m.L.Shell(ctx, vm, "bash", "-c", script)
 	return err
 }
 
-func (m *Manager) AgentAdd(ctx context.Context, session, agent string) error {
+func (m *Manager) AgentAdd(ctx context.Context, sandbox, agent string) error {
 	if err := ValidName(agent); err != nil {
 		return err
 	}
-	s, err := m.S.GetSession(session)
+	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
 	}
@@ -501,13 +518,13 @@ if [ -d ~/work/main/.git ] && [ %[1]q != main ]; then git -C ~/work/main worktre
 	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", setup); err != nil {
 		return err
 	}
-	if err := m.ensureWindow(ctx, s.VM, session, agent); err != nil {
+	if err := m.ensureWindow(ctx, s.VM, sandbox, agent); err != nil {
 		return err
 	}
-	if err := m.S.AddAgent(store.Agent{Session: session, Name: agent, Worktree: "~/work/" + agent, ComposeProject: session + "-" + agent, Created: time.Now()}); err != nil {
+	if err := m.S.AddAgent(store.Agent{Sandbox: sandbox, Name: agent, Worktree: "~/work/" + agent, ComposeProject: sandbox + "-" + agent, Created: time.Now()}); err != nil {
 		return err
 	}
-	m.audit("agent.add", session, agent, "")
+	m.audit("agent.add", sandbox, agent, "")
 	return nil
 }
 
@@ -528,8 +545,8 @@ if ! grep -qs '^Include ~/.ssh/bergfried.conf' ~/.ssh/config; then
 fi
 chmod 600 ~/.ssh/config ~/.ssh/bergfried.conf`
 
-func (h Hooks) vm(session string) (string, error) {
-	s, err := h.M.S.GetSession(session)
+func (h Hooks) vm(sandbox string) (string, error) {
+	s, err := h.M.S.GetSandbox(sandbox)
 	return s.VM, err
 }
 
@@ -539,8 +556,8 @@ func (h Hooks) applyDirect(ctx context.Context, vm string) error {
 	return err
 }
 
-func (h Hooks) Apply(ctx context.Context, session string, active []store.SSHGrant) error {
-	vm, err := h.vm(session)
+func (h Hooks) Apply(ctx context.Context, sandbox string, active []store.SSHGrant) error {
+	vm, err := h.vm(sandbox)
 	if err != nil {
 		return err
 	}
@@ -550,8 +567,8 @@ func (h Hooks) Apply(ctx context.Context, session string, active []store.SSHGran
 }
 
 // KillSSH beendet laufende ssh-Prozesse in der VM (Ablauf/Entzug).
-func (h Hooks) KillSSH(ctx context.Context, session string) error {
-	vm, err := h.vm(session)
+func (h Hooks) KillSSH(ctx context.Context, sandbox string) error {
+	vm, err := h.vm(sandbox)
 	if err != nil {
 		return err
 	}
@@ -560,21 +577,21 @@ func (h Hooks) KillSSH(ctx context.Context, session string) error {
 }
 
 // RestartAgent beendet das tmux-Fenster des Agents und startet ihn neu (mit --continue und Remote Control).
-func (m *Manager) RestartAgent(ctx context.Context, session, agent string) error {
+func (m *Manager) RestartAgent(ctx context.Context, sandbox, agent string) error {
 	if err := ValidName(agent); err != nil {
 		return err
 	}
-	s, err := m.S.GetSession(session)
+	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
 	}
 	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf("tmux kill-window -t %s:%s 2>/dev/null || true", tmuxSession, agent)); err != nil {
 		return err
 	}
-	if err := m.ensureWindow(ctx, s.VM, session, agent); err != nil {
+	if err := m.ensureWindow(ctx, s.VM, sandbox, agent); err != nil {
 		return err
 	}
-	m.audit("agent.restart", session, agent, "")
+	m.audit("agent.restart", sandbox, agent, "")
 	return nil
 }
 
@@ -631,11 +648,11 @@ docker compose -p "%[2]s" down --remove-orphans >/dev/null 2>&1 || true`
 
 // AgentRemove beendet einen Agent (tmux-Fenster, Eintrag). Mit deleteDir wird zusätzlich sein Verzeichnis/Worktree gelöscht –
 // nach Prüfung auf ungesicherte Arbeit (force überspringt sie). Das Verzeichnis von "main" wird nie gelöscht.
-func (m *Manager) AgentRemove(ctx context.Context, session, agent string, deleteDir, force bool) error {
+func (m *Manager) AgentRemove(ctx context.Context, sandbox, agent string, deleteDir, force bool) error {
 	if err := ValidName(agent); err != nil {
 		return err
 	}
-	s, err := m.S.GetSession(session)
+	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
 	}
@@ -655,14 +672,14 @@ func (m *Manager) AgentRemove(ctx context.Context, session, agent string, delete
 		return err
 	}
 	if deleteDir {
-		if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(agentDelete, agent, session+"-"+agent)); err != nil {
+		if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(agentDelete, agent, sandbox+"-"+agent)); err != nil {
 			return err
 		}
 	}
-	if err := m.S.DeleteAgent(session, agent); err != nil {
+	if err := m.S.DeleteAgent(sandbox, agent); err != nil {
 		return err
 	}
-	m.audit("agent.remove", session, agent, fmt.Sprintf("delete_dir=%v force=%v", deleteDir, force))
+	m.audit("agent.remove", sandbox, agent, fmt.Sprintf("delete_dir=%v force=%v", deleteDir, force))
 	return nil
 }
 

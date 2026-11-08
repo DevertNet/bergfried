@@ -15,7 +15,7 @@ Im Agent (Handy/claude.ai/code): „Liste meine Dateien in Documents auf und hol
 - `list_files` / `search_files` liefern nur Namen, Größe, Datum. `~/.ssh`, `~/Library`, `~/.config`, `.env` & Co. tauchen nicht auf.
 - `request_file` zeigt einen macOS-Dialog (**Ablehnen** ist Standard). Alternativ ohne Dialog: `serve --no-dialog` und
   `./bin/bergfriedd requests list` → `requests allow <id>` / `requests deny <id>`.
-- Nach Zustimmung liegt die Kopie in der VM unter `~/.bergfried/sessions/<session>/shared/in/<session>/…` (read-only).
+- Nach Zustimmung liegt die Kopie in der VM unter `~/.bergfried/sandboxes/<sandbox>/shared/in/<sandbox>/…` (read-only).
 - Gesperrte Pfade werden ohne Dialog abgelehnt (`verdict: blocked`) und erscheinen im Protokoll: `./bin/bergfriedd audit`.
 - Ordner über 100 MB / 500 Dateien verlangen eine zweite Bestätigung (`requests allow <id> --confirm-large`).
 
@@ -24,6 +24,6 @@ Sperrliste anpassen: `~/.bergfried/blocklist.json` (Pfade relativ zum Home, Name
 
 ## Bekannte Grenzen
 
-- Der Agent-Name im Dialog ist eine Angabe aus der VM (gleicher Linux-User) – kein Beweis. Die **Session** ergibt sich aus dem Socket.
+- Der Agent-Name im Dialog ist eine Angabe aus der VM (gleicher Linux-User) – kein Beweis. Die **Sandbox** ergibt sich aus dem Socket.
 - Zwischen Prüfung und Kopie liegt ein kurzes Zeitfenster (TOCTOU) – jede Datei wird beim Kopieren erneut aufgelöst und geprüft, Symlinks werden nie kopiert.
 - Eine Anfrage wartet bis zu 10 Minuten; ob Claude Code so lange auf ein MCP-Tool wartet, ist noch nicht geprüft.

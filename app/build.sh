@@ -21,7 +21,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
  <key>CFBundleVersion</key><string>1</string>
  <key>LSMinimumSystemVersion</key><string>15.0</string>
  <key>NSHighResolutionCapable</key><true/>
- <key>NSAppleEventsUsageDescription</key><string>Bergfried öffnet Terminal-Fenster für Sessions.</string>
+ <key>NSAppleEventsUsageDescription</key><string>Bergfried öffnet Terminal-Fenster für Sandboxes.</string>
 </dict></plist>
 PLIST
 cp icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"

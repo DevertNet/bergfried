@@ -7,7 +7,7 @@ struct DaemonStatus: Codable, Equatable {
     var templateVersion: Int
     var indexReady: Bool
     var upstreamAgent: Bool
-    var sessions: Int
+    var sandboxes: Int
 }
 
 struct AgentInfo: Codable, Hashable {
@@ -19,7 +19,7 @@ struct AgentInfo: Codable, Hashable {
     var rcAction: String   // "", "activating", "failed"
 }
 
-struct SessionInfo: Codable, Identifiable, Hashable {
+struct SandboxInfo: Codable, Identifiable, Hashable {
     var name: String
     var vm: String
     var status: String
@@ -60,7 +60,7 @@ struct GitHubDetail: Codable, Hashable {
 
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
-    var session: String
+    var sandbox: String
     var agent: String
     var kind: String
     var path: String
@@ -77,7 +77,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
 
 struct GrantInfo: Codable, Identifiable, Hashable {
     var id: Int64
-    var session: String
+    var sandbox: String
     var agent: String
     var host: String
     var keyFingerprint: String
@@ -93,10 +93,10 @@ struct AuditEntry: Codable, Identifiable, Hashable {
     var tsUnix: Int64
     var actor: String
     var event: String
-    var session: String
+    var sandbox: String
     var agent: String
     var detail: String
-    var id: String { "\(tsUnix)-\(actor)-\(event)-\(session)-\(agent)-\(detail.hashValue)" }
+    var id: String { "\(tsUnix)-\(actor)-\(event)-\(sandbox)-\(agent)-\(detail.hashValue)" }
 }
 
 struct KeyInfo: Codable, Identifiable, Hashable {
@@ -137,8 +137,8 @@ struct TemplateInfo: Codable {
     var path: String
     var warnings: [String]
 }
-struct AgentBody: Encodable { var session: String; var agent: String }
-struct AgentRemoveBody: Encodable { var session: String; var agent: String; var deleteDir: Bool; var force: Bool }
+struct AgentBody: Encodable { var sandbox: String; var agent: String }
+struct AgentRemoveBody: Encodable { var sandbox: String; var agent: String; var deleteDir: Bool; var force: Bool }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 

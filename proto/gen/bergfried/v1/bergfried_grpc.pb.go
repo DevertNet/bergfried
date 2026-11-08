@@ -19,22 +19,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SessionAPI_ListFiles_FullMethodName          = "/bergfried.v1.SessionAPI/ListFiles"
-	SessionAPI_SearchFiles_FullMethodName        = "/bergfried.v1.SessionAPI/SearchFiles"
-	SessionAPI_RequestFile_FullMethodName        = "/bergfried.v1.SessionAPI/RequestFile"
-	SessionAPI_RequestFolder_FullMethodName      = "/bergfried.v1.SessionAPI/RequestFolder"
-	SessionAPI_RequestSSH_FullMethodName         = "/bergfried.v1.SessionAPI/RequestSSH"
-	SessionAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SessionAPI/SSHAttempt"
-	SessionAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SessionAPI/RequestGitHubToken"
+	SandboxAPI_ListFiles_FullMethodName          = "/bergfried.v1.SandboxAPI/ListFiles"
+	SandboxAPI_SearchFiles_FullMethodName        = "/bergfried.v1.SandboxAPI/SearchFiles"
+	SandboxAPI_RequestFile_FullMethodName        = "/bergfried.v1.SandboxAPI/RequestFile"
+	SandboxAPI_RequestFolder_FullMethodName      = "/bergfried.v1.SandboxAPI/RequestFolder"
+	SandboxAPI_RequestSSH_FullMethodName         = "/bergfried.v1.SandboxAPI/RequestSSH"
+	SandboxAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SandboxAPI/SSHAttempt"
+	SandboxAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SandboxAPI/RequestGitHubToken"
 )
 
-// SessionAPIClient is the client API for SessionAPI service.
+// SandboxAPIClient is the client API for SandboxAPI service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SessionAPI: VM -> Daemon. Die Session ergibt sich aus dem Socket, nie aus einem Feld.
+// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
 // Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
-type SessionAPIClient interface {
+type SandboxAPIClient interface {
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	SearchFiles(ctx context.Context, in *SearchFilesRequest, opts ...grpc.CallOption) (*SearchFilesResponse, error)
 	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
@@ -44,96 +44,96 @@ type SessionAPIClient interface {
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
-	// GitHub-Zugriff (Token pro Session, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
+	// GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
 	// in der App; blockiert, bis der Nutzer entschieden hat.
 	RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error)
 }
 
-type sessionAPIClient struct {
+type sandboxAPIClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewSessionAPIClient(cc grpc.ClientConnInterface) SessionAPIClient {
-	return &sessionAPIClient{cc}
+func NewSandboxAPIClient(cc grpc.ClientConnInterface) SandboxAPIClient {
+	return &sandboxAPIClient{cc}
 }
 
-func (c *sessionAPIClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
+func (c *sandboxAPIClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFilesResponse)
-	err := c.cc.Invoke(ctx, SessionAPI_ListFiles_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_ListFiles_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) SearchFiles(ctx context.Context, in *SearchFilesRequest, opts ...grpc.CallOption) (*SearchFilesResponse, error) {
+func (c *sandboxAPIClient) SearchFiles(ctx context.Context, in *SearchFilesRequest, opts ...grpc.CallOption) (*SearchFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchFilesResponse)
-	err := c.cc.Invoke(ctx, SessionAPI_SearchFiles_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_SearchFiles_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) RequestFile(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error) {
+func (c *sandboxAPIClient) RequestFile(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AccessResult)
-	err := c.cc.Invoke(ctx, SessionAPI_RequestFile_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_RequestFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error) {
+func (c *sandboxAPIClient) RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AccessResult)
-	err := c.cc.Invoke(ctx, SessionAPI_RequestFolder_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_RequestFolder_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error) {
+func (c *sandboxAPIClient) RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SSHAccessResult)
-	err := c.cc.Invoke(ctx, SessionAPI_RequestSSH_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_RequestSSH_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error) {
+func (c *sandboxAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SSHAttemptResult)
-	err := c.cc.Invoke(ctx, SessionAPI_SSHAttempt_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_SSHAttempt_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *sessionAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error) {
+func (c *sandboxAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GitHubTokenResult)
-	err := c.cc.Invoke(ctx, SessionAPI_RequestGitHubToken_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, SandboxAPI_RequestGitHubToken_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// SessionAPIServer is the server API for SessionAPI service.
-// All implementations must embed UnimplementedSessionAPIServer
+// SandboxAPIServer is the server API for SandboxAPI service.
+// All implementations must embed UnimplementedSandboxAPIServer
 // for forward compatibility.
 //
-// SessionAPI: VM -> Daemon. Die Session ergibt sich aus dem Socket, nie aus einem Feld.
+// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
 // Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
-type SessionAPIServer interface {
+type SandboxAPIServer interface {
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	SearchFiles(context.Context, *SearchFilesRequest) (*SearchFilesResponse, error)
 	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
@@ -143,221 +143,221 @@ type SessionAPIServer interface {
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
 	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
 	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
-	// GitHub-Zugriff (Token pro Session, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
+	// GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
 	// in der App; blockiert, bis der Nutzer entschieden hat.
 	RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error)
-	mustEmbedUnimplementedSessionAPIServer()
+	mustEmbedUnimplementedSandboxAPIServer()
 }
 
-// UnimplementedSessionAPIServer must be embedded to have
+// UnimplementedSandboxAPIServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedSessionAPIServer struct{}
+type UnimplementedSandboxAPIServer struct{}
 
-func (UnimplementedSessionAPIServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
+func (UnimplementedSandboxAPIServer) ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
 }
-func (UnimplementedSessionAPIServer) SearchFiles(context.Context, *SearchFilesRequest) (*SearchFilesResponse, error) {
+func (UnimplementedSandboxAPIServer) SearchFiles(context.Context, *SearchFilesRequest) (*SearchFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchFiles not implemented")
 }
-func (UnimplementedSessionAPIServer) RequestFile(context.Context, *AccessRequest) (*AccessResult, error) {
+func (UnimplementedSandboxAPIServer) RequestFile(context.Context, *AccessRequest) (*AccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestFile not implemented")
 }
-func (UnimplementedSessionAPIServer) RequestFolder(context.Context, *AccessRequest) (*AccessResult, error) {
+func (UnimplementedSandboxAPIServer) RequestFolder(context.Context, *AccessRequest) (*AccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestFolder not implemented")
 }
-func (UnimplementedSessionAPIServer) RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error) {
+func (UnimplementedSandboxAPIServer) RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestSSH not implemented")
 }
-func (UnimplementedSessionAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
+func (UnimplementedSandboxAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method SSHAttempt not implemented")
 }
-func (UnimplementedSessionAPIServer) RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error) {
+func (UnimplementedSandboxAPIServer) RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestGitHubToken not implemented")
 }
-func (UnimplementedSessionAPIServer) mustEmbedUnimplementedSessionAPIServer() {}
-func (UnimplementedSessionAPIServer) testEmbeddedByValue()                    {}
+func (UnimplementedSandboxAPIServer) mustEmbedUnimplementedSandboxAPIServer() {}
+func (UnimplementedSandboxAPIServer) testEmbeddedByValue()                    {}
 
-// UnsafeSessionAPIServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to SessionAPIServer will
+// UnsafeSandboxAPIServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SandboxAPIServer will
 // result in compilation errors.
-type UnsafeSessionAPIServer interface {
-	mustEmbedUnimplementedSessionAPIServer()
+type UnsafeSandboxAPIServer interface {
+	mustEmbedUnimplementedSandboxAPIServer()
 }
 
-func RegisterSessionAPIServer(s grpc.ServiceRegistrar, srv SessionAPIServer) {
-	// If the following call panics, it indicates UnimplementedSessionAPIServer was
+func RegisterSandboxAPIServer(s grpc.ServiceRegistrar, srv SandboxAPIServer) {
+	// If the following call panics, it indicates UnimplementedSandboxAPIServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&SessionAPI_ServiceDesc, srv)
+	s.RegisterService(&SandboxAPI_ServiceDesc, srv)
 }
 
-func _SessionAPI_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_ListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListFilesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).ListFiles(ctx, in)
+		return srv.(SandboxAPIServer).ListFiles(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_ListFiles_FullMethodName,
+		FullMethod: SandboxAPI_ListFiles_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).ListFiles(ctx, req.(*ListFilesRequest))
+		return srv.(SandboxAPIServer).ListFiles(ctx, req.(*ListFilesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_SearchFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_SearchFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchFilesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).SearchFiles(ctx, in)
+		return srv.(SandboxAPIServer).SearchFiles(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_SearchFiles_FullMethodName,
+		FullMethod: SandboxAPI_SearchFiles_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).SearchFiles(ctx, req.(*SearchFilesRequest))
+		return srv.(SandboxAPIServer).SearchFiles(ctx, req.(*SearchFilesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_RequestFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_RequestFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AccessRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).RequestFile(ctx, in)
+		return srv.(SandboxAPIServer).RequestFile(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_RequestFile_FullMethodName,
+		FullMethod: SandboxAPI_RequestFile_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).RequestFile(ctx, req.(*AccessRequest))
+		return srv.(SandboxAPIServer).RequestFile(ctx, req.(*AccessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_RequestFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_RequestFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AccessRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).RequestFolder(ctx, in)
+		return srv.(SandboxAPIServer).RequestFolder(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_RequestFolder_FullMethodName,
+		FullMethod: SandboxAPI_RequestFolder_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).RequestFolder(ctx, req.(*AccessRequest))
+		return srv.(SandboxAPIServer).RequestFolder(ctx, req.(*AccessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_RequestSSH_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_RequestSSH_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SSHAccessRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).RequestSSH(ctx, in)
+		return srv.(SandboxAPIServer).RequestSSH(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_RequestSSH_FullMethodName,
+		FullMethod: SandboxAPI_RequestSSH_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).RequestSSH(ctx, req.(*SSHAccessRequest))
+		return srv.(SandboxAPIServer).RequestSSH(ctx, req.(*SSHAccessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SSHAttemptRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).SSHAttempt(ctx, in)
+		return srv.(SandboxAPIServer).SSHAttempt(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_SSHAttempt_FullMethodName,
+		FullMethod: SandboxAPI_SSHAttempt_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).SSHAttempt(ctx, req.(*SSHAttemptRequest))
+		return srv.(SandboxAPIServer).SSHAttempt(ctx, req.(*SSHAttemptRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SessionAPI_RequestGitHubToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _SandboxAPI_RequestGitHubToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GitHubTokenRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SessionAPIServer).RequestGitHubToken(ctx, in)
+		return srv.(SandboxAPIServer).RequestGitHubToken(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SessionAPI_RequestGitHubToken_FullMethodName,
+		FullMethod: SandboxAPI_RequestGitHubToken_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SessionAPIServer).RequestGitHubToken(ctx, req.(*GitHubTokenRequest))
+		return srv.(SandboxAPIServer).RequestGitHubToken(ctx, req.(*GitHubTokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// SessionAPI_ServiceDesc is the grpc.ServiceDesc for SessionAPI service.
+// SandboxAPI_ServiceDesc is the grpc.ServiceDesc for SandboxAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var SessionAPI_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "bergfried.v1.SessionAPI",
-	HandlerType: (*SessionAPIServer)(nil),
+var SandboxAPI_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "bergfried.v1.SandboxAPI",
+	HandlerType: (*SandboxAPIServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "ListFiles",
-			Handler:    _SessionAPI_ListFiles_Handler,
+			Handler:    _SandboxAPI_ListFiles_Handler,
 		},
 		{
 			MethodName: "SearchFiles",
-			Handler:    _SessionAPI_SearchFiles_Handler,
+			Handler:    _SandboxAPI_SearchFiles_Handler,
 		},
 		{
 			MethodName: "RequestFile",
-			Handler:    _SessionAPI_RequestFile_Handler,
+			Handler:    _SandboxAPI_RequestFile_Handler,
 		},
 		{
 			MethodName: "RequestFolder",
-			Handler:    _SessionAPI_RequestFolder_Handler,
+			Handler:    _SandboxAPI_RequestFolder_Handler,
 		},
 		{
 			MethodName: "RequestSSH",
-			Handler:    _SessionAPI_RequestSSH_Handler,
+			Handler:    _SandboxAPI_RequestSSH_Handler,
 		},
 		{
 			MethodName: "SSHAttempt",
-			Handler:    _SessionAPI_SSHAttempt_Handler,
+			Handler:    _SandboxAPI_SSHAttempt_Handler,
 		},
 		{
 			MethodName: "RequestGitHubToken",
-			Handler:    _SessionAPI_RequestGitHubToken_Handler,
+			Handler:    _SandboxAPI_RequestGitHubToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

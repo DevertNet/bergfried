@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
-	"github.com/DevertNet/bergfried/daemon/internal/session"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 )
 
 // probeScript läuft in der VM und meldet Login, Plattenbelegung sowie je Agent-Fenster den RC-Status.
@@ -85,7 +85,7 @@ func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 	return rcNone
 }
 
-type SessionState struct {
+type SandboxState struct {
 	LoggedIn             *bool
 	GuestUsed, GuestSize int64
 	Agents               map[string]AgentState
@@ -94,12 +94,12 @@ type SessionState struct {
 }
 
 type Monitor struct {
-	M *session.Manager
+	M *sandbox.Manager
 
 	mu        sync.Mutex
-	state     map[string]*SessionState
+	state     map[string]*SandboxState
 	inflight  map[string]bool
-	hold      map[string]int       // Sessions mit laufendem Job: nicht abfragen
+	hold      map[string]int       // Sandboxes mit laufendem Job: nicht abfragen
 	failures  map[string]int       // aufeinanderfolgende Abfragefehler
 	norc      map[string]int       // Prüfungen ohne RC je Agent
 	attempts  map[string]int       // Aktivierungsversuche je Agent
@@ -147,11 +147,11 @@ func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
 }
 
 // MarkRC bestätigt manuell, dass Remote Control in diesem Agent läuft (Ausweg, falls die Erkennung sie nicht sieht).
-func (mo *Monitor) MarkRC(session, agent string) error {
-	key := session + "/" + agent
+func (mo *Monitor) MarkRC(sandbox, agent string) error {
+	key := sandbox + "/" + agent
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
-	st := mo.state[session]
+	st := mo.state[sandbox]
 	if st == nil {
 		return fmt.Errorf("Sandbox wurde noch nicht abgefragt")
 	}
@@ -169,12 +169,12 @@ func (mo *Monitor) MarkRC(session, agent string) error {
 	return nil
 }
 
-func NewMonitor(m *session.Manager) *Monitor {
-	return &Monitor{M: m, state: map[string]*SessionState{}, inflight: map[string]bool{}, hold: map[string]int{},
+func NewMonitor(m *sandbox.Manager) *Monitor {
+	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
 		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
-// Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Session nicht abgefragt.
+// Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Sandbox nicht abgefragt.
 func (mo *Monitor) Hold(name string) { mo.mu.Lock(); mo.hold[name]++; mo.mu.Unlock() }
 func (mo *Monitor) Release(name string) {
 	mo.mu.Lock()
@@ -189,8 +189,8 @@ func (mo *Monitor) Poke2(name string) {
 }
 
 // ResetAgent setzt die automatische RC-Aktivierung eines Agents zurück (z. B. nach manuellem Neustart).
-func (mo *Monitor) ResetAgent(session, agent string) {
-	k := session + "/" + agent
+func (mo *Monitor) ResetAgent(sandbox, agent string) {
+	k := sandbox + "/" + agent
 	mo.mu.Lock()
 	delete(mo.norc, k)
 	delete(mo.attempts, k)
@@ -199,12 +199,12 @@ func (mo *Monitor) ResetAgent(session, agent string) {
 	mo.mu.Unlock()
 }
 
-func (mo *Monitor) Get(name string) (SessionState, bool) {
+func (mo *Monitor) Get(name string) (SandboxState, bool) {
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
 	s, ok := mo.state[name]
 	if !ok {
-		return SessionState{}, false
+		return SandboxState{}, false
 	}
 	cp := *s
 	cp.Agents = map[string]AgentState{}
@@ -230,7 +230,7 @@ func (mo *Monitor) Poke(name string) {
 	mo.mu.Unlock()
 }
 
-func (s *SessionState) stable() bool {
+func (s *SandboxState) stable() bool {
 	if s.LoggedIn == nil || !*s.LoggedIn {
 		return false
 	}
@@ -242,8 +242,8 @@ func (s *SessionState) stable() bool {
 	return true
 }
 
-func parseProbe(out string) SessionState {
-	st := SessionState{Agents: map[string]AgentState{}}
+func parseProbe(out string) SandboxState {
+	st := SandboxState{Agents: map[string]AgentState{}}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
@@ -300,7 +300,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		// Beim Hochfahren schlägt die Abfrage zwangsläufig fehl: erst nach mehreren Fehlern melden.
 		mo.failures[name]++
 		if prev == nil {
-			prev = &SessionState{Agents: map[string]AgentState{}}
+			prev = &SandboxState{Agents: map[string]AgentState{}}
 			mo.state[name] = prev
 		}
 		prev.Checked = time.Now()
@@ -343,7 +343,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			delete(st.Agents, w)
 		}
 	}
-	// Ältere Sessions ohne Agent bekommen einmalig den ersten Agent "main".
+	// Ältere Sandboxes ohne Agent bekommen einmalig den ersten Agent "main".
 	if !mo.M.S.Seeded(name) {
 		if len(registered) == 0 && st.LoggedIn != nil {
 			if err := mo.M.AgentAdd(cctx, name, "main"); err != nil {
@@ -451,7 +451,7 @@ func (mo *Monitor) Run(ctx context.Context) {
 }
 
 func (mo *Monitor) tick(ctx context.Context) {
-	ss, err := mo.M.S.ListSessions()
+	ss, err := mo.M.S.ListSandboxes()
 	if err != nil {
 		return
 	}

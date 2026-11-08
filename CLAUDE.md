@@ -7,7 +7,7 @@ Der Nutzer schreibt Deutsch – Antworten, Doku und Commit-Nachrichten auf Deuts
 Ursprungsauftrag: [`docs/SPEC.md`](docs/SPEC.md); nächster Schritt: [`docs/M5-PLAN.md`](docs/M5-PLAN.md).
 
 ## Begriffe
-In der App und in Texten für den Nutzer heißen Sessions **Sandboxes** („Neue Sandbox“). Intern bleibt es bei `session` (Code, API-Pfade `/v1/sessions`, DB, Ordner `~/.bergfried/sessions`).
+Eine isolierte VM mit ihren Agents heißt **Sandbox** – überall (App, API `/v1/sandboxes`, Code, DB, Ordner `~/.bergfried/sandboxes`). Früher hieß sie „Session“; nur ältere Doku (`docs/SPEC.md`) und Dinge anderer Programme (tmux-Session `bf`, Claude-/Remote-Control-Session) behalten das Wort.
 
 ## Vorgehen
 - **Plan-first:** vor größeren Teilen kurz den Plan (Dateien, Befehle, Tests) zeigen und nachfragen, wenn etwas unklar ist.
@@ -31,7 +31,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ```
 
 ## Testen mit echten VMs und SSH
-- Test-Sessions mit eindeutigem Namen anlegen und **danach löschen** (`bergfriedd delete <name> --force` oder App/API). **Vorhandene Sessions des
+- Test-Sandboxes mit eindeutigem Namen anlegen und **danach löschen** (`bergfriedd delete <name> --force` oder App/API). **Vorhandene Sandboxes des
   Nutzers nie verändern oder löschen** (nur lesen).
 - SSH-Tests **nie mit den echten Keys des Nutzers:** eigener Schlüssel (`ssh-keygen`), eigener `ssh-agent` (Socket kurz halten, z. B.
   `/private/tmp/bft/agent.sock`, Unix-Limit ~104 Zeichen), Test-sshd in Docker (`lscr.io/linuxserver/openssh-server`, Port 2222, `PUBLIC_KEY`),
@@ -53,6 +53,6 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 
 ## Konventionen
 - Go: ein Modul (`github.com/DevertNet/bergfried`), `daemon/internal/*` (Daemon), `mcp/cmd/bergfried-mcp`, `proto/gen/…` (generiert, nicht von Hand ändern).
-- Namen: neue VMs `bergfried-<session>` (≤ 24 Zeichen, `base` reserviert), Basis-VM `bergfried-base-<Hash>`, tmux-Session `bf`.
-- Daten des Daemons: `~/.bergfried` (0700): DB, `blocklist.json`, `hosts.json`, `template/`, `sessions/<name>/shared/{in,out}`, `admin.sock`, `app.sock`.
+- Namen: neue VMs `bergfried-<sandbox>` (≤ 24 Zeichen, `base` reserviert), Basis-VM `bergfried-base-<Hash>`, tmux-Session `bf`.
+- Daten des Daemons: `~/.bergfried` (0700): DB, `blocklist.json`, `hosts.json`, `template/`, `sandboxes/<name>/shared/{in,out}`, `admin.sock`, `app.sock`.
 - Commits: kurze deutsche Betreffzeile; Doku (`docs/`) im selben Commit aktualisieren, wenn sich Verhalten ändert.

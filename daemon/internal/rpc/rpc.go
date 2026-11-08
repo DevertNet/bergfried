@@ -1,4 +1,4 @@
-// Package rpc: gRPC-Server. Pro laufender Session ein eigener Unix-Socket (Identität = Socket),
+// Package rpc: gRPC-Server. Pro laufender Sandbox ein eigener Unix-Socket (Identität = Socket),
 // dazu ein Admin-Socket für CLI/App. Alle Sockets 0600 in 0700-Verzeichnissen.
 package rpc
 
@@ -61,22 +61,22 @@ func ListenUnix(path string) (net.Listener, error) {
 	return l, nil
 }
 
-type sessionServer struct {
-	pb.UnimplementedSessionAPIServer
-	session string
+type sandboxServer struct {
+	pb.UnimplementedSandboxAPIServer
+	sandbox string
 	svc     *access.Service
 	ssh     *broker.Service
 	gh      *ghtoken.Service
 	st      *store.Store
 }
 
-func (s *sessionServer) SSHAttempt(ctx context.Context, r *pb.SSHAttemptRequest) (*pb.SSHAttemptResult, error) {
-	state, msg := s.ssh.Attempt(ctx, s.session, r.Host, r.Port, r.User, r.Wait)
+func (s *sandboxServer) SSHAttempt(ctx context.Context, r *pb.SSHAttemptRequest) (*pb.SSHAttemptResult, error) {
+	state, msg := s.ssh.Attempt(ctx, s.sandbox, r.Host, r.Port, r.User, r.Wait)
 	return &pb.SSHAttemptResult{Message: msg, State: state}, nil
 }
 
-func (s *sessionServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubTokenRequest) (*pb.GitHubTokenResult, error) {
-	ok, msg, err := s.gh.Request(ctx, s.session, s.agent(ctx), r.Repo, r.Reason)
+func (s *sandboxServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubTokenRequest) (*pb.GitHubTokenResult, error) {
+	ok, msg, err := s.gh.Request(ctx, s.sandbox, s.agent(ctx), r.Repo, r.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -89,17 +89,17 @@ func (s *sessionServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubToke
 	return &pb.GitHubTokenResult{Verdict: v, Message: msg}, nil
 }
 
-func (s *sessionServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
-	return s.ssh.RequestSSH(ctx, s.session, s.agent(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
+func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
+	return s.ssh.RequestSSH(ctx, s.sandbox, s.agent(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
-// agent: Name ohne das "<session>/"-Präfix, das die VM mitschickt.
-func (s *sessionServer) agent(ctx context.Context) string {
-	return strings.TrimPrefix(agentFrom(ctx), s.session+"/")
+// agent: Name ohne das "<sandbox>/"-Präfix, das die VM mitschickt.
+func (s *sandboxServer) agent(ctx context.Context) string {
+	return strings.TrimPrefix(agentFrom(ctx), s.sandbox+"/")
 }
 
-func (s *sessionServer) audit(ctx context.Context, event, detail string) {
-	if err := s.st.Audit("agent", event, s.session, s.agent(ctx), detail); err != nil {
+func (s *sandboxServer) audit(ctx context.Context, event, detail string) {
+	if err := s.st.Audit("agent", event, s.sandbox, s.agent(ctx), detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
@@ -112,7 +112,7 @@ func toPB(es []index.Entry) []*pb.FileEntry {
 	return out
 }
 
-func (s *sessionServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (*pb.ListFilesResponse, error) {
+func (s *sandboxServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (*pb.ListFilesResponse, error) {
 	s.audit(ctx, "files.list", r.Path)
 	es, trunc, err := s.svc.Ix.List(r.Path, r.Pattern)
 	if errors.Is(err, index.ErrNotReady) {
@@ -125,7 +125,7 @@ func (s *sessionServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (
 	return &pb.ListFilesResponse{Entries: toPB(es), Truncated: trunc}, nil
 }
 
-func (s *sessionServer) SearchFiles(ctx context.Context, r *pb.SearchFilesRequest) (*pb.SearchFilesResponse, error) {
+func (s *sandboxServer) SearchFiles(ctx context.Context, r *pb.SearchFilesRequest) (*pb.SearchFilesResponse, error) {
 	s.audit(ctx, "files.search", r.Query)
 	if !s.svc.Ix.Ready() {
 		return nil, status.Error(codes.Unavailable, index.ErrNotReady.Error())
@@ -134,12 +134,12 @@ func (s *sessionServer) SearchFiles(ctx context.Context, r *pb.SearchFilesReques
 	return &pb.SearchFilesResponse{Entries: toPB(es), Truncated: trunc}, nil
 }
 
-func (s *sessionServer) RequestFile(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.session, s.agent(ctx), false, r.Path, r.Reason)
+func (s *sandboxServer) RequestFile(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
+	return s.svc.Request(ctx, s.sandbox, s.agent(ctx), false, r.Path, r.Reason)
 }
 
-func (s *sessionServer) RequestFolder(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.session, s.agent(ctx), true, r.Path, r.Reason)
+func (s *sandboxServer) RequestFolder(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
+	return s.svc.Request(ctx, s.sandbox, s.agent(ctx), true, r.Path, r.Reason)
 }
 
 type adminServer struct {
@@ -167,7 +167,7 @@ func (a *adminServer) ListGrants(_ context.Context, r *pb.ListGrantsRequest) (*p
 	}
 	out := &pb.ListGrantsResponse{}
 	for _, g := range gs {
-		out.Grants = append(out.Grants, &pb.Grant{Id: g.ID, Session: g.Session, Agent: g.Agent, Host: g.Host, KeyFingerprint: g.KeyFP,
+		out.Grants = append(out.Grants, &pb.Grant{Id: g.ID, Sandbox: g.Sandbox, Agent: g.Agent, Host: g.Host, KeyFingerprint: g.KeyFP,
 			User: g.User, ExpiresUnix: g.Expires.Unix(), PerConnection: g.PerConn, Revoked: g.Revoked, HostKeyFingerprints: g.HostKeys})
 	}
 	return out, nil
@@ -203,7 +203,7 @@ func (a *adminServer) ListRequests(_ context.Context, r *pb.ListRequestsRequest)
 	}
 	out := &pb.ListRequestsResponse{}
 	for _, x := range rs {
-		out.Requests = append(out.Requests, &pb.Request{Id: x.ID, Session: x.Session, Agent: x.Agent, Kind: x.Kind, Path: x.Path,
+		out.Requests = append(out.Requests, &pb.Request{Id: x.ID, Sandbox: x.Sandbox, Agent: x.Agent, Kind: x.Kind, Path: x.Path,
 			Reason: x.Reason, Status: x.Status, CreatedUnix: x.Created.Unix(), TotalBytes: x.Bytes, TotalFiles: x.Files})
 	}
 	return out, nil
@@ -217,7 +217,7 @@ func (a *adminServer) Decide(_ context.Context, r *pb.DecideRequest) (*pb.Decide
 	return &pb.DecideResponse{Message: msg}, nil
 }
 
-// Daemon verwaltet Admin-Socket und Session-Sockets.
+// Daemon verwaltet Admin-Socket und Sandbox-Sockets.
 type Daemon struct {
 	St        *store.Store
 	Svc       *access.Service
@@ -227,7 +227,7 @@ type Daemon struct {
 	L         lima.Client
 
 	mu      sync.Mutex
-	servers map[string]*runtime // Session -> Server + Agent-Socket
+	servers map[string]*runtime // Sandbox -> Server + Agent-Socket
 }
 
 type runtime struct {
@@ -248,7 +248,7 @@ func AgentSocket(vm string) (string, error) {
 	return filepath.Join(d, "sock", "ssh-agent.sock"), nil
 }
 
-func SessionSocket(vm string) (string, error) {
+func SandboxSocket(vm string) (string, error) {
 	d, err := lima.InstanceDir(vm)
 	if err != nil {
 		return "", err
@@ -267,8 +267,8 @@ func (d *Daemon) startAdmin() error {
 	return nil
 }
 
-func (d *Daemon) startSession(name, vm string) error {
-	sock, err := SessionSocket(vm)
+func (d *Daemon) startSandbox(name, vm string) error {
+	sock, err := SandboxSocket(vm)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (d *Daemon) startSession(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSessionAPIServer(g, &sessionServer{session: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, st: d.St})
+	pb.RegisterSandboxAPIServer(g, &sandboxServer{sandbox: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, st: d.St})
 	go g.Serve(l)
 	asock, err := AgentSocket(vm)
 	if err != nil {
@@ -305,9 +305,9 @@ func (d *Daemon) startSession(name, vm string) error {
 	return nil
 }
 
-// Reconcile: für jede laufende Session einen Socket, für beendete/gelöschte abbauen.
+// Reconcile: für jede laufende Sandbox einen Socket, für beendete/gelöschte abbauen.
 func (d *Daemon) Reconcile(ctx context.Context) error {
-	ss, err := d.St.ListSessions()
+	ss, err := d.St.ListSandboxes()
 	if err != nil {
 		return err
 	}
@@ -326,7 +326,7 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 		if running[s.VM] {
 			want[s.Name] = true
 			if _, ok := d.servers[s.Name]; !ok {
-				if err := d.startSession(s.Name, s.VM); err != nil {
+				if err := d.startSandbox(s.Name, s.VM); err != nil {
 					fmt.Fprintln(os.Stderr, "Socket für", s.Name, "fehlgeschlagen:", err)
 					continue
 				}

@@ -20,14 +20,14 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
-	"github.com/DevertNet/bergfried/daemon/internal/session"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
 const Version = "0.4.0"
 
 type Server struct {
-	M             *session.Manager // Actor "app"
+	M             *sandbox.Manager // Actor "app"
 	Access        *access.Service
 	SSH           *broker.Service
 	Ix            *index.Index
@@ -53,7 +53,7 @@ func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
 	return s.jobFor(kind, "", f)
 }
 
-// jobFor wie job; solange der Job läuft, wird die Session vom Monitor nicht abgefragt.
+// jobFor wie job; solange der Job läuft, wird die Sandbox vom Monitor nicht abgefragt.
 func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *Job {
 	if sess != "" && s.Mon != nil {
 		s.Mon.Hold(sess)
@@ -67,7 +67,7 @@ func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *J
 	s.jobs[j.ID] = j
 	s.mu.Unlock()
 	go func() {
-		ctx := session.WithProgress(context.Background(), func(msg string) {
+		ctx := sandbox.WithProgress(context.Background(), func(msg string) {
 			s.mu.Lock()
 			j.Step = msg
 			s.mu.Unlock()
@@ -111,7 +111,7 @@ type agentJ struct {
 	RCAction string `json:"rc_action"` // "", "activating", "failed"
 }
 
-type sessionJ struct {
+type sandboxJ struct {
 	Name            string   `json:"name"`
 	VM              string   `json:"vm"`
 	Status          string   `json:"status"`
@@ -141,7 +141,7 @@ type sshInfoJ struct {
 }
 type requestJ struct {
 	ID      int64           `json:"id"`
-	Session string          `json:"session"`
+	Sandbox string          `json:"sandbox"`
 	Agent   string          `json:"agent"`
 	Kind    string          `json:"kind"`
 	Path    string          `json:"path"`
@@ -156,7 +156,7 @@ type requestJ struct {
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
-	Session    string   `json:"session"`
+	Sandbox    string   `json:"sandbox"`
 	Agent      string   `json:"agent"`
 	Host       string   `json:"host"`
 	Key        string   `json:"key_fingerprint"`
@@ -171,7 +171,7 @@ type auditJ struct {
 	TS      int64  `json:"ts_unix"`
 	Actor   string `json:"actor"`
 	Event   string `json:"event"`
-	Session string `json:"session"`
+	Sandbox string `json:"sandbox"`
 	Agent   string `json:"agent"`
 	Detail  string `json:"detail"`
 }
@@ -179,11 +179,11 @@ type auditJ struct {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/status", s.status)
-	mux.HandleFunc("GET /v1/sessions", s.sessions)
-	mux.HandleFunc("POST /v1/sessions/create", s.create)
-	mux.HandleFunc("POST /v1/sessions/start", s.simple("session.start", func(ctx context.Context, n string, _ bool) error { return s.M.Start(ctx, n) }))
-	mux.HandleFunc("POST /v1/sessions/stop", s.simple("session.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
-	mux.HandleFunc("POST /v1/sessions/delete", s.simple("session.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
+	mux.HandleFunc("GET /v1/sandboxes", s.sandboxes)
+	mux.HandleFunc("POST /v1/sandboxes/create", s.create)
+	mux.HandleFunc("POST /v1/sandboxes/start", s.simple("sandbox.start", func(ctx context.Context, n string, _ bool) error { return s.M.Start(ctx, n) }))
+	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
+	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
@@ -244,13 +244,13 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			base = true
 		}
 	}
-	ss, _ := s.M.S.ListSessions()
+	ss, _ := s.M.S.ListSandboxes()
 	writeJSON(w, 200, map[string]any{"version": Version, "base_ready": base, "base_name": s.M.BaseName(),
-		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sessions": len(ss)})
+		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)})
 }
 
-func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
-	ss, err := s.M.S.ListSessions()
+func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
+	ss, err := s.M.S.ListSandboxes()
 	if err != nil {
 		fail(w, 500, err)
 		return
@@ -266,14 +266,14 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	grants, _ := s.M.S.ListGrants(true, time.Now())
 	pend, _ := s.M.S.ListRequests(true, 500)
-	out := []sessionJ{}
+	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sessionJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "fehlt", Agents: []agentJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "fehlt", Agents: []agentJ{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
 		}
-		var ps SessionState
+		var ps SandboxState
 		var havePS bool
 		if s.Mon != nil && j.Status == "Running" {
 			ps, havePS = s.Mon.Get(x.Name)
@@ -292,12 +292,12 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			j.Agents = append(j.Agents, aj)
 		}
 		for _, g := range grants {
-			if g.Session == x.Name {
+			if g.Sandbox == x.Name {
 				j.ActiveGrants++
 			}
 		}
 		for _, q := range pend {
-			if q.Session == x.Name {
+			if q.Sandbox == x.Name {
 				j.Pending++
 			}
 		}
@@ -312,7 +312,7 @@ type nameReq struct {
 	Force   bool   `json:"force"`
 	Import  string `json:"import_path"`
 	Token   string `json:"github_token"`
-	Session string `json:"session"`
+	Sandbox string `json:"sandbox"`
 	Agent   string `json:"agent"`
 }
 
@@ -322,11 +322,11 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if err := session.ValidSessionName(q.Name); err != nil {
+	if err := sandbox.ValidSandboxName(q.Name); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	writeJSON(w, 202, s.jobFor("session.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token) }))
+	writeJSON(w, 202, s.jobFor("sandbox.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token) }))
 }
 
 func (s *Server) simple(kind string, f func(context.Context, string, bool) error) http.HandlerFunc {
@@ -336,7 +336,7 @@ func (s *Server) simple(kind string, f func(context.Context, string, bool) error
 			fail(w, 400, err)
 			return
 		}
-		if err := session.ValidName(q.Name); err != nil {
+		if err := sandbox.ValidName(q.Name); err != nil {
 			fail(w, 400, err)
 			return
 		}
@@ -350,11 +350,11 @@ func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.add", q.Session, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Session, q.Agent) }))
+	writeJSON(w, 202, s.jobFor("agent.add", q.Sandbox, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Sandbox, q.Agent) }))
 }
 
 func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
@@ -363,15 +363,15 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.restart", q.Session, func(ctx context.Context) error {
-		err := s.M.RestartAgent(ctx, q.Session, q.Agent)
+	writeJSON(w, 202, s.jobFor("agent.restart", q.Sandbox, func(ctx context.Context) error {
+		err := s.M.RestartAgent(ctx, q.Sandbox, q.Agent)
 		if s.Mon != nil {
-			s.Mon.ResetAgent(q.Session, q.Agent)
-			s.Mon.Poke(q.Session)
+			s.Mon.ResetAgent(q.Sandbox, q.Agent)
+			s.Mon.Poke(q.Sandbox)
 		}
 		return err
 	}))
@@ -394,13 +394,13 @@ func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
-// githubLink: vorausgefüllter Link zum Erzeugen eines Fine-grained Tokens (vor dem Anlegen der Session, deshalb nur der Name).
+// githubLink: vorausgefüllter Link zum Erzeugen eines Fine-grained Tokens (vor dem Anlegen der Sandbox, deshalb nur der Name).
 func (s *Server) githubLink(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("session")
+	name := r.URL.Query().Get("sandbox")
 	if name == "" {
 		name = "neu"
 	}
-	if session.ValidName(name) != nil {
+	if sandbox.ValidName(name) != nil {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
@@ -414,21 +414,21 @@ func (s *Server) agentRCOK(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil || s.Mon == nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil || s.Mon == nil {
 		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
 		return
 	}
-	if err := s.Mon.MarkRC(q.Session, q.Agent); err != nil {
+	if err := s.Mon.MarkRC(q.Sandbox, q.Agent); err != nil {
 		fail(w, 409, err)
 		return
 	}
-	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Session, q.Agent, "vom Nutzer als aktiv bestätigt")
+	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Sandbox, q.Agent, "vom Nutzer als aktiv bestätigt")
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
 func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
 	var q struct {
-		Session   string `json:"session"`
+		Sandbox   string `json:"sandbox"`
 		Agent     string `json:"agent"`
 		DeleteDir bool   `json:"delete_dir"`
 		Force     bool   `json:"force"`
@@ -437,14 +437,14 @@ func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.remove", q.Session, func(ctx context.Context) error {
-		err := s.M.AgentRemove(ctx, q.Session, q.Agent, q.DeleteDir, q.Force)
+	writeJSON(w, 202, s.jobFor("agent.remove", q.Sandbox, func(ctx context.Context) error {
+		err := s.M.AgentRemove(ctx, q.Sandbox, q.Agent, q.DeleteDir, q.Force)
 		if err == nil && s.Mon != nil {
-			s.Mon.ResetAgent(q.Session, q.Agent)
+			s.Mon.ResetAgent(q.Sandbox, q.Agent)
 		}
 		return err
 	}))
@@ -520,7 +520,7 @@ func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, e
 
 func (s *Server) getTemplate(w http.ResponseWriter, r *http.Request) {
 	y, _ := s.M.Tpl.Read()
-	warnings, _ := session.CheckTemplate(y)
+	warnings, _ := sandbox.CheckTemplate(y)
 	t, err := s.templateState(r, warnings)
 	if err != nil {
 		fail(w, 500, err)
@@ -558,7 +558,7 @@ func (s *Server) resetTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.M.S.Audit("app", "template.reset", "", "", fmt.Sprintf("revision=%d", s.M.Rev()))
 	y, _ := s.M.Tpl.Read()
-	warnings, _ := session.CheckTemplate(y)
+	warnings, _ := sandbox.CheckTemplate(y)
 	t, err := s.templateState(r, warnings)
 	if err != nil {
 		fail(w, 500, err)
@@ -576,7 +576,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []requestJ{}
 	for _, q := range rs {
-		j := requestJ{ID: q.ID, Session: q.Session, Agent: q.Agent, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
+		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Agent: q.Agent, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
 			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
 		switch q.Kind {
 		case "ghtoken":
@@ -646,7 +646,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	out := []grantJ{}
 	now := time.Now()
 	for _, g := range gs {
-		out = append(out, grantJ{g.ID, g.Session, g.Agent, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
+		out = append(out, grantJ{g.ID, g.Sandbox, g.Agent, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
 			!g.Revoked && g.Expires.After(now), g.HostKeys})
 	}
 	writeJSON(w, 200, out)
@@ -713,7 +713,7 @@ func (s *Server) auditEntries(r *http.Request, def int) ([]auditJ, error) {
 	}
 	out := []auditJ{}
 	for _, e := range es {
-		out = append(out, auditJ{e.TS.Unix(), e.Actor, e.Event, e.Session, e.Agent, e.Detail})
+		out = append(out, auditJ{e.TS.Unix(), e.Actor, e.Event, e.Sandbox, e.Agent, e.Detail})
 	}
 	return out, nil
 }
@@ -743,9 +743,9 @@ func (s *Server) auditCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "session", "agent", "details"})
+	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "sandbox", "agent", "details"})
 	for _, e := range out {
-		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Session), csvSafe(e.Agent), csvSafe(e.Detail)})
+		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Sandbox), csvSafe(e.Agent), csvSafe(e.Detail)})
 	}
 	cw.Flush()
 }

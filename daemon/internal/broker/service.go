@@ -30,8 +30,8 @@ type HostKeyResolver func(ctx context.Context, host string) (fps []string, sourc
 
 // VMHooks wirken auf die VM (SSH-Config schreiben, laufende ssh-Prozesse beenden).
 type VMHooks interface {
-	Apply(ctx context.Context, session string, active []store.SSHGrant) error
-	KillSSH(ctx context.Context, session string) error
+	Apply(ctx context.Context, sandbox string, active []store.SSHGrant) error
+	KillSSH(ctx context.Context, sandbox string) error
 }
 
 type SSHInfo struct {
@@ -71,9 +71,9 @@ type Service struct {
 
 	mu      sync.Mutex
 	waiters map[int64]*pending
-	open    map[int64]string         // aktive Grants -> Session (für Ablauf-Erkennung)
-	cool    map[string]time.Time     // Session|Host -> frühestens wieder anfragen (nach Ablehnung/Ablauf)
-	attempt map[string]*attemptState // Session|Host -> laufende Anfrage (Hintergrund-Goroutine aktiv)
+	open    map[int64]string         // aktive Grants -> Sandbox (für Ablauf-Erkennung)
+	cool    map[string]time.Time     // Sandbox|Host -> frühestens wieder anfragen (nach Ablehnung/Ablauf)
+	attempt map[string]*attemptState // Sandbox|Host -> laufende Anfrage (Hintergrund-Goroutine aktiv)
 }
 
 // AttemptCooldown: nach einem abgelehnten oder abgelaufenen Versuch wird derselbe Host eine Weile nicht erneut gemeldet.
@@ -84,8 +84,8 @@ func NewService(b *Broker, r HostKeyResolver, h VMHooks, a SSHAsker, hc *HostCon
 		waiters: map[int64]*pending{}, open: map[int64]string{}, cool: map[string]time.Time{}, attempt: map[string]*attemptState{}}
 }
 
-func (s *Service) audit(event, session, agent, detail string) {
-	if err := s.B.St.Audit("daemon", event, session, agent, detail); err != nil {
+func (s *Service) audit(event, sandbox, agent, detail string) {
+	if err := s.B.St.Audit("daemon", event, sandbox, agent, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
@@ -100,18 +100,18 @@ func clamp(m int) int {
 	return m
 }
 
-func (s *Service) RequestSSH(ctx context.Context, session, agent, host, user string, minutes int, reason string) (*pb.SSHAccessResult, error) {
+func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user string, minutes int, reason string) (*pb.SSHAccessResult, error) {
 	deny := func(v pb.Verdict, msg string) (*pb.SSHAccessResult, error) {
 		return &pb.SSHAccessResult{Verdict: v, Message: msg}, nil
 	}
 	if !hostRe.MatchString(host) {
-		s.audit("ssh.request_invalid", session, agent, fmt.Sprintf("host=%q", trunc(host, 100)))
+		s.audit("ssh.request_invalid", sandbox, agent, fmt.Sprintf("host=%q", trunc(host, 100)))
 		return deny(pb.Verdict_VERDICT_DENIED, "Hostname ungültig.")
 	}
 	host = strings.ToLower(host)
 	user = strings.TrimSpace(user)
 	if user != "" && !userRe.MatchString(user) {
-		s.audit("ssh.request_invalid", session, agent, fmt.Sprintf("user=%q", trunc(user, 40)))
+		s.audit("ssh.request_invalid", sandbox, agent, fmt.Sprintf("user=%q", trunc(user, 40)))
 		return deny(pb.Verdict_VERDICT_DENIED, "Benutzername ungültig (erlaubt: a-z, 0-9, _ und -, kleingeschrieben).")
 	}
 	reason = trunc(strings.Map(func(r rune) rune {
@@ -122,13 +122,13 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host, user str
 	}, reason), 500)
 	fps, source, err := s.Resolve(ctx, host)
 	if err != nil || len(fps) == 0 {
-		s.audit("ssh.request_nohostkey", session, agent, fmt.Sprintf("host=%s err=%v", host, err))
+		s.audit("ssh.request_nohostkey", sandbox, agent, fmt.Sprintf("host=%s err=%v", host, err))
 		return deny(pb.Verdict_VERDICT_DENIED, "Host-Key des Ziels nicht ermittelbar (nicht in known_hosts, nicht erreichbar).")
 	}
 	dk, du := s.Hosts.Default(host)
 	info := SSHInfo{HostKeyFPs: fps, Source: source, DefaultKey: dk, DefaultUser: du, SuggestedMinutes: clamp(minutes), RequestedUser: user}
 	extra, _ := json.Marshal(map[string]any{"fps": fps, "source": source, "user": user})
-	req := store.Request{Session: session, Agent: agent, Kind: "ssh", Path: host, Reason: reason, Status: "pending", Bytes: int64(info.SuggestedMinutes), Extra: string(extra)}
+	req := store.Request{Sandbox: sandbox, Agent: agent, Kind: "ssh", Path: host, Reason: reason, Status: "pending", Bytes: int64(info.SuggestedMinutes), Extra: string(extra)}
 	id, err := s.B.St.AddRequest(req)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host, user str
 	s.waiters[id] = p
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
-	s.audit("ssh.request_created", session, agent, fmt.Sprintf("id=%d host=%s user=%s source=%s hostkeys=%s", id, host, user, source, strings.Join(fps, ",")))
+	s.audit("ssh.request_created", sandbox, agent, fmt.Sprintf("id=%d host=%s user=%s source=%s hostkeys=%s", id, host, user, source, strings.Join(fps, ",")))
 	if s.Asker != nil {
 		s.Asker.AskSSH(req, info)
 	}
@@ -151,19 +151,19 @@ func (s *Service) RequestSSH(ctx context.Context, session, agent, host, user str
 			return deny(pb.Verdict_VERDICT_DENIED, "Der Nutzer hat abgelehnt.")
 		}
 		s.mu.Lock()
-		s.open[g.ID] = g.Session
+		s.open[g.ID] = g.Sandbox
 		s.mu.Unlock()
-		s.apply(ctx, g.Session)
+		s.apply(ctx, g.Sandbox)
 		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User,
 			Message: fmt.Sprintf("Freigegeben bis %s. Verbinde mit: ssh %s@%s", g.Expires.Format("15:04"), g.User, host)}, nil
 	case <-timer.C:
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
-			s.audit("ssh.request_expired", session, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ssh.request_expired", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
 		return deny(pb.Verdict_VERDICT_EXPIRED, "Keine Antwort, Anfrage abgelaufen.")
 	case <-ctx.Done():
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
-			s.audit("ssh.request_cancelled", session, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ssh.request_cancelled", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
 		return nil, ctx.Err()
 	}
@@ -208,7 +208,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		if ok, _ := s.B.St.SetRequestStatus(d.ID, "denied"); !ok {
 			return "", errors.New("Anfrage nicht mehr offen")
 		}
-		s.audit("ssh.request_denied", r.Session, r.Agent, fmt.Sprintf("id=%d", d.ID))
+		s.audit("ssh.request_denied", r.Sandbox, r.Agent, fmt.Sprintf("id=%d", d.ID))
 		p.ch <- nil
 		return "denied", nil
 	}
@@ -257,7 +257,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if d.AllAgents {
 		agentName = ""
 	}
-	g := store.SSHGrant{Session: r.Session, Agent: agentName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
+	g := store.SSHGrant{Sandbox: r.Sandbox, Agent: agentName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
 		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute), PerConn: d.PerConn}
 	gid, err := s.B.St.AddGrant(g)
 	if err != nil {
@@ -265,18 +265,18 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	}
 	g.ID = gid
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Session, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, user, d.Minutes, d.AllAgents, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, user, d.Minutes, d.AllAgents, d.PerConn))
 	p.ch <- &g
 	return fmt.Sprintf("allowed (Freigabe %d)", gid), nil
 }
 
-func (s *Service) apply(ctx context.Context, session string) {
+func (s *Service) apply(ctx context.Context, sandbox string) {
 	if s.Hooks == nil {
 		return
 	}
-	gs := s.B.active(session)
-	if err := s.Hooks.Apply(ctx, session, gs); err != nil {
-		s.audit("ssh.vm_config_failed", session, "", err.Error())
+	gs := s.B.active(sandbox)
+	if err := s.Hooks.Apply(ctx, sandbox, gs); err != nil {
+		s.audit("ssh.vm_config_failed", sandbox, "", err.Error())
 	}
 }
 
@@ -288,8 +288,8 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 	if err := s.B.St.RevokeGrant(id); err != nil {
 		return err
 	}
-	s.audit("ssh.grant_revoked", g.Session, g.Agent, fmt.Sprintf("grant=%d host=%s", id, g.Host))
-	s.cleanup(ctx, g.Session)
+	s.audit("ssh.grant_revoked", g.Sandbox, g.Agent, fmt.Sprintf("grant=%d host=%s", id, g.Host))
+	s.cleanup(ctx, g.Sandbox)
 	s.mu.Lock()
 	delete(s.open, id)
 	s.mu.Unlock()
@@ -315,20 +315,20 @@ func (s *Service) Extend(ctx context.Context, id int64, minutes int) (time.Time,
 	if err := s.B.St.SetGrantExpiry(id, exp); err != nil {
 		return time.Time{}, err
 	}
-	s.audit("ssh.grant_extended", g.Session, g.Agent, fmt.Sprintf("grant=%d until=%s", id, exp.Format(time.RFC3339)))
+	s.audit("ssh.grant_extended", g.Sandbox, g.Agent, fmt.Sprintf("grant=%d until=%s", id, exp.Format(time.RFC3339)))
 	s.mu.Lock()
-	s.open[id] = g.Session
+	s.open[id] = g.Sandbox
 	s.mu.Unlock()
-	s.apply(ctx, g.Session)
+	s.apply(ctx, g.Sandbox)
 	return exp, nil
 }
 
-// cleanup: SSH-Config neu schreiben und laufende ssh-Prozesse der Session beenden.
-func (s *Service) cleanup(ctx context.Context, session string) {
-	s.apply(ctx, session)
+// cleanup: SSH-Config neu schreiben und laufende ssh-Prozesse der Sandbox beenden.
+func (s *Service) cleanup(ctx context.Context, sandbox string) {
+	s.apply(ctx, sandbox)
 	if s.Hooks != nil {
-		if err := s.Hooks.KillSSH(ctx, session); err != nil {
-			s.audit("ssh.kill_failed", session, "", err.Error())
+		if err := s.Hooks.KillSSH(ctx, sandbox); err != nil {
+			s.audit("ssh.kill_failed", sandbox, "", err.Error())
 		}
 	}
 }
@@ -341,7 +341,7 @@ func (s *Service) Sweep(ctx context.Context) {
 	}
 	still := map[int64]string{}
 	for _, g := range active {
-		still[g.ID] = g.Session
+		still[g.ID] = g.Sandbox
 	}
 	s.mu.Lock()
 	var gone []string
@@ -500,7 +500,7 @@ type attemptState struct {
 // und keine offene Anfrage, wird im Hintergrund eine Anfrage in der App angelegt. Der ssh-Aufruf selbst bleibt unberührt.
 // Mit wait=true blockiert der Aufruf, bis die Anfrage entschieden ist (interaktives ssh wartet dann auf die Freigabe);
 // ctx bricht das Warten ab (z. B. Strg-C), die Anfrage selbst bleibt offen.
-func (s *Service) Attempt(ctx context.Context, session, host, port, user string, wait bool) (state, msg string) {
+func (s *Service) Attempt(ctx context.Context, sandbox, host, port, user string, wait bool) (state, msg string) {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if port != "" && port != "22" {
 		host += ":" + port
@@ -512,12 +512,12 @@ func (s *Service) Attempt(ctx context.Context, session, host, port, user string,
 		user = ""
 	}
 	// aktive Freigabe vorhanden? Dann nichts tun.
-	for _, g := range s.B.active(session) {
+	for _, g := range s.B.active(sandbox) {
 		if g.Host == host {
 			return "granted", ""
 		}
 	}
-	key := session + "|" + host
+	key := sandbox + "|" + host
 	s.mu.Lock()
 	st := s.attempt[key]
 	started := false
@@ -533,7 +533,7 @@ func (s *Service) Attempt(ctx context.Context, session, host, port, user string,
 	s.mu.Unlock()
 	if started {
 		go func() {
-			res, err := s.RequestSSH(context.Background(), session, "terminal", host, user, 15, "SSH-Verbindungsversuch in der VM (ssh "+host+")")
+			res, err := s.RequestSSH(context.Background(), sandbox, "terminal", host, user, 15, "SSH-Verbindungsversuch in der VM (ssh "+host+")")
 			s.mu.Lock()
 			delete(s.attempt, key)
 			if err != nil || res == nil {
@@ -549,7 +549,7 @@ func (s *Service) Attempt(ctx context.Context, session, host, port, user string,
 			s.mu.Unlock()
 			close(st.done)
 		}()
-		s.audit("ssh.attempt", session, "terminal", fmt.Sprintf("host=%s user=%s wait=%v", host, user, wait))
+		s.audit("ssh.attempt", sandbox, "terminal", fmt.Sprintf("host=%s user=%s wait=%v", host, user, wait))
 	}
 	if !wait {
 		if started {

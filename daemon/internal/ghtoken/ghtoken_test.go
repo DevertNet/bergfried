@@ -67,7 +67,7 @@ func TestStorePerms(t *testing.T) {
 	if err := s.Set("a", tok); err != nil {
 		t.Fatal(err)
 	}
-	fi, _ := os.Stat(filepath.Join(s.Home, "sessions", "a", "github-token"))
+	fi, _ := os.Stat(filepath.Join(s.Home, "sandboxes", "a", "github-token"))
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatalf("Rechte %v", fi.Mode().Perm())
 	}
@@ -112,8 +112,8 @@ func setup(t *testing.T) *fx {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	f.svc = NewService(st, Store{Home: t.TempDir()}, func(_ context.Context, session, token string) error {
-		f.installed = append(f.installed, session+":"+token)
+	f.svc = NewService(st, Store{Home: t.TempDir()}, func(_ context.Context, sandbox, token string) error {
+		f.installed = append(f.installed, sandbox+":"+token)
 		return nil
 	})
 	f.svc.Client = func(token string) *github.Client {

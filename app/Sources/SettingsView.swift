@@ -85,7 +85,7 @@ struct SettingsView: View {
                 }
             }
             Section("Wo liegen Sandboxes?") {
-                Text("VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sessions/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried").font(.callout).textSelection(.enabled)
+                Text("VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried").font(.callout).textSelection(.enabled)
             }
             Section("Sperrliste (nie im Index, nie freigebbar)") {
                 Text("Pfade relativ zum Home, eine pro Zeile. Die ersten vier Standardeinträge (.ssh, Library, .config, .mcp-einfach123-secrets) sind fest.").font(.caption).foregroundStyle(.secondary)
