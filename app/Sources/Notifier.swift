@@ -98,11 +98,28 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "req-\(r.id)", content: c, trigger: nil))
     }
 
+    /// Die CI eines Agent-Branches ist rot geworden.
+    func postCI(session: String, agent: String, ci: CIState) {
+        DispatchQueue.main.async { NSApp.requestUserAttention(.informationalRequest) }
+        guard enabled else { return }
+        let c = UNMutableNotificationContent()
+        c.title = "CI rot: \(session)/\(agent)"
+        c.body = "\(ci.repo) · \(ci.branch)\(ci.name.isEmpty ? "" : " · " + ci.name)\nIn der App „Agent: CI fixen“ wählen."
+        c.sound = .default
+        c.categoryIdentifier = "OPEN"
+        c.userInfo = ["ci": true]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "ci-\(session)-\(agent)-\(ci.branch)", content: c, trigger: nil))
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent n: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if response.notification.request.content.userInfo["ci"] != nil {
+            await MainActor.run { model?.pane = .sessions; NSApp.activate(ignoringOtherApps: true) }
+            return
+        }
         guard let id = response.notification.request.content.userInfo["id"] as? Int64 ?? (response.notification.request.content.userInfo["id"] as? Int).map(Int64.init) else { return }
         let action = response.actionIdentifier
         await MainActor.run {

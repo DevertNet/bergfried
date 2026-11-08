@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     private var started = false
     private var notified = Set<Int64>()
     private var firstLoad = true
+    private var lastCI: [String: String] = [:]   // session/agent -> letzter CI-Zustand
     private var bag = Set<AnyCancellable>()
 
     func start() {
@@ -51,6 +52,17 @@ final class AppModel: ObservableObject {
             for r in rq where !notified.contains(r.id) {
                 notified.insert(r.id)
                 if !firstLoad { Notifier.shared.post(r) }
+            }
+            // CI wird rot: einmalige Mitteilung (nicht beim ersten Laden und nicht bei jedem Abfragen)
+            for sess in ss {
+                for a in sess.agents {
+                    guard let ci = a.ci else { continue }
+                    let key = "\(sess.name)/\(a.name)"
+                    if let prev = lastCI[key], prev != "failure", ci.state == "failure", !firstLoad {
+                        Notifier.shared.postCI(session: sess.name, agent: a.name, ci: ci)
+                    }
+                    lastCI[key] = ci.state
+                }
             }
             firstLoad = false
         } catch {

@@ -102,8 +102,11 @@ func (s *Store) ListSessions() ([]Session, error) {
 	return out, rows.Err()
 }
 func (s *Store) DeleteSession(name string) error {
-	if _, err := s.DB.Exec(`DELETE FROM agents WHERE session=?`, name); err != nil {
-		return err
+	// Push-Vermerke und CI-Freigaben gehören zur Session: sonst würde ein neuer Name-Träger alten CI-Zugriff erben.
+	for _, q := range []string{`DELETE FROM agents WHERE session=?`, `DELETE FROM git_pushes WHERE session=?`, `DELETE FROM ci_grants WHERE session=?`} {
+		if _, err := s.DB.Exec(q, name); err != nil {
+			return err
+		}
 	}
 	_, err := s.DB.Exec(`DELETE FROM sessions WHERE name=?`, name)
 	return err

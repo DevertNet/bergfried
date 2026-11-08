@@ -12,7 +12,10 @@ Stand: 2026-11-08. Übergabe-Hinweise: [`HANDOVER.md`](HANDOVER.md), Ursprungsau
 | M6 | Datei-Browser, Editor, „In VS Code öffnen“ | Dateien einer Session ansehen/bearbeiten | offen |
 | M7 | Handy-Freigaben | – | zurückgestellt (laut Spezifikation) |
 
+## Git-Push und CI über den Mac
+Gebaut auf Branch `agent/git-push-ci` (siehe [`DESIGN-GIT.md`](DESIGN-GIT.md)); **offen:** erster Test gegen echtes GitHub, `pr_feedback`.
+
 ## Weitere offene Punkte (nicht an einen Meilenstein gebunden)
-Port-Anzeige je Session, Ressourcen-Limits und Idle-Auto-Stopp, `caffeinate`-Option, `request_git_push`, `propose_template_change`
+Port-Anzeige je Session, Ressourcen-Limits und Idle-Auto-Stopp, `caffeinate`-Option, `propose_template_change`
 ([`DESIGN-NOTES.md`](DESIGN-NOTES.md)), Claude Code in allen VMs aktualisieren, „jede SSH-Verbindung einzeln bestätigen“ in der App,
 Egress-Proxy-Hook (Grundprinzip 6), App als Xcode-Projekt, visuelle Prüfung der Oberfläche. Vollständige Liste: [`HANDOVER.md`](HANDOVER.md).

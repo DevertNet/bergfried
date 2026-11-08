@@ -62,3 +62,22 @@ func TestSeededAndDeleteAgent(t *testing.T) {
 		t.Fatal("Agent muss weg sein")
 	}
 }
+
+func TestDeleteSessionRemovesPushesAndCIGrants(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.AddSession(Session{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now()})
+	_ = s.AddPush(GitPush{Session: "a", Agent: "main", Repo: "o/r", Branch: "agent/x", SHA: "abc"})
+	_ = s.SetCIGrant("a", "o/r", time.Now().Add(time.Hour))
+	if !s.HasPushed("a", "o/r", "agent/x") || !s.HasCIGrant("a", "o/r", time.Now()) {
+		t.Fatal("Vorbedingung")
+	}
+	if err := s.DeleteSession("a"); err != nil {
+		t.Fatal(err)
+	}
+	if s.HasPushed("a", "o/r", "agent/x") || s.HasCIGrant("a", "o/r", time.Now()) {
+		t.Fatal("nach dem Löschen darf kein CI-Zugriff erhalten bleiben")
+	}
+}

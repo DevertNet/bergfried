@@ -37,6 +37,10 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 - Interaktives `ssh` in der VM simulieren: `script -qec "ssh …" /dev/null` (stderr ist dann ein TTY).
 - Aufrufe des MCP-Servers ohne Claude: JSON-RPC über stdio (siehe `docs/m2-test.md`), Identität = Socket.
 
+## Git und GitHub in diesem Repo
+- Arbeit auf Branches `agent/<thema>`, nicht direkt auf `main`; Merge/Push nach `main` macht der Nutzer (Branch pushen ist in Ordnung).
+- Test gegen GitHub ohne echtes GitHub: `tools/fakegithub` (`make fakegithub`, Anleitung `docs/git-test.md`). **Nie das echte Token oder Repos des Nutzers für Tests benutzen.**
+
 ## Stolpersteine (Kurzfassung – Details in HANDOVER.md)
 - zsh: `/usr/bin/log` statt `log`; BSD-`sed -i ''`. gofmt richtet Structs neu aus (String-Ersetzungen vorher prüfen).
 - INSERTs mit expliziter Spaltenliste; neue Spalten per `ALTER TABLE` (Migration in `store.migrate`).
