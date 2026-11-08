@@ -111,3 +111,19 @@ func TestBlocklistRoundtrip(t *testing.T) {
 		t.Fatal("Rechte")
 	}
 }
+
+func TestNotReadyAndSkipDirs(t *testing.T) {
+	home := t.TempDir()
+	mk(t, home, "p/node_modules/x/y.js", "p/.git/config", "p/a.txt")
+	ix, _ := New(home, DefaultBlocklist())
+	if _, _, err := ix.List("", ""); !errors.Is(err, ErrNotReady) {
+		t.Fatal("vor dem Aufbau muss ErrNotReady kommen")
+	}
+	_ = ix.Refresh()
+	if es, _ := ix.Search("y.js"); len(es) != 0 {
+		t.Fatal("node_modules gehört nicht in den Index")
+	}
+	if _, _, err := ix.Resolve("p/node_modules/x/y.js"); err != nil {
+		t.Fatal("per Pfad bleibt es freigebbar")
+	}
+}

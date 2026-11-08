@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,8 +66,13 @@ type sessionServer struct {
 	st      *store.Store
 }
 
+// agent: Name ohne das "<session>/"-Präfix, das die VM mitschickt.
+func (s *sessionServer) agent(ctx context.Context) string {
+	return strings.TrimPrefix(agentFrom(ctx), s.session+"/")
+}
+
 func (s *sessionServer) audit(ctx context.Context, event, detail string) {
-	if err := s.st.Audit("agent", event, s.session, agentFrom(ctx), detail); err != nil {
+	if err := s.st.Audit("agent", event, s.session, s.agent(ctx), detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
 	}
 }
@@ -82,6 +88,9 @@ func toPB(es []index.Entry) []*pb.FileEntry {
 func (s *sessionServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (*pb.ListFilesResponse, error) {
 	s.audit(ctx, "files.list", r.Path)
 	es, trunc, err := s.svc.Ix.List(r.Path, r.Pattern)
+	if errors.Is(err, index.ErrNotReady) {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
 	if err != nil {
 		// Existenz gesperrter Pfade nicht verraten.
 		return nil, status.Error(codes.NotFound, "Pfad nicht gefunden")
@@ -91,16 +100,19 @@ func (s *sessionServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (
 
 func (s *sessionServer) SearchFiles(ctx context.Context, r *pb.SearchFilesRequest) (*pb.SearchFilesResponse, error) {
 	s.audit(ctx, "files.search", r.Query)
+	if !s.svc.Ix.Ready() {
+		return nil, status.Error(codes.Unavailable, index.ErrNotReady.Error())
+	}
 	es, trunc := s.svc.Ix.Search(r.Query)
 	return &pb.SearchFilesResponse{Entries: toPB(es), Truncated: trunc}, nil
 }
 
 func (s *sessionServer) RequestFile(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.session, agentFrom(ctx), false, r.Path, r.Reason)
+	return s.svc.Request(ctx, s.session, s.agent(ctx), false, r.Path, r.Reason)
 }
 
 func (s *sessionServer) RequestFolder(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.session, agentFrom(ctx), true, r.Path, r.Reason)
+	return s.svc.Request(ctx, s.session, s.agent(ctx), true, r.Path, r.Reason)
 }
 
 type adminServer struct {

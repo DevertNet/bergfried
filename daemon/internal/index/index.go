@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const MaxResults = 1000
@@ -25,10 +26,28 @@ type Index struct {
 	bl      Blocklist
 	mu      sync.RWMutex
 	entries []Entry
+	ready   atomic.Bool
 }
+
+// New legt den Index an, ohne zu scannen; Refresh baut ihn auf (z. B. in einer Goroutine).
+func New(home string, bl Blocklist) (*Index, error) {
+	real, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return nil, err
+	}
+	return &Index{home: real, bl: bl}, nil
+}
+
+func (ix *Index) Ready() bool { return ix.ready.Load() }
 
 var ErrBlocked = errors.New("Pfad ist gesperrt")
 var ErrInvalid = errors.New("ungültiger Pfad")
+var ErrNotReady = errors.New("Index wird noch aufgebaut")
+
+// SkipDirs: Verzeichnisse, in die der Index nicht absteigt (Rauschen). Sie bleiben per Pfad
+// freigebbar, sind aber nicht Teil von Listen/Suche.
+var SkipDirs = map[string]bool{"node_modules": true, ".git": true, ".cache": true, ".npm": true,
+	".gradle": true, ".Trash": true, ".cocoapods": true, "DerivedData": true, ".cargo": true, ".rustup": true}
 
 // Build erfasst das Home. Symlinks werden weder gelistet noch verfolgt.
 func Build(home string, bl Blocklist) (*Index, error) {
@@ -63,6 +82,9 @@ func (ix *Index) Refresh() error {
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
+		if d.IsDir() && SkipDirs[d.Name()] {
+			return fs.SkipDir
+		}
 		info, ierr := d.Info()
 		if ierr != nil {
 			return nil
@@ -77,6 +99,7 @@ func (ix *Index) Refresh() error {
 	ix.mu.Lock()
 	ix.entries = out
 	ix.mu.Unlock()
+	ix.ready.Store(true)
 	return nil
 }
 
@@ -102,6 +125,9 @@ func cleanRel(rel string) (string, error) {
 
 // List: direkte Kinder von rel; Glob optional auf den Namen. Nur Metadaten.
 func (ix *Index) List(rel, pattern string) ([]Entry, bool, error) {
+	if !ix.Ready() {
+		return nil, false, ErrNotReady
+	}
 	c, err := cleanRel(rel)
 	if err != nil {
 		return nil, false, err
@@ -134,6 +160,9 @@ func (ix *Index) List(rel, pattern string) ([]Entry, bool, error) {
 }
 
 func (ix *Index) Search(query string) ([]Entry, bool) {
+	if !ix.Ready() {
+		return nil, false
+	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return nil, false

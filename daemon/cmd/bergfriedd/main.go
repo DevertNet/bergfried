@@ -205,12 +205,18 @@ func serve(ctx context.Context, m *session.Manager, home, userHome string, noDia
 	if err != nil {
 		return err
 	}
-	ix, err := index.Build(userHome, bl)
+	ix, err := index.New(userHome, bl)
 	if err != nil {
 		return err
 	}
 	go func() {
-		for range time.Tick(5 * time.Minute) {
+		t0 := time.Now()
+		if err := ix.Refresh(); err != nil {
+			fmt.Fprintln(os.Stderr, "Index-Aufbau:", err)
+			return
+		}
+		fmt.Printf("Index bereit (%s)\n", time.Since(t0).Round(time.Second))
+		for range time.Tick(15 * time.Minute) {
 			if err := ix.Refresh(); err != nil {
 				fmt.Fprintln(os.Stderr, "Index-Refresh:", err)
 			}
