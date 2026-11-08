@@ -415,7 +415,7 @@ func (m *Manager) ensureWindow(ctx context.Context, vm, session, agent string) e
 	script := fmt.Sprintf(`set -e
 f=~/.claude.json; [ -f "$f" ] || echo '{}' > "$f"
 jq --arg d "$HOME/work/%[1]s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-if ! tmux has-session -t %[2]s 2>/dev/null; then tmux new-session -d -s %[2]s -n %[1]s
+if ! tmux has-session -t %[2]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[2]s -n %[1]s
 elif ! tmux list-windows -t %[2]s -F '#W' | grep -qx %[1]s; then tmux new-window -t %[2]s -n %[1]s
 else exit 0; fi
 tmux send-keys -t %[2]s:%[1]s %[3]q Enter`, agent, tmuxSession, AgentCmd(session, agent))
@@ -600,4 +600,19 @@ func (m *Manager) AgentRemove(ctx context.Context, session, agent string, delete
 	}
 	m.audit("agent.remove", session, agent, fmt.Sprintf("delete_dir=%v force=%v", deleteDir, force))
 	return nil
+}
+
+var allowedKeys = map[string]string{"Escape": "Escape", "Enter": "Enter"}
+
+// SendKey sendet eine einzelne, fest erlaubte Taste (Escape/Enter) an das Agent-Fenster.
+func (m *Manager) SendKey(ctx context.Context, vm, agent, key string) error {
+	if err := ValidName(agent); err != nil {
+		return err
+	}
+	k, ok := allowedKeys[key]
+	if !ok {
+		return fmt.Errorf("Taste nicht erlaubt")
+	}
+	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s %s", tmuxSession, agent, k))
+	return err
 }

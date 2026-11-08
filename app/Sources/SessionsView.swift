@@ -200,6 +200,14 @@ struct AgentRow: View {
                         Button("Link kopieren") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
                         Divider()
                     }
+                    if !a.rc {
+                        Button("Remote Control läuft – als aktiv markieren") {
+                            Task {
+                                do { try await model.api.post("/v1/agents/rc-ok", AgentBody(session: s.name, agent: a.name)); await model.refresh() }
+                                catch { model.setBanner(error.localizedDescription) }
+                            }
+                        }.disabled(!s.running || !a.window)
+                    }
                     Button("Neu starten") {
                         Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
                     }.disabled(!s.running)

@@ -85,3 +85,69 @@ func TestMonitorHoldAndErrorGrace(t *testing.T) {
 	}
 	mo.ResetAgent("s", "a")
 }
+
+func TestStickyRCSurvivesScrolledOffBanner(t *testing.T) {
+	mo := NewMonitor(nil)
+	k := "s/a"
+	// RC gesehen (PID 100) -> merken
+	a := mo.applySticky(k, AgentState{Window: true, Running: true, PID: 100, RC: true, URL: "https://claude.ai/code/session_X"})
+	if !a.RC {
+		t.Fatal("RC gesehen")
+	}
+	// Banner ist aus dem Sichtbereich gerutscht, derselbe Prozess läuft: weiter aktiv, Link bleibt
+	b := mo.applySticky(k, AgentState{Window: true, Running: true, PID: 100})
+	if !b.RC || b.URL != "https://claude.ai/code/session_X" {
+		t.Fatalf("RC muss erhalten bleiben: %+v", b)
+	}
+	// Claude neu gestartet (neue PID), RC noch nicht gesehen: nicht mehr als aktiv annehmen, Zähler zurückgesetzt
+	mo.norc[k], mo.attempts[k], mo.actions[k] = 9, 3, "failed"
+	c := mo.applySticky(k, AgentState{Window: true, Running: true, PID: 200})
+	if c.RC {
+		t.Fatal("nach Neustart nicht aktiv annehmen")
+	}
+	if mo.attempts[k] != 0 || mo.actions[k] != "" || mo.norc[k] != 0 {
+		t.Fatalf("Zähler müssen bei neuer PID zurückgesetzt sein: %v %v %v", mo.norc[k], mo.attempts[k], mo.actions[k])
+	}
+	// Claude beendet: Merkzustand verfällt
+	mo.applySticky(k, AgentState{Window: true, Running: true, PID: 300, RC: true})
+	if d := mo.applySticky(k, AgentState{Window: true, Running: false}); d.RC {
+		t.Fatal("beendeter Prozess darf nicht aktiv sein")
+	}
+}
+
+func TestMarkRCClearsFailed(t *testing.T) {
+	mo := NewMonitor(nil)
+	mo.state["s"] = &SessionState{Agents: map[string]AgentState{"a": {Window: true, Running: true, PID: 55}}}
+	mo.actions["s/a"], mo.attempts["s/a"] = "failed", 3
+	if err := mo.MarkRC("s", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if mo.actions["s/a"] != "" || mo.attempts["s/a"] != 0 {
+		t.Fatal("fehlgeschlagen muss zurückgesetzt sein")
+	}
+	if a, _ := mo.Get("s"); !a.Agents["a"].RC {
+		t.Fatal("RC muss aktiv gelten")
+	}
+	if err := mo.MarkRC("s", "nix"); err == nil {
+		t.Fatal("unbekannter Agent")
+	}
+	mo.state["s"].Agents["b"] = AgentState{Window: true, Running: false}
+	if err := mo.MarkRC("s", "b"); err == nil {
+		t.Fatal("ohne laufendes Claude nicht bestätigbar")
+	}
+}
+
+func TestParseProbePID(t *testing.T) {
+	st := parseProbe("login=true\nwin=main rc=1 theme=0 run=1 pid=4242 idle=1 ask=0 url=https://claude.ai/code/session_A\n")
+	if a := st.Agents["main"]; a.PID != 4242 || !a.RC {
+		t.Fatalf("%+v", a)
+	}
+}
+
+func TestParseProbeDialog(t *testing.T) {
+	st := parseProbe("login=true\nwin=main rc=1 theme=0 run=1 pid=7 idle=0 ask=0 dlg=1 url=https://claude.ai/code/session_Z\n")
+	a := st.Agents["main"]
+	if !a.Dialog || !a.RC || a.Idle || a.PID != 7 {
+		t.Fatalf("%+v", a)
+	}
+}

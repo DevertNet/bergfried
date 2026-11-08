@@ -182,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
+	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
 	mux.HandleFunc("POST /v1/import/preview", s.importPreview)
@@ -362,6 +363,25 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		}
 		return err
 	}))
+}
+
+// agentRCOK: Nutzer bestätigt, dass Remote Control läuft (setzt „nicht aktivierbar“ zurück).
+func (s *Server) agentRCOK(w http.ResponseWriter, r *http.Request) {
+	var q nameReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if session.ValidName(q.Session) != nil || session.ValidName(q.Agent) != nil || s.Mon == nil {
+		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		return
+	}
+	if err := s.Mon.MarkRC(q.Session, q.Agent); err != nil {
+		fail(w, 409, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Session, q.Agent, "vom Nutzer als aktiv bestätigt")
+	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
 func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {

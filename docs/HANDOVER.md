@@ -95,6 +95,13 @@ Alles ist auf `main` (GitHub: `DevertNet/bergfried`, privat). `make test` ist gr
 - **Docker-Go-Builds:** `make build` baut `bergfriedd` für **darwin/arm64** und `bergfried-mcp` für **linux/arm64** (für den VPS wird
   linux/amd64 nötig → Makefile erweitern).
 
+## RC-Erkennung (wichtig für den Monitor)
+- Der Banner „/remote-control is active“ steht am **Anfang** der Ausgabe und rutscht bei längerer Arbeit aus dem Sichtbereich. Der Monitor liest deshalb den
+  **ganzen tmux-Scrollback** (`history-limit 20000`) und merkt sich aktive RC **je claude-PID** (`stickyRC`): läuft derselbe Prozess weiter, gilt RC als aktiv.
+- `/remote-control` bei bereits aktiver RC **öffnet einen Dialog** („This session is available in the Claude mobile app …“, mit „Disconnect this session“).
+  Der Monitor wertet ihn als „RC aktiv“ und schließt ihn mit **Escape** (niemals Enter). Ausweg in der App: Agent-Menü → „Remote Control läuft – als aktiv markieren“.
+- Neue claude-PID (Neustart) setzt Zähler und „nicht aktivierbar“ zurück.
+
 ## Nicht geprüft / bekannte Lücken
 
 - Die **Oberfläche** der App wurde vom Entwickler-Agent nie visuell gesehen (keine Bildschirmrechte): Layout, Menüleiste, Banner-Buttons

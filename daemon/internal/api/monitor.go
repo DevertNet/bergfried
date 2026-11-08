@@ -21,15 +21,19 @@ echo "login=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
 if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
-    p=$(tmux capture-pane -p -J -t "bf:$w" -S -60 2>/dev/null)
-    rc=0; echo "$p" | grep -qE 'remote-control is active|/rc active' && rc=1
+    p=$(tmux capture-pane -p -J -t "bf:$w" -S - 2>/dev/null)
+    rc=0; echo "$p" | grep -qE 'remote-control is active|/rc active|available in the Claude mobile app' && rc=1
+    # Der RC-Dialog (von /remote-control geöffnet, bietet "Disconnect") bedeutet: RC ist aktiv; er blockiert die Eingabe.
+    dlg=0; echo "$p" | tail -15 | grep -q 'Disconnect this session' && { dlg=1; rc=1; }
     th=0; echo "$p" | grep -qE 'Choose the text style|Press Enter to continue' && th=1
     tty=$(tmux display-message -p -t "bf:$w" '#{pane_tty}' 2>/dev/null)
-    run=0; ps -t "${tty#/dev/}" -o comm= 2>/dev/null | grep -qx claude && run=1
-    idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && idle=1
+    run=0; pid=0
+    cp=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="claude"{print $1; exit}')
+    [ -n "$cp" ] && { run=1; pid=$cp; }
+    idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && [ "$dlg" = 0 ] && idle=1
     ask=0; echo "$p" | grep -q 'Enable Remote Control' && ask=1
     url=$(echo "$p" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_]+' | tail -1)
-    echo "win=$w rc=$rc theme=$th run=$run idle=$idle ask=$ask url=$url"
+    echo "win=$w rc=$rc theme=$th run=$run pid=$pid idle=$idle ask=$ask dlg=$dlg url=$url"
   done
 fi`
 
@@ -37,6 +41,8 @@ type AgentState struct {
 	Window, RC, Theme bool
 	Idle, Ask         bool
 	Running           bool // Prozess "claude" läuft im Fenster
+	PID               int  // PID dieses claude-Prozesses (0 = keiner)
+	Dialog            bool // RC-Dialog ("Disconnect this session") ist geöffnet
 	URL               string
 	Action            string // "", "activating", "failed", "waiting" – Stand der automatischen RC-Aktivierung
 }
@@ -100,11 +106,72 @@ type Monitor struct {
 	last      map[string]time.Time // letzter Versuch je Agent
 	actions   map[string]string    // Anzeige-Stand je Agent
 	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
+	sticky    map[string]stickyRC  // einmal gesehene aktive RC je Agent, gebunden an die claude-PID
+	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
+}
+
+// stickyRC: Der Banner „Remote Control aktiv“ steht am Anfang der Ausgabe und rutscht bei längerer Arbeit aus dem
+// Sichtbereich. Deshalb gilt RC als aktiv, solange derselbe claude-Prozess läuft, in dem sie einmal gesehen wurde.
+type stickyRC struct {
+	pid int
+	url string
+}
+
+// applySticky wertet den Merkzustand aus (Aufrufer hält mo.mu). Liefert den ggf. ergänzten Agent-Zustand.
+func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
+	if a.PID > 0 {
+		// Neuer claude-Prozess (Neustart, manuell oder automatisch): Zähler und „fehlgeschlagen“ zurücksetzen.
+		if old, ok := mo.pids[key]; ok && old != a.PID {
+			delete(mo.norc, key)
+			delete(mo.attempts, key)
+			delete(mo.last, key)
+			delete(mo.actions, key)
+		}
+		mo.pids[key] = a.PID
+	}
+	if a.RC && a.PID > 0 {
+		mo.sticky[key] = stickyRC{pid: a.PID, url: a.URL}
+		return a
+	}
+	if s, ok := mo.sticky[key]; ok {
+		if a.Running && a.PID == s.pid {
+			a.RC = true
+			if a.URL == "" {
+				a.URL = s.url
+			}
+			return a
+		}
+		delete(mo.sticky, key) // claude beendet oder neu gestartet
+	}
+	return a
+}
+
+// MarkRC bestätigt manuell, dass Remote Control in diesem Agent läuft (Ausweg, falls die Erkennung sie nicht sieht).
+func (mo *Monitor) MarkRC(session, agent string) error {
+	key := session + "/" + agent
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	st := mo.state[session]
+	if st == nil {
+		return fmt.Errorf("Session wurde noch nicht abgefragt")
+	}
+	a, ok := st.Agents[agent]
+	if !ok || !a.Running || a.PID == 0 {
+		return fmt.Errorf("Claude läuft in diesem Agent gerade nicht")
+	}
+	mo.sticky[key] = stickyRC{pid: a.PID, url: a.URL}
+	delete(mo.norc, key)
+	delete(mo.attempts, key)
+	delete(mo.last, key)
+	delete(mo.actions, key)
+	a.RC = true
+	st.Agents[agent] = a
+	return nil
 }
 
 func NewMonitor(m *session.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SessionState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
 // Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Session nicht abgefragt.
@@ -203,6 +270,10 @@ func parseProbe(out string) SessionState {
 					a.Theme = v == "1"
 				case "run":
 					a.Running = v == "1"
+				case "pid":
+					a.PID, _ = strconv.Atoi(v)
+				case "dlg":
+					a.Dialog = v == "1"
 				case "idle":
 					a.Idle = v == "1"
 				case "ask":
@@ -283,6 +354,9 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		}
 		_ = mo.M.S.SetSeeded(name)
 	}
+	for w, a := range st.Agents {
+		st.Agents[w] = mo.applySticky(name+"/"+w, a)
+	}
 	var wasLoggedIn *bool
 	if prev != nil {
 		wasLoggedIn = prev.LoggedIn
@@ -307,6 +381,11 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	}
 	for w, a := range st.Agents {
 		key := name + "/" + w
+		// Offener RC-Dialog (z. B. von früherem /remote-control): mit Escape schließen – niemals Enter (Vorauswahl könnte "Disconnect" werden).
+		if a.Dialog {
+			_ = mo.M.SendKey(cctx, vm, w, "Escape")
+			continue
+		}
 		// Onboarding-Fragen (Theme, "Press Enter to continue") mit Enter bestätigen.
 		if a.Theme {
 			_ = mo.M.PressEnter(cctx, vm, w)
