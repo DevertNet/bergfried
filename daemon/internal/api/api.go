@@ -48,6 +48,14 @@ type Job struct {
 }
 
 func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
+	return s.jobFor(kind, "", f)
+}
+
+// jobFor wie job; solange der Job läuft, wird die Session vom Monitor nicht abgefragt.
+func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *Job {
+	if sess != "" && s.Mon != nil {
+		s.Mon.Hold(sess)
+	}
 	s.mu.Lock()
 	if s.jobs == nil {
 		s.jobs = map[int64]*Job{}
@@ -63,6 +71,9 @@ func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
 			s.mu.Unlock()
 		})
 		err := f(ctx)
+		if sess != "" && s.Mon != nil {
+			s.Mon.Release(sess)
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err != nil {
@@ -95,6 +106,7 @@ type agentJ struct {
 	Window   bool   `json:"window"`
 	RC       bool   `json:"rc"`
 	RCURL    string `json:"rc_url"`
+	RCAction string `json:"rc_action"` // "", "activating", "failed"
 }
 type sessionJ struct {
 	Name            string   `json:"name"`
@@ -263,7 +275,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 		ags, _ := s.M.S.ListAgents(x.Name)
 		for _, a := range ags {
 			as := ps.Agents[a.Name]
-			j.Agents = append(j.Agents, agentJ{a.Name, a.Worktree, as.Window, as.RC, as.URL})
+			j.Agents = append(j.Agents, agentJ{a.Name, a.Worktree, as.Window, as.RC, as.URL, as.Action})
 		}
 		for _, g := range grants {
 			if g.Session == x.Name {
@@ -299,7 +311,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	writeJSON(w, 202, s.job("session.create", func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import) }))
+	writeJSON(w, 202, s.jobFor("session.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import) }))
 }
 
 func (s *Server) simple(kind string, f func(context.Context, string, bool) error) http.HandlerFunc {
@@ -313,7 +325,7 @@ func (s *Server) simple(kind string, f func(context.Context, string, bool) error
 			fail(w, 400, err)
 			return
 		}
-		writeJSON(w, 202, s.job(kind, func(ctx context.Context) error { return f(ctx, q.Name, q.Force) }))
+		writeJSON(w, 202, s.jobFor(kind, q.Name, func(ctx context.Context) error { return f(ctx, q.Name, q.Force) }))
 	}
 }
 
@@ -327,7 +339,7 @@ func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
-	writeJSON(w, 202, s.job("agent.add", func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Session, q.Agent) }))
+	writeJSON(w, 202, s.jobFor("agent.add", q.Session, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Session, q.Agent) }))
 }
 
 func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
@@ -340,9 +352,10 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, fmt.Errorf("ungültiger Name"))
 		return
 	}
-	writeJSON(w, 202, s.job("agent.restart", func(ctx context.Context) error {
+	writeJSON(w, 202, s.jobFor("agent.restart", q.Session, func(ctx context.Context) error {
 		err := s.M.RestartAgent(ctx, q.Session, q.Agent)
 		if s.Mon != nil {
+			s.Mon.ResetAgent(q.Session, q.Agent)
 			s.Mon.Poke(q.Session)
 		}
 		return err

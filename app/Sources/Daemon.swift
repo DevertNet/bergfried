@@ -56,47 +56,56 @@ enum DaemonController {
 }
 
 enum Terminal {
-    static var hasITerm: Bool { FileManager.default.fileExists(atPath: "/Applications/iTerm.app") }
+    /// Einstellung: "auto" (iTerm, falls installiert), "iterm" oder "terminal".
+    static let key = "terminalApp"
+    static var iTermInstalled: Bool { FileManager.default.fileExists(atPath: "/Applications/iTerm.app") }
+    static var choice: String { UserDefaults.standard.string(forKey: key) ?? "auto" }
+
+    /// Name der App, die tatsächlich benutzt wird.
+    static var appName: String {
+        switch choice {
+        case "iterm": return iTermInstalled ? "iTerm" : "Terminal"
+        case "terminal": return "Terminal"
+        default: return iTermInstalled ? "iTerm" : "Terminal"
+        }
+    }
 
     static var limactl: String {
         ["/opt/homebrew/bin/limactl", "/usr/local/bin/limactl"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "limactl"
     }
 
-    /// Öffnet iTerm (falls installiert) oder Terminal.app mit einem Befehl in der VM.
-    /// Der Befehl wird als Argument an AppleScript übergeben (keine Quoting-Probleme); der VM-Name wird streng geprüft.
-    static func open(vm: String, inner: String) {
-        guard vm.range(of: #"^bf-[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil else { return }
-        let cmd = "\(limactl) shell \(vm) -- \(inner)"
-        let script: String
-        if hasITerm {
-            script = """
-            on run argv
-              tell application "iTerm"
-                activate
-                set w to (create window with default profile)
-                tell current session of w to write text (item 1 of argv)
-              end tell
-            end run
-            """
-        } else {
-            script = """
-            on run argv
-              tell application "Terminal"
-                activate
-                do script (item 1 of argv)
-              end tell
-            end run
-            """
-        }
+    /// Öffnet die gewählte Terminal-App mit einem Befehl in der VM. Statt AppleScript (braucht Automations-Rechte und
+    /// scheitert still) wird eine temporäre .command-Datei mit `open -a` gestartet; sie löscht sich selbst.
+    /// Der VM-Name wird streng geprüft. Liefert eine Fehlermeldung oder nil.
+    @discardableResult
+    static func open(vm: String, inner: String, waitKey: Bool = false) -> String? {
+        guard vm.range(of: #"^bf-[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil else { return "Ungültiger VM-Name" }
+        let dir = NSHomeDirectory() + "/.bergfried/tmp"
+        let file = dir + "/cmd-\(UUID().uuidString).command"
+        var body = "#!/bin/zsh\nrm -f \"$0\"\n\(limactl) shell \(vm) -- \(inner)\n"
+        if waitKey { body += "echo\nread -k 1 -s \"?Beliebige Taste zum Schließen …\"\n" }
+        do {
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try body.write(toFile: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file)
+        } catch { return "Konnte Startskript nicht anlegen: \(error.localizedDescription)" }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", script, cmd]
-        try? p.run()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = ["-a", appName, file]
+        let err = Pipe(); p.standardError = err
+        do { try p.run() } catch { return "open: \(error.localizedDescription)" }
+        p.waitUntilExit()
+        if p.terminationStatus != 0 {
+            let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            try? FileManager.default.removeItem(atPath: file)
+            return "\(appName) konnte nicht geöffnet werden: \(msg)"
+        }
+        return nil
     }
 
-    static func attach(vm: String) { open(vm: vm, inner: "bash -lc 'tmux attach -t bf || tmux new -s bf'") }
+    static func attach(vm: String) -> String? { open(vm: vm, inner: "bash -lc 'tmux attach -t bf || tmux new -s bf'") }
 
-    static func login(vm: String) {
-        open(vm: vm, inner: "bash -lc \"claude auth login; echo; echo 'Fertig – dieses Fenster kann geschlossen werden. Die Agents starten automatisch neu.'\"")
+    static func login(vm: String) -> String? {
+        open(vm: vm, inner: "bash -lc 'claude auth login; echo; echo \"Fertig. Die Agents starten automatisch neu (Status in der App).\"'", waitKey: true)
     }
 }

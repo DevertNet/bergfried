@@ -91,7 +91,7 @@ struct SessionRow: View {
                 if s.pendingRequests > 0 { Label("\(s.pendingRequests) offen", systemImage: "bell.fill").foregroundStyle(.red) }
                 Text("Vorlage r\(s.templateVersion)")
             }.font(.caption).foregroundStyle(.secondary)
-            if let e = s.probeError, s.running { Text("Statusabfrage fehlgeschlagen: \(e)").font(.caption).foregroundStyle(.orange).lineLimit(1) }
+            if s.probeError != nil, s.running { Text("Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).").font(.caption).foregroundStyle(.secondary) }
             if !s.agents.isEmpty {
                 HStack(spacing: 8) { ForEach(s.agents, id: \.name) { a in AgentChip(s: s, a: a) } }
             }
@@ -103,7 +103,7 @@ struct SessionRow: View {
         case .some(true):
             Label("Claude eingeloggt", systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
         case .some(false):
-            Button { Terminal.login(vm: s.vm) } label: { Label("Claude nicht eingeloggt – jetzt einloggen", systemImage: "person.crop.circle.badge.exclamationmark") }
+            Button { report(Terminal.login(vm: s.vm)) } label: { Label("Claude nicht eingeloggt – jetzt einloggen", systemImage: "person.crop.circle.badge.exclamationmark") }
                 .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
         default:
             Label("Claude-Status wird geprüft …", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
@@ -125,9 +125,9 @@ struct SessionRow: View {
             Button("Stoppen") { Task { report(await model.runJob("stop-\(s.name)", "Stoppt …", "/v1/sessions/stop", NameBody(name: s.name))) } }
             Button("Agent +", action: addAgent)
             Menu {
-                Button("Terminal (tmux)") { Terminal.attach(vm: s.vm) }
-                Button("Claude-Login (einmal pro VM)") { Terminal.login(vm: s.vm) }
-            } label: { Label(Terminal.hasITerm ? "iTerm" : "Terminal", systemImage: "terminal") }
+                Button("tmux in \(Terminal.appName) öffnen") { report(Terminal.attach(vm: s.vm)) }
+                Button("Claude-Login in \(Terminal.appName) (einmal pro VM)") { report(Terminal.login(vm: s.vm)) }
+            } label: { Label(Terminal.appName, systemImage: "terminal") }
         } else {
             Button("Starten") { Task { report(await model.runJob("start-\(s.name)", "Startet …", "/v1/sessions/start", NameBody(name: s.name))) } }
         }
@@ -145,6 +145,8 @@ struct AgentChip: View {
     var state: (color: Color, text: String) {
         if a.rc { return (.green, "RC aktiv") }
         if s.claudeLoggedIn == false { return (.orange, "wartet auf Login") }
+        if a.rcAction == "failed" { return (.red, "RC nicht aktivierbar – neu starten") }
+        if a.rcAction == "activating" { return (.orange, "aktiviere RC …") }
         if !a.window { return (.gray, "kein Fenster") }
         return (.orange, "RC startet …")
     }
@@ -159,7 +161,7 @@ struct AgentChip: View {
             Button("Agent neu starten") {
                 Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", "Agent \(a.name) startet neu …", "/v1/agents/restart", AgentBody(session: s.name, agent: a.name)) { model.setBanner(e) } }
             }
-            Button("Terminal (tmux)") { Terminal.attach(vm: s.vm) }
+            Button("tmux in \(Terminal.appName) öffnen") { if let e = Terminal.attach(vm: s.vm) { model.setBanner(e) } }
         } label: {
             HStack(spacing: 5) {
                 Circle().fill(state.color).frame(width: 8, height: 8)

@@ -24,14 +24,66 @@ if tmux has-session -t bf 2>/dev/null; then
     p=$(tmux capture-pane -p -J -t "bf:$w" -S -60 2>/dev/null)
     rc=0; echo "$p" | grep -qE 'remote-control is active|/rc active' && rc=1
     th=0; echo "$p" | grep -q 'Choose the text style' && th=1
+    cmd=$(tmux display-message -p -t "bf:$w" '#{pane_current_command}' 2>/dev/null)
+    idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && idle=1
+    ask=0; echo "$p" | grep -q 'Enable Remote Control' && ask=1
     url=$(echo "$p" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_]+' | tail -1)
-    echo "win=$w rc=$rc theme=$th url=$url"
+    echo "win=$w rc=$rc theme=$th cmd=$cmd idle=$idle ask=$ask url=$url"
   done
 fi`
 
 type AgentState struct {
 	Window, RC, Theme bool
+	Idle, Ask         bool
+	Cmd               string
 	URL               string
+	Action            string // "", "activating", "failed" – Stand der automatischen RC-Aktivierung
+}
+
+type rcAction int
+
+const (
+	rcNone rcAction = iota
+	rcAnswerYes
+	rcSlash
+	rcRestart
+	rcGiveUp
+)
+
+const (
+	rcMaxAttempts = 3
+	rcMissTicks   = 4 // so viele Prüfungen in Folge ohne RC, bevor aktiviert wird (Schonfrist fürs Hochfahren)
+	rcRetryAfter  = 20 * time.Second
+)
+
+func isShell(cmd string) bool {
+	switch cmd {
+	case "bash", "zsh", "sh", "dash", "fish":
+		return true
+	}
+	return false
+}
+
+// decideRC entscheidet, wie ein Agent ohne aktive Remote Control wieder in Gang gebracht wird.
+// Reihenfolge: offene Rückfrage beantworten, Shell (Claude läuft nicht) neu starten,
+// bei leerem Eingabefeld /remote-control tippen; nach rcMaxAttempts aufgeben.
+func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
+	if a.Ask {
+		return rcAnswerYes
+	}
+	if attempts >= rcMaxAttempts {
+		return rcGiveUp
+	}
+	if sinceLast < rcRetryAfter {
+		return rcNone
+	}
+	if isShell(a.Cmd) {
+		return rcRestart
+	}
+	if a.Idle {
+		return rcSlash
+	}
+	return rcNone
 }
 
 type SessionState struct {
@@ -48,10 +100,42 @@ type Monitor struct {
 	mu       sync.Mutex
 	state    map[string]*SessionState
 	inflight map[string]bool
+	hold     map[string]int       // Sessions mit laufendem Job: nicht abfragen
+	failures map[string]int       // aufeinanderfolgende Abfragefehler
+	norc     map[string]int       // Prüfungen ohne RC je Agent
+	attempts map[string]int       // Aktivierungsversuche je Agent
+	last     map[string]time.Time // letzter Versuch je Agent
+	actions  map[string]string    // Anzeige-Stand je Agent
 }
 
 func NewMonitor(m *session.Manager) *Monitor {
-	return &Monitor{M: m, state: map[string]*SessionState{}, inflight: map[string]bool{}}
+	return &Monitor{M: m, state: map[string]*SessionState{}, inflight: map[string]bool{}, hold: map[string]int{},
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}}
+}
+
+// Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Session nicht abgefragt.
+func (mo *Monitor) Hold(name string) { mo.mu.Lock(); mo.hold[name]++; mo.mu.Unlock() }
+func (mo *Monitor) Release(name string) {
+	mo.mu.Lock()
+	mo.hold[name]--
+	mo.Poke2(name)
+	mo.mu.Unlock()
+}
+func (mo *Monitor) Poke2(name string) {
+	if s, ok := mo.state[name]; ok {
+		s.Checked = time.Time{}
+	}
+}
+
+// ResetAgent setzt die automatische RC-Aktivierung eines Agents zurück (z. B. nach manuellem Neustart).
+func (mo *Monitor) ResetAgent(session, agent string) {
+	k := session + "/" + agent
+	mo.mu.Lock()
+	delete(mo.norc, k)
+	delete(mo.attempts, k)
+	delete(mo.last, k)
+	delete(mo.actions, k)
+	mo.mu.Unlock()
 }
 
 func (mo *Monitor) Get(name string) (SessionState, bool) {
@@ -64,6 +148,9 @@ func (mo *Monitor) Get(name string) (SessionState, bool) {
 	cp := *s
 	cp.Agents = map[string]AgentState{}
 	for k, v := range s.Agents {
+		if !v.RC {
+			v.Action = mo.actions[name+"/"+k]
+		}
 		cp.Agents[k] = v
 	}
 	return cp, true
@@ -116,6 +203,12 @@ func parseProbe(out string) SessionState {
 					a.RC = v == "1"
 				case "theme":
 					a.Theme = v == "1"
+				case "cmd":
+					a.Cmd = v
+				case "idle":
+					a.Idle = v == "1"
+				case "ask":
+					a.Ask = v == "1"
 				case "url":
 					a.URL = v
 				}
@@ -135,14 +228,20 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.mu.Lock()
 	prev := mo.state[name]
 	if err != nil {
+		// Beim Hochfahren schlägt die Abfrage zwangsläufig fehl: erst nach mehreren Fehlern melden.
+		mo.failures[name]++
 		if prev == nil {
 			prev = &SessionState{Agents: map[string]AgentState{}}
 			mo.state[name] = prev
 		}
-		prev.Err, prev.Checked = err.Error(), time.Now()
+		prev.Checked = time.Now()
+		if mo.failures[name] >= 6 {
+			prev.Err = err.Error()
+		}
 		mo.mu.Unlock()
 		return
 	}
+	mo.failures[name] = 0
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
 	var wasLoggedIn *bool
@@ -167,10 +266,55 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		mo.Poke(name)
 		return
 	}
-	// Erststart-Frage (Theme) mit der Vorauswahl bestätigen.
 	for w, a := range st.Agents {
+		key := name + "/" + w
+		// Erststart-Frage (Theme) mit der Vorauswahl bestätigen.
 		if a.Theme {
 			_ = mo.M.PressEnter(cctx, vm, w)
+			continue
+		}
+		mo.mu.Lock()
+		if a.RC {
+			delete(mo.norc, key)
+			delete(mo.attempts, key)
+			delete(mo.actions, key)
+			mo.mu.Unlock()
+			continue
+		}
+		mo.norc[key]++
+		ready := mo.norc[key] >= rcMissTicks
+		attempts, since := mo.attempts[key], time.Since(mo.last[key])
+		mo.mu.Unlock()
+		if !ready {
+			continue
+		}
+		act := decideRC(a, attempts, since)
+		var err error
+		switch act {
+		case rcAnswerYes:
+			err = mo.M.TypeLine(cctx, vm, w, "y")
+		case rcSlash:
+			err = mo.M.TypeLine(cctx, vm, w, "/remote-control")
+		case rcRestart:
+			err = mo.M.RestartAgent(cctx, name, w)
+		case rcGiveUp:
+			mo.mu.Lock()
+			mo.actions[key] = "failed"
+			mo.mu.Unlock()
+		}
+		if act == rcSlash || act == rcRestart || act == rcAnswerYes {
+			mo.mu.Lock()
+			if act != rcAnswerYes {
+				mo.attempts[key]++
+			}
+			mo.last[key] = time.Now()
+			mo.actions[key] = "activating"
+			mo.mu.Unlock()
+			detail := map[rcAction]string{rcSlash: "/remote-control", rcRestart: "neu gestartet", rcAnswerYes: "Rückfrage mit y beantwortet"}[act]
+			if err != nil {
+				detail += ": " + err.Error()
+			}
+			_ = mo.M.S.Audit("daemon", "agent.rc_enable", name, w, detail)
 		}
 	}
 }
@@ -202,6 +346,12 @@ func (mo *Monitor) tick(ctx context.Context) {
 		running[v.Name] = v.Status == "Running"
 	}
 	for _, s := range ss {
+		mo.mu.Lock()
+		held := mo.hold[s.Name] > 0
+		mo.mu.Unlock()
+		if held {
+			continue
+		}
 		if !running[s.VM] {
 			mo.mu.Lock()
 			delete(mo.state, s.Name)

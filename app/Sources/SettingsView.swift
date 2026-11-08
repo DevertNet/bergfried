@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Local private var names = ""
     @Local private var info: String?
     @Local private var daemonInstalled = DaemonController.installed
+    @Local private var termChoice = Terminal.choice
     @Local private var tpl: TemplateInfo?
     @Local private var tplText = ""
     @Local private var tplMsg: String?
@@ -41,6 +42,14 @@ struct SettingsView: View {
                     }
                     Text("Neue Sessions werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sessions.").font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Section("Terminal") {
+                Picker("Terminal-App für „Terminal“ und „Login“", selection: $termChoice) {
+                    Text("Automatisch (iTerm, falls installiert)").tag("auto")
+                    Text("iTerm").tag("iterm")
+                    Text("Terminal").tag("terminal")
+                }.onChange(of: termChoice) { _, v in UserDefaults.standard.set(v, forKey: Terminal.key) }
+                Text("Aktuell wird \(Terminal.appName) verwendet\(Terminal.iTermInstalled ? "" : " (iTerm ist nicht installiert)").").font(.caption).foregroundStyle(.secondary)
             }
             Section("VM-Vorlage (bergfried.yaml)") {
                 if let t = tpl {

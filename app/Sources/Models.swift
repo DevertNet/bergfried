@@ -16,6 +16,7 @@ struct AgentInfo: Codable, Hashable {
     var window: Bool
     var rc: Bool
     var rcUrl: String
+    var rcAction: String   // "", "activating", "failed"
 }
 
 struct SessionInfo: Codable, Identifiable, Hashable {

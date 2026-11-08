@@ -42,6 +42,17 @@ open app/build/Bergfried.app
   Agents der Session automatisch neu (`--continue --remote-control`); beantwortet dabei die Theme-Frage mit der Vorauswahl. Hängt ein Agent,
   hilft „Agent neu starten“ im Agent-Menü.
 
+## Terminal und Remote-Control-Überwachung
+- **Terminal-App:** Einstellungen → Terminal (Automatisch = iTerm, falls installiert). Gestartet wird über eine temporäre `.command`-Datei
+  (`open -a iTerm|Terminal`, löscht sich selbst) – ohne AppleScript-Automationsrechte. Fehler erscheinen als Hinweis in der App.
+  iTerm öffnet dabei einen neuen Tab im bestehenden Fenster.
+- **Statusabfrage erst wenn die VM bereit ist:** Während Start/Stopp/Erstellen wird die Session nicht abgefragt; ein Fehler wird erst nach
+  mehreren fehlgeschlagenen Abfragen (ca. 30 s) als dezenter Hinweis gezeigt.
+- **RC wird überwacht und aktiviert:** Ist Claude eingeloggt und ein Agent hat nach ca. 15–20 s keine aktive Remote Control, handelt der Daemon:
+  offene Rückfrage „Enable Remote Control?“ → mit `y` beantworten; Claude läuft nicht (nur Shell) → Agent neu starten;
+  Claude im Leerlauf → `/remote-control` eintippen. Je Agent höchstens 3 Versuche (Abstand 20 s), danach „RC nicht aktivierbar – neu starten“.
+  Alles steht im Protokoll (`agent.rc_enable`). Ein Agent, der gerade arbeitet, wird nicht gestört.
+
 ## Technik
 - Die App spricht per **HTTP/JSON über `~/.bergfried/app.sock`** (0600) mit dem Daemon. `Bergfried --selftest` prüft die Verbindung.
 - Auf Systemen nur mit Command Line Tools ist `@State` ein Makro ohne Plugin; die App nutzt dafür den Ersatz `@Local` (`Local.swift`).

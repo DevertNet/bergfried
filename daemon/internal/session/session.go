@@ -471,3 +471,18 @@ func (m *Manager) PressEnter(ctx context.Context, vm, agent string) error {
 	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s Enter", tmuxSession, agent))
 	return err
 }
+
+var typeRe = regexp.MustCompile(`^[A-Za-z/ -]{1,40}$`)
+
+// TypeLine tippt eine kurze Zeile (z. B. "/remote-control") in das Agent-Fenster und drückt Enter.
+// Nur Buchstaben, "/", Leerzeichen und "-" sind erlaubt.
+func (m *Manager) TypeLine(ctx context.Context, vm, agent, text string) error {
+	if err := ValidName(agent); err != nil {
+		return err
+	}
+	if !typeRe.MatchString(text) {
+		return fmt.Errorf("unzulässiger Text")
+	}
+	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s -l '%s' && tmux send-keys -t %s:%s Enter", tmuxSession, agent, text, tmuxSession, agent))
+	return err
+}
