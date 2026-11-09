@@ -37,6 +37,13 @@ struct SettingsView: View {
             }
             Section("Updates") {
                 LabeledContent("Version") { Text(model.status?.version ?? "?") }
+                Picker("Update channel", selection: Binding(get: { upd?.channel ?? "stable" }, set: { v in Task { await setChannel(v) } })) {
+                    Text("Stable").tag("stable")
+                    Text("Dev (builds from the development branch)").tag("dev")
+                }
+                if upd?.channel == "dev" {
+                    Text("Dev builds come from the development branch, may be broken and are not reviewed like stable releases. Switching back to stable only takes effect with the next stable release.").font(.caption).foregroundStyle(.orange)
+                }
                 if let u = upd {
                     if u.available {
                         LabeledContent("Available") { Text(u.latest) }
@@ -59,6 +66,8 @@ struct SettingsView: View {
                 }
                 if let updMsg { Text(updMsg).font(.caption).textSelection(.enabled) }
                 Text("Updates come from GitHub releases. Releases are not signed: the download is only checked against its checksum.").font(.caption).foregroundStyle(.secondary)
+                Text("If an update breaks Bergfried, run this in a terminal to restore the previous version:").font(.caption).foregroundStyle(.secondary)
+                Text(Bundle.main.bundlePath + "/Contents/Resources/bergfriedd update rollback").font(.caption.monospaced()).textSelection(.enabled)
             }
             Section("Base VM") {
                 if let s = model.status {
@@ -139,6 +148,12 @@ struct SettingsView: View {
     func checkUpdate(refresh: Bool = true) async {
         updMsg = nil
         do { upd = try await model.api.get("/v1/update" + (refresh ? "?refresh=1" : "")) } catch { updMsg = error.localizedDescription }
+        await model.refresh()
+    }
+
+    func setChannel(_ v: String) async {
+        updMsg = nil
+        do { upd = try await model.api.send("PUT", "/v1/update/channel", ChannelBody(channel: v)) } catch { updMsg = error.localizedDescription }
         await model.refresh()
     }
 

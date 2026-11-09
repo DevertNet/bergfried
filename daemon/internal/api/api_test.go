@@ -201,7 +201,7 @@ func TestUpdateEndpoints(t *testing.T) {
 		t.Fatalf("without update service: %d", code)
 	}
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"tag_name":"v9.9.9","body":"notes","html_url":"u","assets":[]}`))
+		w.Write([]byte(`[{"tag_name":"v9.9.9","body":"notes","html_url":"u","assets":[]},{"tag_name":"v9.9.10-dev.4","prerelease":true,"assets":[]}]`))
 	}))
 	defer gh.Close()
 	s.Upd = update.New("o/r", "0.0.0-dev", t.TempDir())
@@ -209,6 +209,17 @@ func TestUpdateEndpoints(t *testing.T) {
 	s.Upd.BundlePath = func() (string, error) { return "", fmt.Errorf("not running from an app bundle") }
 	code, body := do(t, "GET", ts.URL+"/v1/update?refresh=1", "")
 	if code != 200 || !strings.Contains(body, `"latest":"9.9.9"`) || !strings.Contains(body, `"updatable":false`) {
+		t.Fatalf("%d %s", code, body)
+	}
+	if !strings.Contains(body, `"channel":"stable"`) {
+		t.Fatalf("channel missing: %s", body)
+	}
+	// switching the channel: validated, persisted, re-checked (the dev pre-release is newer than 9.9.9)
+	if code, _ := do(t, "PUT", ts.URL+"/v1/update/channel", `{"channel":"beta"}`); code != 400 {
+		t.Fatalf("unknown channel must be refused: %d", code)
+	}
+	code, body = do(t, "PUT", ts.URL+"/v1/update/channel", `{"channel":"dev"}`)
+	if code != 200 || !strings.Contains(body, `"channel":"dev"`) || !strings.Contains(body, `"latest":"9.9.10-dev.4"`) {
 		t.Fatalf("%d %s", code, body)
 	}
 	if _, st := do(t, "GET", ts.URL+"/v1/status", ""); strings.Contains(st, "update_available") {

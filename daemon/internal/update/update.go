@@ -1,7 +1,8 @@
 // Package update installs new Bergfried versions from GitHub releases.
 //
 // A release has one asset, Bergfried-<version>-macos-arm64.zip (the app bundle, which contains the daemon,
-// bergfried-mcp and the VM template), and a SHA256SUMS file. Releases are NOT signed (see docs/UPDATES.md):
+// bergfried-mcp and the VM template), and a SHA256SUMS file. There are two channels: "stable" (tags vX.Y.Z) and
+// "dev" (pre-releases vX.Y.Z-dev.N plus stable releases). Releases are NOT signed (see docs/UPDATES.md):
 // the checks here protect against corrupted downloads and wrong bundles, not against a forged release.
 package update
 
@@ -39,6 +40,7 @@ const (
 // Info is what the app shows.
 type Info struct {
 	Current   string `json:"current"`
+	Channel   string `json:"channel"`
 	Latest    string `json:"latest"`
 	Available bool   `json:"available"`
 	Notes     string `json:"notes"`
@@ -68,14 +70,79 @@ type Service struct {
 	Launch func(script string, args ...string) error
 	Now    func() time.Time
 
-	mu   sync.Mutex
-	last Info
-	busy bool
+	mu      sync.Mutex
+	last    Info
+	busy    bool
+	channel string
 }
 
 func New(repo, current, home string) *Service {
-	return &Service{API: "https://api.github.com", Repo: repo, Current: current, Home: home,
+	s := &Service{API: "https://api.github.com", Repo: repo, Current: current, Home: home,
 		HTTP: &http.Client{Timeout: 10 * time.Minute}, BundlePath: RunningBundle, Verify: CodesignVerify, Launch: LaunchDetached}
+	s.channel = s.loadChannel()
+	return s
+}
+
+// ---- channel setting (stored in <home>/settings.json) ----
+
+const (
+	Stable = "stable"
+	Dev    = "dev"
+)
+
+func (s *Service) settingsPath() string { return filepath.Join(s.Home, "settings.json") }
+
+func (s *Service) loadChannel() string {
+	b, err := os.ReadFile(s.settingsPath())
+	if err != nil {
+		return Stable
+	}
+	var v struct {
+		Channel string `json:"update_channel"`
+	}
+	if json.Unmarshal(b, &v) != nil || v.Channel != Dev {
+		return Stable
+	}
+	return Dev
+}
+
+// Channel returns "stable" or "dev".
+func (s *Service) Channel() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.channel == "" {
+		return Stable
+	}
+	return s.channel
+}
+
+// SetChannel changes and persists the update channel; the next Check uses it.
+func (s *Service) SetChannel(ch string) error {
+	if ch != Stable && ch != Dev {
+		return fmt.Errorf("unknown channel %q (stable or dev)", ch)
+	}
+	if err := os.MkdirAll(s.Home, 0o700); err != nil {
+		return err
+	}
+	// keep other settings in the file
+	cur := map[string]any{}
+	if b, err := os.ReadFile(s.settingsPath()); err == nil {
+		_ = json.Unmarshal(b, &cur)
+	}
+	cur["update_channel"] = ch
+	out, _ := json.MarshalIndent(cur, "", "  ")
+	tmp := s.settingsPath() + ".new"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.settingsPath()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.channel = ch
+	s.last = Info{} // the cached answer belongs to the old channel
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *Service) now() time.Time {
@@ -101,11 +168,11 @@ func ParseVersion(v string) (n [3]int, pre string, ok bool) {
 	return n, m[4], true
 }
 
-// Newer reports whether latest is a newer release than current. Unparseable or "-dev" current versions count as older than any release;
-// a pre-release latest never counts as newer.
+// Newer reports whether latest is a newer version than current (semver ordering, including pre-releases:
+// 0.1.0 < 0.1.1-dev.3 < 0.1.1-dev.17 < 0.1.1). A current version that cannot be parsed (for example "dev") counts as older than any release.
 func Newer(latest, current string) bool {
 	l, lpre, lok := ParseVersion(latest)
-	if !lok || lpre != "" {
+	if !lok {
 		return false
 	}
 	c, cpre, cok := ParseVersion(current)
@@ -117,7 +184,70 @@ func Newer(latest, current string) bool {
 			return l[i] > c[i]
 		}
 	}
-	return cpre != "" // 1.2.3 is newer than 1.2.3-rc1
+	return comparePre(lpre, cpre) > 0
+}
+
+// comparePre orders pre-release strings like semver: no pre-release > any pre-release; identifiers compare numerically
+// when both are numbers (dev.17 > dev.3), otherwise lexically; a shorter list is smaller.
+func comparePre(a, b string) int {
+	switch {
+	case a == b:
+		return 0
+	case a == "":
+		return 1
+	case b == "":
+		return -1
+	}
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] == bs[i] {
+			continue
+		}
+		an, aerr := strconv.Atoi(as[i])
+		bn, berr := strconv.Atoi(bs[i])
+		switch {
+		case aerr == nil && berr == nil:
+			if an != bn {
+				if an > bn {
+					return 1
+				}
+				return -1
+			}
+		case aerr == nil:
+			return -1 // numbers sort before words
+		case berr == nil:
+			return 1
+		default:
+			if as[i] > bs[i] {
+				return 1
+			}
+			return -1
+		}
+	}
+	switch {
+	case len(as) > len(bs):
+		return 1
+	case len(as) < len(bs):
+		return -1
+	}
+	return 0
+}
+
+var devTagRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+-dev\.\d+$`)
+
+// acceptable: does a release belong to the channel? Drafts never do. Stable: plain vX.Y.Z only. Dev: stable releases and -dev.N pre-releases.
+func acceptable(channel, tag string, draft bool) bool {
+	if draft {
+		return false
+	}
+	_, pre, ok := ParseVersion(tag)
+	if !ok {
+		return false
+	}
+	if pre == "" {
+		return true
+	}
+	return channel == Dev && devTagRe.MatchString(tag)
 }
 
 // ---- check ----
@@ -181,43 +311,56 @@ func (s *Service) updatable() (bool, string) {
 	return true, ""
 }
 
-// Check asks GitHub for the latest release and caches the result.
+// Check asks GitHub for the releases of the current channel and caches the result.
 func (s *Service) Check(ctx context.Context) Info {
-	info := Info{Current: s.Current, Checked: s.now().Unix()}
+	channel := s.Channel()
+	info := Info{Current: s.Current, Channel: channel, Checked: s.now().Unix()}
 	info.Updatable, info.Reason = s.updatable()
-	b, err := s.get(ctx, s.API+"/repos/"+s.Repo+"/releases/latest", maxAPIBytes)
-	if errors.Is(err, errNoRelease) { // nothing to update to; not an error for the user
+	store := func(i Info) Info {
 		s.mu.Lock()
-		s.last = info
+		if s.channel == "" || s.channel == channel { // a channel change during the request wins
+			s.last = i
+		}
 		s.mu.Unlock()
-		return info
+		return i
+	}
+	b, err := s.get(ctx, s.API+"/repos/"+s.Repo+"/releases?per_page=30", maxAPIBytes)
+	if errors.Is(err, errNoRelease) { // nothing to update to; not an error for the user
+		return store(info)
 	}
 	if err != nil {
 		info.Error = err.Error()
 		s.mu.Lock()
 		prev := s.last
 		s.mu.Unlock()
-		if prev.Latest != "" { // keep the last good answer visible
+		if prev.Latest != "" && prev.Channel == channel { // keep the last good answer visible
 			prev.Error, prev.Checked, prev.Updatable, prev.Reason = info.Error, info.Checked, info.Updatable, info.Reason
 			info = prev
 		}
-		s.mu.Lock()
-		s.last = info
-		s.mu.Unlock()
-		return info
+		return store(info)
 	}
-	var rel release
-	if err := json.Unmarshal(b, &rel); err != nil || rel.Tag == "" {
+	var rels []release
+	if err := json.Unmarshal(b, &rels); err != nil {
 		info.Error = "release answer not readable"
-		s.mu.Lock()
-		s.last = info
-		s.mu.Unlock()
-		return info
+		return store(info)
 	}
-	info.Latest, info.Notes, info.URL = strings.TrimPrefix(rel.Tag, "v"), rel.Body, rel.URL
-	if !rel.Draft && !rel.Pre && Newer(rel.Tag, s.Current) {
-		want := AssetName(rel.Tag)
-		for _, a := range rel.Assets {
+	var best *release
+	for i := range rels {
+		r := &rels[i]
+		if !acceptable(channel, r.Tag, r.Draft) {
+			continue
+		}
+		if best == nil || Newer(r.Tag, best.Tag) {
+			best = r
+		}
+	}
+	if best == nil {
+		return store(info)
+	}
+	info.Latest, info.Notes, info.URL = strings.TrimPrefix(best.Tag, "v"), best.Body, best.URL
+	if Newer(best.Tag, s.Current) {
+		want := AssetName(best.Tag)
+		for _, a := range best.Assets {
 			switch a.Name {
 			case want:
 				info.assetURL = a.URL
@@ -228,13 +371,10 @@ func (s *Service) Check(ctx context.Context) Info {
 		if info.assetURL != "" && info.sumsURL != "" {
 			info.Available = true
 		} else {
-			info.Error = "release " + rel.Tag + " lacks " + want + " or SHA256SUMS"
+			info.Error = "release " + best.Tag + " lacks " + want + " or SHA256SUMS"
 		}
 	}
-	s.mu.Lock()
-	s.last = info
-	s.mu.Unlock()
-	return info
+	return store(info)
 }
 
 // Last returns the cached result of the latest check (zero value before the first check).
@@ -464,9 +604,10 @@ func RunningBundle() (string, error) {
 // SwapScript is the detached helper. It is a plain bash script so it survives the daemon and app exit; all paths come as arguments.
 const SwapScript = `#!/bin/bash
 # Bergfried updater helper: replaces the app bundle and restarts daemon and app.
-# Arguments: APP NEW PREVIOUS LABEL BUNDLE_ID LOG
+# Arguments: APP NEW PREVIOUS LABEL BUNDLE_ID LOG [DB_BACKUP DB_TARGET]
+# With DB_BACKUP/DB_TARGET (rollback) the database is restored from the backup after the processes are stopped.
 set -u
-APP="$1"; NEW="$2"; PREV="$3"; LABEL="$4"; BUNDLE_ID="$5"; LOG="$6"
+APP="$1"; NEW="$2"; PREV="$3"; LABEL="$4"; BUNDLE_ID="$5"; LOG="$6"; DBBK="${7:-}"; DBT="${8:-}"
 exec >>"$LOG" 2>&1
 echo "$(date '+%F %T') update: start"
 UIDN=$(id -u)
@@ -480,6 +621,15 @@ for i in $(seq 1 30); do
   if ! pgrep -f "$APP/Contents/(Resources/bergfriedd|MacOS/Bergfried)" >/dev/null 2>&1; then break; fi
   sleep 0.5
 done
+
+if [ -n "$DBBK" ] && [ -n "$DBT" ]; then
+  if cp "$DBBK" "$DBT.restore"; then
+    rm -f "$DBT-wal" "$DBT-shm"
+    mv -f "$DBT.restore" "$DBT" && echo "update: database restored from $DBBK"
+  else
+    echo "update: restoring the database failed, keeping the current one"
+  fi
+fi
 
 # swap, with rollback
 rm -rf "$PREV"
@@ -560,4 +710,57 @@ func (s *Service) Install(ctx context.Context) error {
 		return fmt.Errorf("could not start the update helper: %w", err)
 	}
 	return nil // busy stays set: the helper stops this process
+}
+
+// ---- rollback ----
+
+// RollbackOptions control Rollback.
+type RollbackOptions struct {
+	KeepDatabase bool // restore only the app bundle, not the database backup
+}
+
+// Rollback restores the bundle that the last update moved to Home/update/Bergfried.app.previous and, unless KeepDatabase is set,
+// the database backup taken before that update. It uses the same detached helper script as an update.
+func (s *Service) Rollback(opts RollbackOptions) error {
+	app, err := s.BundlePath()
+	if err != nil {
+		return err
+	}
+	prev := filepath.Join(s.Home, "update", "Bergfried.app.previous")
+	pl, err := os.ReadFile(filepath.Join(prev, "Contents", "Info.plist"))
+	if err != nil {
+		return errors.New("there is no previous version to roll back to (" + prev + ")")
+	}
+	m := verRe2.FindSubmatch(pl)
+	if m == nil {
+		return errors.New("the previous bundle has no version")
+	}
+	prevVersion := string(m[1])
+	if err := CheckBundle(prev, prevVersion); err != nil {
+		return fmt.Errorf("the previous bundle is not usable: %w", err)
+	}
+	var dbBackup, dbTarget string
+	if !opts.KeepDatabase {
+		dbBackup = filepath.Join(s.Home, "update", "backup-"+prevVersion, "bergfried.db")
+		if _, err := os.Stat(dbBackup); err != nil {
+			return fmt.Errorf("no database backup for version %s (%s); use the option to keep the current database", prevVersion, dbBackup)
+		}
+		dbTarget = filepath.Join(s.Home, "bergfried.db")
+	}
+	src := filepath.Join(s.Home, "update", "rollback-src")
+	_ = os.RemoveAll(src)
+	if out, err := exec.Command("cp", "-R", prev, src).CombinedOutput(); err != nil {
+		return fmt.Errorf("copying the previous bundle failed: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	script := filepath.Join(s.Home, "update", "swap.sh")
+	if err := os.WriteFile(script, []byte(SwapScript), 0o700); err != nil {
+		return err
+	}
+	broken := filepath.Join(s.Home, "update", "Bergfried.app.replaced")
+	log := filepath.Join(s.Home, "update", "update.log")
+	args := []string{app, src, broken, LaunchLabel, BundleID, log}
+	if dbBackup != "" {
+		args = append(args, dbBackup, dbTarget)
+	}
+	return s.Launch(script, args...)
 }

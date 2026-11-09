@@ -257,3 +257,8 @@
 "wants SSH access to **%@**" = "möchte per SSH auf **%@** zugreifen";
 "wants the file **~/%@** (%lld file(s), %@)" = "möchte die Datei **~/%@** (%lld Datei(en), %@)";
 "wants the folder **~/%@** (%lld file(s), %@)" = "möchte den Ordner **~/%@** (%lld Datei(en), %@)";
+"Update channel" = "Update-Kanal";
+"Stable" = "Stabil";
+"Dev (builds from the development branch)" = "Dev (Builds aus dem Entwicklungszweig)";
+"Dev builds come from the development branch, may be broken and are not reviewed like stable releases. Switching back to stable only takes effect with the next stable release." = "Dev-Builds stammen aus dem Entwicklungszweig, können fehlerhaft sein und werden nicht wie stabile Releases geprüft. Der Wechsel zurück zu „Stabil“ wirkt erst beim nächsten stabilen Release.";
+"If an update breaks Bergfried, run this in a terminal to restore the previous version:" = "Wenn ein Update Bergfried beschädigt, stelle die vorherige Version im Terminal wieder her:";

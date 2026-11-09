@@ -1,0 +1,63 @@
+name: dev-release
+
+# Every push to the branch `dev` publishes a pre-release vX.Y.Z-dev.N (X.Y.Z = next patch after the latest stable tag,
+# N = run number). The app's "dev" update channel installs these (see docs/UPDATES.md and docs/design/release-channels.md).
+# Pre-releases are unsigned. Only the newest 10 are kept.
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+
+# Let a running publish finish; a newer push waits (only the newest waiting run is kept).
+concurrency:
+  group: dev-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Version
+        run: |
+          last=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          last=${last:-v0.0.0}
+          IFS=. read -r maj min pat <<< "${last#v}"
+          echo "VERSION=${maj}.${min}.$((pat + 1))-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+      - run: go test ./...
+      - run: python3 scripts/check-strings.py
+      - name: Build
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/DevertNet/bergfried/daemon/internal/api.Version=$VERSION" -o bin/bergfriedd ./daemon/cmd/bergfriedd
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp
+          app/build.sh
+      - name: Package
+        run: |
+          cd app/build
+          ditto -c -k --keepParent Bergfried.app "Bergfried-${VERSION}-macos-arm64.zip"
+          shasum -a 256 "Bergfried-${VERSION}-macos-arm64.zip" > SHA256SUMS
+          cat SHA256SUMS
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${VERSION}" "app/build/Bergfried-${VERSION}-macos-arm64.zip" app/build/SHA256SUMS \
+            --prerelease --target "$GITHUB_SHA" --title "Bergfried ${VERSION} (dev)" \
+            --notes "Development build from \`dev\` at ${GITHUB_SHA::7}. Unsigned; for the app's dev update channel."
+      - name: Prune old dev pre-releases (keep 10)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list --limit 200 --json tagName,isPrerelease,createdAt \
+            -q '[.[] | select(.isPrerelease and (.tagName | test("-dev\\.[0-9]+$")))] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' |
+          while read -r tag; do
+            [ -n "$tag" ] && gh release delete "$tag" --cleanup-tag --yes
+          done

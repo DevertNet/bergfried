@@ -1,0 +1,9 @@
+# App texts that are identical in German (one key per line)
+%@ – %@
+Agent %@
+Agents (%lld)
+Repo: **%@**
+Revision %lld
+SSH %@/%@ → %@ …
+Sandbox %@ · %@ · %@
+v%lld – %@

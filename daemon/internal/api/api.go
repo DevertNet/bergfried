@@ -194,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
 	mux.HandleFunc("GET /v1/update", s.updateInfo)
 	mux.HandleFunc("POST /v1/update/install", s.updateInstall)
+	mux.HandleFunc("PUT /v1/update/channel", s.updateChannel)
 	mux.HandleFunc("GET /v1/github/link", s.githubLink)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
@@ -399,6 +400,23 @@ func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
 		info = s.Upd.Check(r.Context())
 	}
 	writeJSON(w, 200, info)
+}
+
+// updateChannel switches between "stable" and "dev" and checks again right away.
+func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Channel string `json:"channel"`
+	}
+	if err := decode(r, &q); err != nil || s.Upd == nil {
+		fail(w, 400, fmt.Errorf("invalid request"))
+		return
+	}
+	if err := s.Upd.SetChannel(q.Channel); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "update.channel", "", "", q.Channel)
+	writeJSON(w, 200, s.Upd.Check(r.Context()))
 }
 
 // updateInstall downloads, verifies and installs the latest release as a job; the helper then restarts daemon and app.

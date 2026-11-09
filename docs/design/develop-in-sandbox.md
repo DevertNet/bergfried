@@ -1,4 +1,6 @@
-# Plan: develop Bergfried inside a sandbox (agreed scope, not started)
+# Plan: develop Bergfried inside a sandbox (B, C, D built; A and E are yours/next)
+
+**Status (2026-11-09):** steps 4–10 are implemented (CI, dev pre-releases, channel setting and picker, rollback, `scripts/`, `CLAUDE.md` section). The dev channel **replaces the installed app** (decision: no side-by-side instance). Still open: your GitHub rulesets (A), the first end-to-end run (E), optional `swiftc -parse` in the sandbox (11).
 
 **Goal:** an agent in a Linux sandbox does most of the development of Bergfried (Go, tests, docs, Swift source edits). The macOS-only parts (building and trying the app) are covered by CI and by releases on two channels. The 25.6 GB macOS VM is postponed ([macos-sandboxes.md](macos-sandboxes.md)); the channel design is in [release-channels.md](release-channels.md).
 

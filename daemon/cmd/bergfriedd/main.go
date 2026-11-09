@@ -47,6 +47,7 @@ const usage = `bergfriedd – Bergfried CLI
     serve [--no-dialog]           daemon: index, sockets per sandbox, approval dialog (runs in the foreground)
     ssh keys|grants|allow|deny|revoke|extend   SSH grants
     requests [list|allow|deny] [id] [--confirm-large] [--all]   show/decide requests
+  update rollback [--app PATH] [--keep-database]   restore the previous app version (and database backup) after a bad update
 
 Environment: BERGFRIED_HOME (default ~/.bergfried), BERGFRIED_TEMPLATE (default vm/bergfried.yaml)
 `
@@ -123,6 +124,8 @@ func run(cmd string, args []string) error {
 			m.Imp = importer.Importer{Home: h, BL: func() index.Blocklist { return bl }}
 		}
 		return m.Create(ctx, args[0], *repo, *imp, "")
+	case "update":
+		return updateCmd(home, args)
 	case "start":
 		if err := need(1); err != nil {
 			return err
@@ -328,6 +331,27 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 		return nil
 	}
 	return err
+}
+
+// updateCmd: `bergfriedd update rollback`. Run it from the installed bundle
+// (/Applications/Bergfried.app/Contents/Resources/bergfriedd) or pass --app.
+func updateCmd(home string, args []string) error {
+	if len(args) == 0 || args[0] != "rollback" {
+		return errors.New("usage: update rollback [--app PATH] [--keep-database]")
+	}
+	fs := flag.NewFlagSet("update rollback", flag.ExitOnError)
+	app := fs.String("app", "", "path of the installed Bergfried.app (default: the bundle this binary runs from)")
+	keep := fs.Bool("keep-database", false, "do not restore the database backup")
+	_ = fs.Parse(args[1:])
+	u := update.New(getenv("BERGFRIED_UPDATE_REPO", "DevertNet/bergfried"), api.Version, home)
+	if *app != "" {
+		u.BundlePath = func() (string, error) { return *app, nil }
+	}
+	if err := u.Rollback(update.RollbackOptions{KeepDatabase: *keep}); err != nil {
+		return err
+	}
+	fmt.Println("Rollback started: the daemon and the app restart in a few seconds (log: " + filepath.Join(home, "update", "update.log") + ").")
+	return nil
 }
 
 func requests(ctx context.Context, home string, args []string) error {

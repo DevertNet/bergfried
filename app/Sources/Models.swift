@@ -14,6 +14,7 @@ struct DaemonStatus: Codable, Equatable {
 
 struct UpdateInfo: Codable {
     var current: String
+    var channel: String
     var latest: String
     var available: Bool
     var notes: String
@@ -142,6 +143,7 @@ struct SSHDecideBody: Encodable {
     var trustUnknownHost: Bool
 }
 struct IDBody: Encodable { var id: Int64 }
+struct ChannelBody: Encodable { var channel: String }
 struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
 struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = "" }
 struct PathBody: Encodable { var path: String }

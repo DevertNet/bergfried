@@ -2,6 +2,20 @@
 
 Bergfried updates itself from **GitHub releases** of this repository. One release = one asset: `Bergfried-<version>-macos-arm64.zip` (the app bundle; the daemon `bergfriedd`, `bergfried-mcp` and the VM template are inside `Contents/Resources`), plus `SHA256SUMS`.
 
+## Channels
+Settings → Updates → **Update channel**:
+- **Stable** (default): releases tagged `vX.Y.Z`.
+- **Dev**: pre-releases `vX.Y.Z-dev.N` built from every push to the branch `dev` (`.github/workflows/dev-release.yml`; X.Y.Z = next patch after the latest stable tag, N = CI run number), **plus** stable releases. The highest version wins (`0.1.0 < 0.1.1-dev.3 < 0.1.1-dev.17 < 0.1.1`). There is no automatic downgrade: after `0.1.1-dev.17` you stay on dev until `0.1.1` or newer is published. Only the newest 10 dev pre-releases are kept.
+The channel is stored in `~/.bergfried/settings.json`. The daemon asks `GET /repos/<owner>/<repo>/releases` (the `/latest` endpoint never returns pre-releases) and ignores drafts.
+
+## Rollback
+Every update keeps the previous bundle (`~/.bergfried/update/Bergfried.app.previous`) and a database backup (`~/.bergfried/update/backup-<old version>/`). If an update breaks Bergfried:
+```bash
+/Applications/Bergfried.app/Contents/Resources/bergfriedd update rollback            # app + database
+/Applications/Bergfried.app/Contents/Resources/bergfriedd update rollback --keep-database   # app only
+```
+(`--app PATH` if the bundle lives elsewhere.) The helper stops daemon and app, restores both and restarts; log: `~/.bergfried/update/update.log`. Database migrations are forward-only, so restore the backup when the new version changed the schema.
+
 ## Flow
 1. **Release:** pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml` on a macOS runner: tests, build (`go build` for darwin/arm64 and linux/arm64, `app/build.sh` with `VERSION`), zip, `SHA256SUMS`, GitHub release with generated notes.
 2. **Check:** the daemon asks `GET /repos/<owner>/<repo>/releases/latest` (public repo, no token) at start and every 6 hours; the app shows "Update available" (banner in the sandbox list and in Settings → Updates) with the release notes.
