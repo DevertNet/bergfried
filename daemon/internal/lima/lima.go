@@ -2,6 +2,7 @@
 package lima
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,9 +11,90 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
+
+type outputKey struct{}
+
+// WithOutput attaches a callback that receives the output lines of long-running limactl calls (create, clone, start) while they run.
+func WithOutput(ctx context.Context, f func(line string)) context.Context {
+	return context.WithValue(ctx, outputKey{}, f)
+}
+
+// Output hands one line to the callback of the context (no-op without one).
+func Output(ctx context.Context, line string) {
+	if f, ok := ctx.Value(outputKey{}).(func(string)); ok && f != nil {
+		f(line)
+	}
+}
+
+var limaMsgRe = regexp.MustCompile(`level=(\w+) msg="((?:[^"\\]|\\.)*)"`)
+
+// CleanLine turns limactl's logfmt (`time=… level=info msg="…"`) into the plain message; other lines are returned as they are.
+func CleanLine(l string) string {
+	m := limaMsgRe.FindStringSubmatch(l)
+	if m == nil {
+		return strings.TrimSpace(l)
+	}
+	msg := strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(m[2])
+	if m[1] != "info" && m[1] != "debug" {
+		msg = m[1] + ": " + msg
+	}
+	return msg
+}
+
+// LineRunner is an optional capability of a Runner: stream output lines while the command runs.
+type LineRunner interface {
+	RunLines(ctx context.Context, onLine func(string), args ...string) ([]byte, error)
+}
+
+func (r ExecRunner) RunLines(ctx context.Context, onLine func(string), args ...string) ([]byte, error) {
+	bin := r.Bin
+	if bin == "" {
+		bin = "limactl"
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	pipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	var errText bytes.Buffer
+	var mu sync.Mutex
+	sc := bufio.NewScanner(pipe)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		line := sc.Text()
+		mu.Lock()
+		errText.WriteString(line + "\n")
+		mu.Unlock()
+		if onLine != nil {
+			if c := CleanLine(line); c != "" {
+				onLine(c)
+			}
+		}
+	}
+	if err := cmd.Wait(); err != nil {
+		return out.Bytes(), fmt.Errorf("limactl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errText.String()+out.String()))
+	}
+	return out.Bytes(), nil
+}
+
+// RunLines runs a limactl command and sends its output lines to the callback attached with WithOutput (falls back to Run).
+func (c Client) RunLines(ctx context.Context, args ...string) ([]byte, error) {
+	if lr, ok := c.R.(LineRunner); ok {
+		f, _ := ctx.Value(outputKey{}).(func(string))
+		return lr.RunLines(ctx, f, args...)
+	}
+	return c.R.Run(ctx, args...)
+}
 
 type Runner interface {
 	Run(ctx context.Context, args ...string) ([]byte, error)
@@ -87,14 +169,14 @@ func (c Client) Create(ctx context.Context, name, template, inDir, outDir string
 	return err
 }
 func (c Client) Start(ctx context.Context, name string) error {
-	_, err := c.R.Run(ctx, "start", "--tty=false", name)
+	_, err := c.RunLines(ctx, "start", "--tty=false", name)
 	return err
 }
 
 // StartWithTimeout starts an instance and waits up to d for it to be running (Lima's default is 10 minutes, `limactl start --timeout`,
 // available since Lima 2.0). The first start of a base VM runs the whole provisioning (apt, Docker, Claude Code) and can take longer.
 func (c Client) StartWithTimeout(ctx context.Context, name string, d time.Duration) error {
-	_, err := c.R.Run(ctx, "start", "--tty=false", "--timeout="+d.String(), name)
+	_, err := c.RunLines(ctx, "start", "--tty=false", "--timeout="+d.String(), name)
 	return err
 }
 

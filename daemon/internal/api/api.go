@@ -23,6 +23,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
+	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
@@ -50,12 +51,15 @@ type Server struct {
 	next int64
 }
 
+const maxJobLog = 300
+
 type Job struct {
-	ID    int64  `json:"id"`
-	Kind  string `json:"kind"`
-	Step  string `json:"step,omitempty"`
-	State string `json:"state"` // running | done | failed
-	Error string `json:"error,omitempty"`
+	ID    int64    `json:"id"`
+	Kind  string   `json:"kind"`
+	Step  string   `json:"step,omitempty"`
+	Log   []string `json:"log,omitempty"` // the last lines of output of long-running steps (limactl, VM provisioning)
+	State string   `json:"state"`         // running | done | failed
+	Error string   `json:"error,omitempty"`
 }
 
 func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
@@ -79,6 +83,14 @@ func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *J
 		ctx := sandbox.WithProgress(context.Background(), func(msg string) {
 			s.mu.Lock()
 			j.Step = msg
+			s.mu.Unlock()
+		})
+		ctx = lima.WithOutput(ctx, func(line string) {
+			s.mu.Lock()
+			j.Log = append(j.Log, line)
+			if len(j.Log) > maxJobLog {
+				j.Log = append([]string(nil), j.Log[len(j.Log)-maxJobLog:]...)
+			}
 			s.mu.Unlock()
 		})
 		fmt.Fprintf(os.Stderr, "%s job %d (%s) started\n", time.Now().Format(time.RFC3339), j.ID, kind)
@@ -548,6 +560,7 @@ func (s *Server) jobGet(w http.ResponseWriter, r *http.Request) {
 	var cp Job
 	if ok {
 		cp = *j
+		cp.Log = append([]string(nil), j.Log...)
 	}
 	s.mu.Unlock()
 	if !ok {

@@ -36,11 +36,14 @@ struct SandboxesView: View {
             } else {
                 List {
                     ForEach(creating, id: \.name) { c in
-                        HStack(spacing: 10) {
-                            ProgressView().controlSize(.small)
-                            Text(c.name).font(.headline)
-                            Text(c.step).foregroundStyle(.secondary).lineLimit(1)
-                            Spacer()
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 10) {
+                                ProgressView().controlSize(.small)
+                                Text(c.name).font(.headline)
+                                Text(c.step).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer()
+                            }
+                            JobOutput(key: "create-\(c.name)")
                         }.padding(.vertical, 10).frame(minHeight: 44).fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(model.sandboxes) { s in
@@ -100,6 +103,7 @@ struct SandboxRow: View {
                 if s.pendingRequests > 0 { Label(L("%lld open", s.pendingRequests), systemImage: "bell.fill").foregroundStyle(.red) }
                 Text(L("Template r%lld", s.templateVersion))
             }.font(.caption).foregroundStyle(.secondary)
+            if let k = model.running.keys.first(where: { $0.hasSuffix(s.name) }) { JobOutput(key: k) }
             if s.probeError != nil, s.running { Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary) }
             if !s.agents.isEmpty {
                 // Agents belong to the sandbox: indented, with a guide line and their own panel.
