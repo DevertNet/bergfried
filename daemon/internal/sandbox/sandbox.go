@@ -92,6 +92,9 @@ type Manager struct {
 	DropToken func(sandbox string)
 }
 
+// baseStartTimeout: how long Lima may wait for the first start of a base VM (provisioning installs packages, Docker and Claude Code).
+const baseStartTimeout = 45 * time.Minute
+
 // baseBuildMu serialises base builds (Manager is copied by value in places, so the lock cannot live in it).
 var baseBuildMu sync.Mutex
 
@@ -186,8 +189,13 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
 		if err != nil {
 			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
+			saved := m.saveBaseFailureLogs(dctx, base, err)
 			if derr := m.L.Delete(dctx, base); derr == nil {
-				err = fmt.Errorf("%w (the unfinished base VM %s was removed; see the Diagnostics pane / Lima log of that VM)", err, base)
+				note := "the unfinished base VM " + base + " was removed"
+				if saved != "" {
+					note += "; its logs were saved to " + saved + " (Diagnostics pane → Last base build failure)"
+				}
+				err = fmt.Errorf("%w (%s)", err, note)
 			}
 		}
 	}()
@@ -195,8 +203,8 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
 	if _, err := m.L.R.Run(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
 		return err
 	}
-	progress(ctx, "Base VM is starting and being configured (several minutes)")
-	if err := m.L.Start(ctx, base); err != nil {
+	progress(ctx, "Base VM is starting and being configured (several minutes, up to 45)")
+	if err := m.L.StartWithTimeout(ctx, base, baseStartTimeout); err != nil {
 		return err
 	}
 	progress(ctx, "Stopping base VM")
@@ -215,6 +223,52 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
 		}
 	}
 	return nil
+}
+
+// BaseFailureDir holds the logs of failed base builds (the VM is deleted afterwards, so its own logs would be lost).
+func (m *Manager) BaseFailureDir() string { return filepath.Join(m.Home, "base-build-failed") }
+
+func tailLines(b []byte, n int) string {
+	l := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(l) > n {
+		l = l[len(l)-n:]
+	}
+	return strings.Join(l, "\n")
+}
+
+// saveBaseFailureLogs writes the error, Lima's host-agent and serial logs and (if the VM still answers) the cloud-init provisioning log
+// of a failed base build to BaseFailureDir. It returns the file name, or "" if nothing could be written. Best effort, never fails the caller.
+func (m *Manager) saveBaseFailureLogs(ctx context.Context, base string, cause error) string {
+	if m.Home == "" {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Base VM build failed at %s\nVM: %s\nError: %v\n", time.Now().Format(time.RFC3339), base, cause)
+	if dir, err := lima.InstanceDir(base); err == nil {
+		files, _ := filepath.Glob(filepath.Join(dir, "serial*.log"))
+		files = append(files, filepath.Join(dir, "ha.stderr.log"))
+		for _, f := range files {
+			if data, err := os.ReadFile(f); err == nil {
+				fmt.Fprintf(&b, "\n===== %s (last 150 lines) =====\n%s\n", filepath.Base(f), tailLines(data, 150))
+			}
+		}
+	}
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if out, err := m.L.Shell(sctx, base, "sudo", "tail", "-n", "200", "/var/log/cloud-init-output.log"); err == nil {
+		fmt.Fprintf(&b, "\n===== /var/log/cloud-init-output.log in the VM (last 200 lines) =====\n%s\n", out)
+	} else {
+		fmt.Fprintf(&b, "\n(cloud-init log not readable: %v)\n", err)
+	}
+	dir := m.BaseFailureDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	name := filepath.Join(dir, time.Now().Format("20060102-150405")+".log")
+	if err := os.WriteFile(name, []byte(b.String()), 0o600); err != nil {
+		return ""
+	}
+	return name
 }
 
 const firstBoot = `set -e

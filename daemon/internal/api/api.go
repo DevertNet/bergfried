@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -894,6 +895,13 @@ func (s *Server) logPath(source, vm string) (string, error) {
 		return filepath.Join(s.Home, "daemon.log"), nil
 	case "update":
 		return filepath.Join(s.Home, "update", "update.log"), nil
+	case "base":
+		fs, _ := filepath.Glob(filepath.Join(s.M.BaseFailureDir(), "*.log"))
+		if len(fs) == 0 {
+			return filepath.Join(s.M.BaseFailureDir(), "(none)"), nil
+		}
+		sort.Strings(fs)
+		return fs[len(fs)-1], nil // names are timestamps: the newest is last
 	case "lima":
 		if !limaVMRe.MatchString(vm) {
 			return "", fmt.Errorf("invalid VM name")

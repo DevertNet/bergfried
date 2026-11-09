@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,6 +64,16 @@ func has(calls []string, prefix string) bool {
 	return false
 }
 
+func TestBuildBaseStartUsesLongTimeout(t *testing.T) {
+	f := &baseFake{}
+	if err := baseMgr(t, f).BuildBase(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if !has(f.calls, "start --tty=false --timeout=45m0s ") {
+		t.Fatalf("base start must pass a long --timeout: %v", f.calls)
+	}
+}
+
 func TestBuildBaseKeepsStoppedBase(t *testing.T) {
 	f := &baseFake{base: "Stopped"}
 	if err := baseMgr(t, f).BuildBase(context.Background(), false); err != nil {
@@ -91,5 +102,32 @@ func TestBuildBaseFailureRemovesHalfBuiltVM(t *testing.T) {
 	}
 	if f.base != "" {
 		t.Fatalf("the half-built base must be deleted, status %q", f.base)
+	}
+}
+
+func TestBuildBaseFailureKeepsLogs(t *testing.T) {
+	limaHome := t.TempDir()
+	t.Setenv("LIMA_HOME", limaHome)
+	f := &baseFake{startFail: true}
+	m := baseMgr(t, f)
+	m.Home = t.TempDir()
+	vmDir := filepath.Join(limaHome, m.BaseName())
+	if err := os.MkdirAll(vmDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, "ha.stderr.log"), []byte("hostagent said something\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := m.BuildBase(context.Background(), false)
+	if err == nil || !strings.Contains(err.Error(), "logs were saved to") {
+		t.Fatalf("error: %v", err)
+	}
+	files, _ := filepath.Glob(filepath.Join(m.BaseFailureDir(), "*.log"))
+	if len(files) != 1 {
+		t.Fatalf("saved logs: %v", files)
+	}
+	b, _ := os.ReadFile(files[0])
+	if !strings.Contains(string(b), "probe failed") || !strings.Contains(string(b), "hostagent said something") || !strings.Contains(string(b), "cloud-init") {
+		t.Fatalf("log content:\n%s", b)
 	}
 }
