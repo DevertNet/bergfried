@@ -8,6 +8,20 @@ struct DaemonStatus: Codable, Equatable {
     var indexReady: Bool
     var upstreamAgent: Bool
     var sandboxes: Int
+    var updateAvailable: Bool?
+    var updateVersion: String?
+}
+
+struct UpdateInfo: Codable {
+    var current: String
+    var latest: String
+    var available: Bool
+    var notes: String
+    var url: String
+    var checkedUnix: Int64
+    var error: String?
+    var updatable: Bool
+    var reason: String?
 }
 
 struct AgentInfo: Codable, Hashable {

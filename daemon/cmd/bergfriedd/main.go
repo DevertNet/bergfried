@@ -26,6 +26,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/rpc"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
+	"github.com/DevertNet/bergfried/daemon/internal/update"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -307,7 +308,13 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	am.Actor = "app"
 	mon := api.NewMonitor(&am)
 	go mon.Run(ctx)
-	apiSrv := &api.Server{GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	upd := update.New(getenv("BERGFRIED_UPDATE_REPO", "DevertNet/bergfried"), api.Version, home)
+	if v := os.Getenv("BERGFRIED_UPDATE_API"); v != "" { // development/tests only
+		upd.API = v
+	}
+	upd.Backup = m.S.Backup
+	go upd.Run(ctx)
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

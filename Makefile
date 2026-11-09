@@ -1,5 +1,6 @@
 # Go wird in Docker gebaut – lokal ist kein Go nötig.
 GO_IMAGE ?= golang:1.26
+VERSION ?= 0.0.0-dev
 DOCKER_GO = docker run --rm \
 	-v "$(CURDIR)":/src -w /src \
 	-v bergfried-gomod:/go/pkg/mod -v bergfried-gobuild:/root/.cache/go-build \
@@ -8,7 +9,7 @@ DOCKER_GO = docker run --rm \
 .PHONY: build test vet fmt
 build: ## bergfriedd (macOS arm64) und bergfried-mcp (Linux arm64)
 	mkdir -p bin
-	$(DOCKER_GO) sh -c 'GOOS=darwin GOARCH=arm64 go build -o bin/bergfriedd ./daemon/cmd/bergfriedd && GOOS=linux GOARCH=arm64 go build -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp'
+	$(DOCKER_GO) sh -c 'GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/DevertNet/bergfried/daemon/internal/api.Version=$(VERSION)" -o bin/bergfriedd ./daemon/cmd/bergfriedd && GOOS=linux GOARCH=arm64 go build -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp'
 
 test:
 	$(DOCKER_GO) sh -c 'go test ./...'

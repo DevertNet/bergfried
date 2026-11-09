@@ -17,6 +17,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
+	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
 
 type fakeLima struct{}
@@ -191,5 +192,44 @@ func TestGitHubDecideNeverEchoesToken(t *testing.T) {
 	_, audit := do(t, "GET", ts.URL+"/v1/audit?q=ghtoken", "")
 	if strings.Contains(list, tok) || strings.Contains(audit, tok) || !strings.Contains(audit, "ghtoken.allowed") {
 		t.Fatalf("Token in Liste/Protokoll: %s %s", list, audit)
+	}
+}
+
+func TestUpdateEndpoints(t *testing.T) {
+	s, ts := srv(t)
+	if code, _ := do(t, "GET", ts.URL+"/v1/update", ""); code != 404 {
+		t.Fatalf("without update service: %d", code)
+	}
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"tag_name":"v9.9.9","body":"notes","html_url":"u","assets":[]}`))
+	}))
+	defer gh.Close()
+	s.Upd = update.New("o/r", "0.0.0-dev", t.TempDir())
+	s.Upd.API = gh.URL
+	s.Upd.BundlePath = func() (string, error) { return "", fmt.Errorf("not running from an app bundle") }
+	code, body := do(t, "GET", ts.URL+"/v1/update?refresh=1", "")
+	if code != 200 || !strings.Contains(body, `"latest":"9.9.9"`) || !strings.Contains(body, `"updatable":false`) {
+		t.Fatalf("%d %s", code, body)
+	}
+	if _, st := do(t, "GET", ts.URL+"/v1/status", ""); strings.Contains(st, "update_available") {
+		t.Fatalf("a release without assets must not be offered: %s", st)
+	}
+	// install outside an app bundle fails as a job with a clear message
+	code, body = do(t, "POST", ts.URL+"/v1/update/install", "{}")
+	if code != 202 {
+		t.Fatalf("%d %s", code, body)
+	}
+	var j Job
+	_ = json.Unmarshal([]byte(body), &j)
+	for i := 0; i < 100; i++ {
+		_, b := do(t, "GET", fmt.Sprintf("%s/v1/jobs/%d", ts.URL, j.ID), "")
+		_ = json.Unmarshal([]byte(b), &j)
+		if j.State != "running" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if j.State != "failed" || !strings.Contains(j.Error, "app bundle") {
+		t.Fatalf("%+v", j)
 	}
 }

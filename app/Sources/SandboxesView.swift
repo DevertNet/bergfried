@@ -24,6 +24,13 @@ struct SandboxesView: View {
                 Label("Base VM missing – it is built when you create the first sandbox (a few minutes).", systemImage: "info.circle")
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.yellow.opacity(0.15))
             }
+            if let st = model.status, st.updateAvailable == true {
+                HStack {
+                    Label(L("Update available: version %@", st.updateVersion ?? ""), systemImage: "arrow.down.circle.fill")
+                    Spacer()
+                    Button("Open Settings") { model.pane = .settings }
+                }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.12))
+            }
             if model.sandboxes.isEmpty && creating.isEmpty {
                 ContentUnavailableView("No sandboxes", systemImage: "shield", description: Text("Create an isolated VM with \"New sandbox\"."))
             } else {
@@ -79,7 +86,7 @@ struct SandboxRow: View {
             HStack {
                 Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
                 Text(s.name).font(.headline)
-                Text(s.status).foregroundStyle(.secondary)
+                Text(LocalizedStringKey(s.status)).foregroundStyle(.secondary)
                 if s.running { loginBadge }
                 Spacer()
                 if let b = busy { ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary) }

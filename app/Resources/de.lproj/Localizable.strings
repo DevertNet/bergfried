@@ -31,12 +31,14 @@
 "Approve" = "Freigeben";
 "Audit log" = "Protokoll";
 "Automatic (iTerm if installed)" = "Automatisch (iTerm, falls installiert)";
+"Available" = "Verfügbar";
 "Base" = "Basis";
 "Base VM" = "Basis-VM";
 "Base VM missing – it is built when you create the first sandbox (a few minutes)." = "Basis-VM fehlt – sie wird beim ersten Erstellen gebaut (einige Minuten).";
 "Bergfried – test notification" = "Bergfried – Testmitteilung";
 "Blocklist (never indexed, never shareable)" = "Sperrliste (nie im Index, nie freigebbar)";
 "Blocklist saved, the index is being rebuilt." = "Sperrliste gespeichert, Index wird neu aufgebaut.";
+"Broken" = "Defekt";
 "Build now" = "Jetzt bauen";
 "Building base VM (several minutes) …" = "Basis-VM wird gebaut (mehrere Minuten) …";
 "Bundled template restored." = "Mitgelieferte Vorlage wiederhergestellt.";
@@ -44,6 +46,7 @@
 "Changes" = "Änderungen";
 "Check access" = "Zugriff prüfen";
 "Check and save" = "Prüfen und speichern";
+"Check now" = "Jetzt prüfen";
 "Checking Claude status …" = "Claude-Status wird geprüft …";
 "Choose" = "Auswählen";
 "Choose folder …" = "Ordner wählen …";
@@ -97,13 +100,18 @@
 "If no banners appear: in System Settings → Notifications → Bergfried set the notification style to \"Banners\" or \"Alerts\" and allow notifications." = "Erscheinen keine Banner: In den Systemeinstellungen → Mitteilungen → Bergfried den Mitteilungsstil auf „Banner“ oder „Hinweise“ stellen und Mitteilungen erlauben.";
 "If you can see this, notifications work." = "Wenn du das siehst, funktionieren Mitteilungen.";
 "In addition the dock icon bounces, and the menu bar icon and the dock badge show the number of open requests." = "Zusätzlich springt das Dock-Symbol, und das Menüleisten-Symbol sowie das Dock-Badge zeigen die Zahl offener Anfragen.";
+"Install and restart" = "Installieren und neu starten";
 "Install and start daemon" = "Daemon installieren und starten";
+"Install version %@ …" = "Version %@ installieren …";
+"Install version %@?" = "Version %@ installieren?";
+"Installing the update …" = "Update wird installiert …";
 "Invalid VM name" = "Ungültiger VM-Name";
 "Invalid chunk size" = "Ungültige Chunk-Größe";
 "Invalid name" = "Ungültiger Name";
 "Invalid response from the daemon" = "Ungültige Antwort des Daemons";
 "Invalid status line" = "Ungültige Statuszeile";
 "Large approval" = "Große Freigabe";
+"Last check failed: %@" = "Letzte Prüfung fehlgeschlagen: %@";
 "Last permission request: %@" = "Letzte Berechtigungsanfrage: %@";
 "Name patterns (glob on file names, e.g. .env.*)" = "Namensmuster (Glob auf Dateinamen, z. B. .env.*)";
 "New agent in \"%@\"" = "Neuer Agent in „%@“";
@@ -120,6 +128,7 @@
 "On the Mac the VM disk uses %@ (sparse, at most %@). Inside the VM %@ are used." = "Auf dem Mac belegt die VM-Platte %@ (sparse, maximal %@). Innerhalb der VM sind %@ belegt.";
 "Only what passes `limactl validate` and keeps the isolation is saved: no mounts (home!), no forwardAgent, no Docker socket, both Bergfried sockets stay. After saving a new base VM is due (\"Build now\" above); existing sandboxes stay unchanged." = "Gespeichert wird nur, was `limactl validate` besteht und die Isolation wahrt: keine Mounts (Home!), kein forwardAgent, kein Docker-Socket, die beiden Bergfried-Sockets bleiben. Nach dem Speichern wird eine neue Basis-VM fällig (oben „Jetzt bauen“); bestehende Sandboxes bleiben unverändert.";
 "Open RC link" = "RC-Link öffnen";
+"Open Settings" = "Einstellungen öffnen";
 "Open notification settings" = "Mitteilungs-Einstellungen öffnen";
 "Open requests" = "Offene Anfragen";
 "Open the token list on GitHub …" = "Token-Liste bei GitHub öffnen …";
@@ -134,6 +143,8 @@
 "Rebuild" = "Neu bauen";
 "Refresh" = "Aktualisieren";
 "Refresh status" = "Status aktualisieren";
+"Release notes" = "Änderungen";
+"Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running." = "Releases sind nicht signiert: Das Update wird nur gegen seine Prüfsumme geprüft. Installiere nur, wenn du diesem Repository und seinen Betreuern vertraust. Daemon und App starten neu; laufende Sandboxes laufen weiter.";
 "Reload" = "Neu laden";
 "Remote Control active" = "Remote Control aktiv";
 "Remote Control is running – mark as active" = "Remote Control läuft – als aktiv markieren";
@@ -149,6 +160,7 @@
 "Restart" = "Neu starten";
 "Restart daemon" = "Daemon neu starten";
 "Revoke" = "Entziehen";
+"Running" = "Läuft";
 "SSH access for %@/%@" = "SSH-Zugriff für %@/%@";
 "SSH request: %@/%@" = "SSH-Anfrage: %@/%@";
 "SSH upstream agent" = "SSH-Upstream-Agent";
@@ -164,6 +176,7 @@
 "Start" = "Starten";
 "Starting …" = "Startet …";
 "Stop" = "Stoppen";
+"Stopped" = "Gestoppt";
 "Stopping …" = "Stoppt …";
 "Target: **%@**" = "Ziel: **%@**";
 "Template" = "Vorlage";
@@ -188,6 +201,9 @@
 "Unpushed commits and unsaved changes are checked first." = "Vorher wird auf ungepushte Commits und ungesicherte Änderungen geprüft.";
 "Unsaved work in the VM" = "Ungesicherte Arbeit in der VM";
 "Unsaved work in the agent directory" = "Ungesicherte Arbeit im Agent-Verzeichnis";
+"Update available: version %@" = "Update verfügbar: Version %@";
+"Updates are not available in this setup: %@" = "Updates sind in dieser Konfiguration nicht verfügbar: %@";
+"Updates come from GitHub releases. Releases are not signed: the download is only checked against its checksum." = "Updates kommen aus GitHub-Releases. Releases sind nicht signiert: Der Download wird nur gegen seine Prüfsumme geprüft.";
 "User" = "Benutzer";
 "VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further agents as worktrees ~/work/<agent>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
 "VM status currently unavailable (the VM may still be starting)." = "Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).";
@@ -195,6 +211,7 @@
 "Where do sandboxes live?" = "Wo liegen Sandboxes?";
 "Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Sandbox.";
 "Yes, copy %@" = "Ja, %@ kopieren";
+"You are up to date." = "Du bist auf dem neuesten Stand.";
 "activating Remote Control …" = "aktiviere Remote Control …";
 "all agents" = "alle Agents";
 "allowed" = "erlaubt";
@@ -211,6 +228,7 @@
 "expired" = "abgelaufen";
 "found" = "gefunden";
 "macOS notifications" = "macOS-Mitteilungen";
+"missing" = "fehlt";
 "missing (SSH grants will not work)" = "fehlt (SSH-Freigaben gehen nicht)";
 "needs a **GitHub token** and access to **%@**" = "braucht ein **GitHub-Token** und Zugriff auf **%@**";
 "needs a **GitHub token** for git and Actions" = "braucht ein **GitHub-Token** für Git und Actions";

@@ -22,9 +22,11 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
+	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
 
-const Version = "0.4.0"
+// Version is set at build time (-ldflags "-X github.com/DevertNet/bergfried/daemon/internal/api.Version=1.2.3").
+var Version = "0.0.0-dev"
 
 type Server struct {
 	M             *sandbox.Manager // Actor "app"
@@ -35,6 +37,7 @@ type Server struct {
 	Upstream      string
 	Mon           *Monitor
 	GH            *ghtoken.Service
+	Upd           *update.Service
 
 	mu   sync.Mutex
 	jobs map[int64]*Job
@@ -189,6 +192,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
 	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
+	mux.HandleFunc("GET /v1/update", s.updateInfo)
+	mux.HandleFunc("POST /v1/update/install", s.updateInstall)
 	mux.HandleFunc("GET /v1/github/link", s.githubLink)
 	mux.HandleFunc("POST /v1/base/build", s.baseBuild)
 	mux.HandleFunc("GET /v1/jobs/{id}", s.jobGet)
@@ -245,8 +250,14 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ss, _ := s.M.S.ListSandboxes()
-	writeJSON(w, 200, map[string]any{"version": Version, "base_ready": base, "base_name": s.M.BaseName(),
-		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)})
+	st := map[string]any{"version": Version, "base_ready": base, "base_name": s.M.BaseName(),
+		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)}
+	if s.Upd != nil {
+		if u := s.Upd.Last(); u.Available {
+			st["update_available"], st["update_version"] = true, u.Latest
+		}
+	}
+	writeJSON(w, 200, st)
 }
 
 func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +279,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	pend, _ := s.M.S.ListRequests(true, 500)
 	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "fehlt", Agents: []agentJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", Agents: []agentJ{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
@@ -374,6 +385,36 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 			s.Mon.Poke(q.Sandbox)
 		}
 		return err
+	}))
+}
+
+// updateInfo: current/latest version; ?refresh=1 asks GitHub now, otherwise the cached answer is returned.
+func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
+	if s.Upd == nil {
+		fail(w, 404, fmt.Errorf("updates are not available"))
+		return
+	}
+	info := s.Upd.Last()
+	if r.URL.Query().Get("refresh") == "1" || info.Checked == 0 {
+		info = s.Upd.Check(r.Context())
+	}
+	writeJSON(w, 200, info)
+}
+
+// updateInstall downloads, verifies and installs the latest release as a job; the helper then restarts daemon and app.
+func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
+	if s.Upd == nil {
+		fail(w, 404, fmt.Errorf("updates are not available"))
+		return
+	}
+	writeJSON(w, 202, s.jobFor("update.install", "", func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+		defer cancel()
+		if err := s.Upd.Install(ctx); err != nil {
+			return err
+		}
+		_ = s.M.S.Audit("app", "update.install", "", "", "to "+s.Upd.Last().Latest+" from "+s.Upd.Current)
+		return nil
 	}))
 }
 

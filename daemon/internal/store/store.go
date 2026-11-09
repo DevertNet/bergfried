@@ -384,3 +384,10 @@ func (s *Store) DeleteAgent(sandbox, agent string) error {
 	_, err := s.DB.Exec(`DELETE FROM agents WHERE sandbox=? AND name=?`, sandbox, agent)
 	return err
 }
+
+// Backup writes a consistent copy of the database to dst (VACUUM INTO).
+func (s *Store) Backup(dst string) error {
+	_ = os.Remove(dst)
+	_, err := s.DB.Exec(`VACUUM INTO ?`, dst)
+	return err
+}

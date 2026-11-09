@@ -12,6 +12,9 @@ struct SettingsView: View {
     @Local private var tplText = ""
     @Local private var tplMsg: String?
     @Local private var tplErr: String?
+    @Local private var upd: UpdateInfo?
+    @Local private var updMsg: String?
+    @Local private var confirmUpdate = false
 
     var body: some View {
         Form {
@@ -31,6 +34,31 @@ struct SettingsView: View {
                 }
                 Text("The daemon runs as a LaunchAgent (starts at login). Log: ~/.bergfried/daemon.log").font(.caption).foregroundStyle(.secondary)
                 if let info { Text(info).font(.caption) }
+            }
+            Section("Updates") {
+                LabeledContent("Version") { Text(model.status?.version ?? "?") }
+                if let u = upd {
+                    if u.available {
+                        LabeledContent("Available") { Text(u.latest) }
+                        if !u.notes.isEmpty {
+                            Text("Release notes").font(.caption.bold())
+                            ScrollView { Text(u.notes).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 120)
+                        }
+                    } else if u.error == nil {
+                        Text("You are up to date.").font(.callout).foregroundStyle(.secondary)
+                    }
+                    if let e = u.error { Text(L("Last check failed: %@", e)).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                    if !u.updatable, let r = u.reason { Text(L("Updates are not available in this setup: %@", r)).font(.caption).foregroundStyle(.secondary) }
+                }
+                HStack {
+                    Button("Check now") { Task { await checkUpdate() } }
+                    if let u = upd, u.available, u.updatable {
+                        Button(L("Install version %@ …", u.latest)) { confirmUpdate = true }.buttonStyle(.borderedProminent).disabled(model.running["update"] != nil)
+                    }
+                    if let l = model.running["update"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
+                }
+                if let updMsg { Text(updMsg).font(.caption).textSelection(.enabled) }
+                Text("Updates come from GitHub releases. Releases are not signed: the download is only checked against its checksum.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Base VM") {
                 if let s = model.status {
@@ -102,7 +130,21 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .task { await load(); await loadTemplate(); notifStatus = await Notifier.shared.status() }
+        .confirmationDialog(L("Install version %@?", upd?.latest ?? ""), isPresented: $confirmUpdate) {
+            Button("Install and restart", role: .destructive) { Task { await installUpdate() } }
+        } message: { Text("Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running.") }
+        .task { await load(); await loadTemplate(); notifStatus = await Notifier.shared.status(); await checkUpdate(refresh: false) }
+    }
+
+    func checkUpdate(refresh: Bool = true) async {
+        updMsg = nil
+        do { upd = try await model.api.get("/v1/update" + (refresh ? "?refresh=1" : "")) } catch { updMsg = error.localizedDescription }
+        await model.refresh()
+    }
+
+    func installUpdate() async {
+        updMsg = nil
+        if let e = await model.runJob("update", L("Installing the update …"), "/v1/update/install", NameBody(name: "update")) { updMsg = e }
     }
 
     func load() async {
