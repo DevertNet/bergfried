@@ -548,8 +548,7 @@ func (m *Manager) AgentAdd(ctx context.Context, sandbox, agent string) error {
 		return err
 	}
 	setup := fmt.Sprintf(`set -e
-if [ -d ~/work/main/.git ] && [ %[1]q != main ]; then git -C ~/work/main worktree add ~/work/%[1]s -b agent/%[1]s; else mkdir -p ~/work/%[1]s; fi
-[ -e ~/work/%[1]s/NOTES.md ] || printf '# Notizen %[1]s\n\nArbeitsstand:\n' > ~/work/%[1]s/NOTES.md`, agent)
+if [ -d ~/work/main/.git ] && [ %[1]q != main ]; then git -C ~/work/main worktree add ~/work/%[1]s -b agent/%[1]s; else mkdir -p ~/work/%[1]s; fi`, agent)
 	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", setup); err != nil {
 		return err
 	}
@@ -664,6 +663,7 @@ func (e ErrAgentDirty) Error() string {
 const agentCheck = `d=~/work/%[1]s
 [ -d "$d" ] || exit 0
 if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+  # NOTES.md: older sandboxes still have the starter file that Bergfried used to create; it never counts as unsaved work
   s=$(git -C "$d" status --porcelain -- . ':!NOTES.md' 2>/dev/null)
   u=$(git -C "$d" log --branches="agent/%[1]s" --not --remotes --oneline 2>/dev/null | head -20)
   [ -z "$s$u" ] || { echo "$s"; echo "$u"; }
