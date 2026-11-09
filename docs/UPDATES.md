@@ -28,7 +28,7 @@ Updating works only when the daemon runs from an app bundle (LaunchAgent install
 
 ## Trust model — releases are **not signed**
 The SHA-256 only protects against corrupted downloads, not against forgery. Anyone who can publish a release in this repository can ship code that runs on your Mac with your rights.
-Because the per-sandbox GitHub token has `Contents: write` on its repositories, **never include this repository in a sandbox token** unless you accept that an agent could publish a release.
+Stable releases are gated by the GitHub environment `release` (required reviewer: you), so a tag pushed by an agent only queues the release until you approve it. **Dev pre-releases are not gated**: anyone who can push to `dev` publishes one. If you put this repository into a sandbox token, follow [design/develop-in-sandbox.md](design/develop-in-sandbox.md) (no Deployments or Workflows permission).
 Mitigations that exist: you confirm every install, the release notes are shown, the previous version is kept, the database is backed up.
 Possible later hardening: signed manifests (ssh-keygen signatures or Secure Enclave key), a separate releases repository, GitHub tag/branch protection (needs a paid plan for private repos; this repository is public).
 

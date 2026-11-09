@@ -11,6 +11,11 @@ permissions:
 
 jobs:
   release:
+    # Gate: create the environment "release" in the repository settings with YOU as required reviewer BEFORE pushing a tag
+    # (Settings → Environments → release → Required reviewers). A missing environment is created without protection
+    # and the job would run unattended. Approving needs a login (or a token with the "Deployments: write" permission,
+    # which sandbox tokens must not have), so an agent that can push a tag cannot ship the release by itself.
+    environment: release
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

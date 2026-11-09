@@ -23,7 +23,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 - App strings: use `L("…")`/`LT("…")` (English key) and add the German text to `app/Resources/de.lproj/Localizable.strings`; text that is identical in German goes into `app/Resources/same-in-german.txt`; `scripts/check-strings.py` enforces both.
 
 ## Releasing
-`git tag vX.Y.Z && git push origin vX.Y.Z` runs `.github/workflows/release.yml` (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
+`git tag vX.Y.Z && git push origin vX.Y.Z` queues `.github/workflows/release.yml`, which waits for your approval of the environment `release` (Settings → Environments → `release` → Required reviewers; create it first), then runs (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
 Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`.
 
 ## Conventions

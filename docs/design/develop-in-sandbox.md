@@ -21,9 +21,14 @@ flowchart LR
 
 ## Steps
 **A. Repository and GitHub (you, before any agent gets the repo)**
-1. Make the repository public.
-2. Rulesets (free for public repos): `main` — pull request + your approval, no bypass for the token's account; tags `v*` — creation restricted, no bypass for the token's account; `dev` — pull request with green CI required, agents may merge; feature branches `agent/*` open.
-3. Sandbox token for this repo: only this repository, Contents RW, Pull requests RW, Actions RW (read logs, re-run), no Workflows permission.
+1. Repository public (done).
+2. **Important — a token of your own account cannot be told apart from you.** Rulesets and branch protection are identity based; the sandbox token acts as *you*, so "no bypass for the token's account" would lock you out as well, and a bypass for you also bypasses the agent. What does hold with your own token:
+   - **Environment `release` with you as required reviewer** (Settings → Environments; free for public repos — GitHub docs). `release.yml` uses it, so a tag pushed by an agent only *queues* the stable release until you approve it in the GitHub UI. Approving through the API needs the token permission **Deployments: write** (GitHub docs, "Review pending deployments"), which the sandbox token must **not** have. **Create the environment with the reviewer before the next tag** — a missing environment is created without protection.
+   - **No Workflows permission** in the token, so it cannot edit `.github/workflows/` (it could otherwise remove the gate).
+   - **Actions: Read only** for this repository (enough for `scripts/ci-status.sh`; no dispatching or re-running runs).
+   - Optional: a ruleset for tags `v*` and a ruleset for `main` (pull request required) are still worth having against accidents (force pushes, deleting `main`, rewriting tags); they do not stop an agent that acts as you.
+   - Stronger separation needs a **second GitHub identity** (a bot account in an organisation that owns the repository, with write access only) so that rulesets and required reviews apply to it. Not verified: fine-grained tokens only reach repositories owned by the token's resource owner (user or organisation), so this likely means moving the repository into an organisation.
+3. Sandbox token for this repository: only this repository, Contents RW, Pull requests RW, Actions **Read**, no Workflows, no Deployments. (The link in the app pre-fills Actions write; lower it when you create the token for this repo.)
 
 **B. CI and releases (agent can do, you review the workflow files — the token cannot change them)**
 4. `ci.yml`: every branch + PRs; add a **strings check** (every `L("…")` key present in `de.lproj`) and `swiftc -parse` style checks where possible.
@@ -54,7 +59,7 @@ flowchart LR
 - If a **second** Bergfried instance (a dev build next to the stable one) is ever run against the same Lima home, it would clean up "old" base VMs and mix up names. Do not do that without a name prefix per instance (not built; open design question: side-by-side "Bergfried Dev" with its own bundle id, data directory and VM prefix).
 
 **Security**
-- The agent's token can push to `dev` and so publish a dev pre-release; installing still needs your confirmation. A stable tag or a push to `main` must be blocked by the rulesets in step 2 — without them the agent could ship code to your Mac. Releases are unsigned.
+- The agent's token can push to `dev` and so publish a dev pre-release (not gated; installing still needs your confirmation in the app). A stable release needs your approval of the `release` environment (step A2). A push to `main` or a `v*` tag cannot be blocked by rulesets while the token is yours, but it cannot ship a stable release without your approval; what lands on `main` still reaches users with the *next* stable tag, so review it. Releases are unsigned.
 - The token lives in the VM and is readable by the agent (documented trade-off, [../GITHUB.md](../GITHUB.md)); a public repo lowers what a leak exposes.
 
 **Process and cost**
@@ -65,4 +70,4 @@ flowchart LR
 - The agent is not a replacement for review: keep pull requests small, and read changes in `daemon/internal/{broker,access,index,importer,update}` yourself (security-relevant).
 
 ## Order of work
-A (you) → B + D in parallel → C → E. Nothing in C or E starts before the rulesets in A exist.
+A (you) → B + D in parallel → C → E. Nothing in E starts before the environment and token settings in A exist.

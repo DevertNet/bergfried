@@ -31,7 +31,7 @@ Revoking happens on GitHub; Bergfried only deletes its own copies when the sandb
 
 ## Updates
 The app can update itself from GitHub releases. **Releases are not signed**: whoever can publish a release in this repository can ship code that runs on your Mac.
-The sandbox token has `Contents: write` on its selected repositories, so **do not include this repository in a sandbox token** unless you accept that an agent could publish a release. See [UPDATES.md](UPDATES.md).
+Stable releases wait for approval of the GitHub environment `release`; dev pre-releases (push to `dev`) are not gated. A token of your own account cannot be separated from you by rulesets, so keep the **Deployments** and **Workflows** permissions out of sandbox tokens. See [UPDATES.md](UPDATES.md) and [design/develop-in-sandbox.md](design/develop-in-sandbox.md).
 
 ## Known gaps
 - A host key shown for an unknown SSH host must be verified by you; an approved grant could be used by the agent to add its own key to `authorized_keys` on the target. Use a restricted user whose `authorized_keys` is root-owned for important servers.
