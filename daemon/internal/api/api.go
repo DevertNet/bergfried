@@ -428,6 +428,7 @@ func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, s.jobFor("update.install", "", func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 		defer cancel()
+		ctx = update.WithReport(ctx, func(m string) { sandbox.Progress(ctx, m) })
 		if err := s.Upd.Install(ctx); err != nil {
 			return err
 		}

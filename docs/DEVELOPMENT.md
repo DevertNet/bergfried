@@ -18,8 +18,8 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 
 ## Branches, CI and builds
 - Work on `agent/<topic>` branches; `ci.yml` runs Go tests, `scripts/check-strings.py` (German translations) and a macOS app build on **every** branch and pull request.
-- Merge into **`dev`** (pull request, CI green) to publish a dev pre-release (`dev-release.yml`); merge `dev` into `main` and tag `vX.Y.Z` for a stable release.
-- `scripts/pr.sh open <base> "<title>"` / `scripts/pr.sh merge <n>` (merges only with green CI) and `scripts/release.sh vX.Y.Z [--dry-run]` (tags a green, up-to-date `main`) do the pull-request and release steps with plain curl + the token.
+- Merge into **`dev`** (pull request, CI green) to publish a dev pre-release (`dev-release.yml`); merge `dev` into `main` and tag `vX.Y.Z` for a stable release — **stable releases only on the explicit request of the maintainer** (agents too: `scripts/pr.sh merge <n> --user-approved` into `main` and `scripts/release.sh vX.Y.Z --user-approved` refuse without that flag).
+- `scripts/pr.sh open <base> "<title>"` / `scripts/pr.sh merge <n>` (merges only with green CI) and `scripts/release.sh vX.Y.Z --user-approved [--dry-run]` (tags a green, up-to-date `main`) do the pull-request and release steps with plain curl + the token.
 - `scripts/ci-status.sh [branch]` shows the latest runs and the end of a failed job's log with plain `curl` + the token from `~/.git-credentials` (no `gh` needed, e.g. inside a sandbox).
 - App strings: use `L("…")`/`LT("…")` (English key) and add the German text to `app/Resources/de.lproj/Localizable.strings`; text that is identical in German goes into `app/Resources/same-in-german.txt`; `scripts/check-strings.py` enforces both.
 
