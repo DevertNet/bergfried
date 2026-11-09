@@ -153,6 +153,7 @@ struct SandboxRow: View {
                     if let c = Terminal.sshCommand(vm: s.vm) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
                 }
                 Divider()
+                Button("Install tools (make, chromium, gh, git-lfs)") { Task { report(await model.runJob("tools-\(s.name)", L("Installing tools …"), "/v1/sandboxes/upgrade-tools", NameBody(name: s.name))) } }
                 Button("Claude login (once per VM)") { report(Terminal.login(vm: s.vm)) }
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {

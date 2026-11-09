@@ -25,8 +25,9 @@ type TemplateStore struct {
 	L    lima.Client
 }
 
-func (t TemplateStore) Path() string    { return filepath.Join(t.Dir, "bergfried.yaml") }
-func (t TemplateStore) revPath() string { return filepath.Join(t.Dir, "revision") }
+func (t TemplateStore) Path() string         { return filepath.Join(t.Dir, "bergfried.yaml") }
+func (t TemplateStore) seedHashPath() string { return filepath.Join(t.Dir, "seed.sha256") }
+func (t TemplateStore) revPath() string      { return filepath.Join(t.Dir, "revision") }
 
 func copyFile(src, dst string) error {
 	b, err := os.ReadFile(src)
@@ -34,6 +35,65 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, b, 0o600)
+}
+
+// knownSeedHashes are the SHA-256 sums of earlier bundled templates (git history of vm/bergfried.yaml). A copy that matches one of
+// them has never been edited by the user and may be replaced by a newer bundled template (installs from before seed.sha256 existed).
+var knownSeedHashes = map[string]bool{
+	"4a427a0d168e9f8b35359c89ec6c9f3cf85cab2b471023b95f1ce02cd534a4ae": true,
+	"31db9118829810f5b8e62cc13259e382157fb39e96883af807f711c18217be3a": true,
+	"aa94f061e79a36cc67f8cbdbc16f89fd0c8aacdc33fff7b88c94566e4ce94e0a": true,
+	"2c1ee6d8036bc743130cce0848df97a263124109a94f6272f5b4aaa111d1d2ea": true,
+	"41935cfb0f81e8ce57161411168fd48f7dec0cceb39eadcdc354bf2e5aa96c1f": true,
+	"48d7e50ad3ae31e43c5fe86a7a6294fb75907ec2c9043e52d6d76acc5e2a790c": true,
+}
+
+func sumHex(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+
+func (t TemplateStore) recordSeed(seed []byte) error {
+	return os.WriteFile(t.seedHashPath(), []byte(sumHex(seed)), 0o600)
+}
+
+// AdoptSeed replaces the user's copy by the bundled template if the bundled one changed and the copy was never edited
+// (it equals the previously adopted bundled template or a known earlier one). It reports whether it replaced the copy.
+// A copy edited by the user is left alone; see SeedNewer.
+func (t TemplateStore) AdoptSeed() (bool, error) {
+	seed, err := os.ReadFile(t.Seed)
+	if err != nil {
+		return false, err
+	}
+	cur, err := os.ReadFile(t.Path())
+	if err != nil {
+		return false, err
+	}
+	if sumHex(cur) == sumHex(seed) {
+		return false, t.recordSeed(seed) // already identical
+	}
+	last, _ := os.ReadFile(t.seedHashPath())
+	if sumHex(cur) != strings.TrimSpace(string(last)) && !knownSeedHashes[sumHex(cur)] {
+		return false, nil // edited by the user
+	}
+	if _, err := CheckTemplate(string(seed)); err != nil {
+		return false, fmt.Errorf("bundled template invalid: %w", err)
+	}
+	if err := os.WriteFile(t.Path(), seed, 0o600); err != nil {
+		return false, err
+	}
+	if err := t.recordSeed(seed); err != nil {
+		return true, err
+	}
+	return true, t.bump()
+}
+
+// SeedNewer is true if the bundled template differs from the user's edited copy and has not been adopted yet.
+func (t TemplateStore) SeedNewer() bool {
+	seed, err1 := os.ReadFile(t.Seed)
+	cur, err2 := os.ReadFile(t.Path())
+	if err1 != nil || err2 != nil || sumHex(seed) == sumHex(cur) {
+		return false
+	}
+	last, _ := os.ReadFile(t.seedHashPath())
+	return sumHex(seed) != strings.TrimSpace(string(last))
 }
 
 // Ensure creates the directory (0700) and adopts the bundled template the first time.
@@ -47,6 +107,9 @@ func (t TemplateStore) Ensure() error {
 		}
 		if err := copyFile(t.Seed, t.Path()); err != nil {
 			return err
+		}
+		if b, err := os.ReadFile(t.Seed); err == nil {
+			_ = t.recordSeed(b)
 		}
 	}
 	if _, err := os.Stat(t.revPath()); os.IsNotExist(err) {
@@ -121,9 +184,12 @@ func (t TemplateStore) Reset() error {
 	}
 	cur, _ := t.Read()
 	if cur == string(b) {
-		return nil
+		return t.recordSeed(b)
 	}
 	if err := os.WriteFile(t.Path(), b, 0o600); err != nil {
+		return err
+	}
+	if err := t.recordSeed(b); err != nil {
 		return err
 	}
 	return t.bump()

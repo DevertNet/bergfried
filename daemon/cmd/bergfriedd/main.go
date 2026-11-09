@@ -90,6 +90,11 @@ func run(cmd string, args []string) error {
 	ts := sandbox.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
 	if err := ts.Ensure(); err == nil {
 		m.Tpl = &ts
+		if adopted, aerr := ts.AdoptSeed(); aerr != nil {
+			fmt.Fprintln(os.Stderr, "WARNING: bundled VM template not adopted:", aerr)
+		} else if adopted {
+			_ = st.Audit("daemon", "template.adopt", "", "", fmt.Sprintf("revision=%d", ts.Rev()))
+		}
 	} else if cmd == "base" || cmd == "create" || cmd == "serve" {
 		return fmt.Errorf("Vorlage: %w", err)
 	}
