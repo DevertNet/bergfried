@@ -23,6 +23,11 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 - `scripts/ci-status.sh [branch]` shows the latest runs and the end of a failed job's log with plain `curl` + the token from `~/.git-credentials` (no `gh` needed, e.g. inside a sandbox).
 - App strings: use `L("…")`/`LT("…")` (English key) and add the German text to `app/Resources/de.lproj/Localizable.strings`; text that is identical in German goes into `app/Resources/same-in-german.txt`; `scripts/check-strings.py` enforces both.
 
+## Logs
+- App: menu item **Log** (daemon log with start and failure of every action, updater log, Lima's host-agent log per VM; "Copy all"). Long errors in the orange banner are cut: "Show log" opens the full text.
+- Files: `~/.bergfried/daemon.log` (stdout/stderr of the daemon; every job logs `started`, `done` or `FAILED: <full error>`), `~/.bergfried/update/update.log` (swap helper), `~/.lima/bergfried-<name>/ha.stderr.log` (Lima host agent; VM boot problems), and in the VM `/var/log/cloud-init-output.log` (provisioning).
+- API: `GET /v1/log?source=daemon|update|lima[&vm=bergfried-<name>]` returns the last 256 KB (app socket only).
+
 ## Releasing
 `git tag vX.Y.Z && git push origin vX.Y.Z` runs `.github/workflows/release.yml` (no approval gate) (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
 Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`.

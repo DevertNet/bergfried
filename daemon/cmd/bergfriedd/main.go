@@ -326,7 +326,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)
