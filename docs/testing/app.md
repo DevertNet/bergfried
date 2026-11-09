@@ -6,13 +6,14 @@ app/build.sh          # app/build/Bergfried.app (swiftc, ad-hoc signed, binaries
 open app/build/Bergfried.app
 ```
 
-1. **Settings → "Install and start daemon"** creates a LaunchAgent (`~/Library/LaunchAgents/de.einfach123.bergfried.plist`, `bergfriedd serve --no-dialog`, log `~/.bergfried/daemon.log`). Alternatively run `bergfriedd serve --no-dialog` in a terminal.
+1. **Settings → "Install and start daemon"** (runs in the background with a status text) creates a LaunchAgent (`~/Library/LaunchAgents/de.einfach123.bergfried.plist`, `bergfriedd serve --no-dialog`, log `~/.bergfried/daemon.log`). Alternatively run `bergfriedd serve --no-dialog` in a terminal.
 2. **Settings → Base VM → "Build now"** (once, a few minutes).
 3. **Sandboxes → "New sandbox"**, then "Agent +", "Terminal → Claude login" (once per VM), start/stop, delete (warning for unpushed commits, "Delete anyway" after confirmation).
 4. **Requests:** allow/deny file and folder requests (large folders need a second confirmation). SSH requests: "Decide …" → duration, key, user, scope; a new host key must be confirmed by fingerprint. Active grants with countdown, extend, revoke.
-5. **Audit log:** filter and CSV export (formulas are neutralised).
+5. **Audit log:** filter and CSV export (formulas are neutralised). **Log:** daemon log (every action logs started/done/FAILED), updater log, Lima log per VM; "Copy all".
 6. **Menu bar:** shield icon with the number of open requests; file requests can be allowed/denied right there.
-7. **Notifications** with action buttons. On first start macOS asks for notification permission — answer it before doing anything else with the app.
+7. **Index explanation:** after the daemon starts (first install and after every update) a dialog explains the macOS folder prompts; the index only starts after "Continue".
+8. **Notifications** with action buttons. On first start macOS asks for notification permission — answer it before doing anything else with the app.
 
 ## Features worth checking
 - **Edit the VM template:** Settings → "VM template". Only what passes `limactl validate` and keeps isolation is saved. A changed template means a new base VM (build once); existing sandboxes are unchanged; older base VMs are removed after a rebuild. File: `~/.bergfried/template/bergfried.yaml`.
@@ -29,4 +30,4 @@ open app/build/Bergfried.app
 - The app talks HTTP/JSON over `~/.bergfried/app.sock` (0600). `Bergfried --selftest` checks the connection.
 - With Command Line Tools only, `@State` is a macro without plugin; the app uses `@Local` (`Local.swift`).
 - Notifications need an ad-hoc signed bundle; without an Apple developer certificate macOS may treat them more strictly. The dock badge, bouncing dock icon and the menu bar counter work regardless.
-- Not visually tested by an agent in earlier phases; check layout details, notification buttons and the menu bar yourself.
+- Agents never see the UI (CI only compiles it); the maintainer checks layout, dialogs, notification buttons and the menu bar.

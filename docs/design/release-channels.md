@@ -1,4 +1,4 @@
-# Design: release channels (stable and dev) — agreed, not started
+# Design: release channels (stable and dev) — implemented
 
 Part of the larger plan [develop-in-sandbox.md](develop-in-sandbox.md).
 
@@ -31,19 +31,19 @@ Settings → Updates: a picker **Stable / Dev** with a warning for dev ("builds 
 
 ## Trust and security
 - **The dev channel is "whatever lands on `dev`".** If a sandbox token includes this repository, an agent can push to `dev` and thereby publish a pre-release that dev-channel users can install (each install still needs your confirmation in the app). Keep the stable channel for everything you rely on and use dev only on a Mac where that is acceptable.
-- **Protect on GitHub (free for public repos; you set this up):** a ruleset for `main` (pull request required, no bypass for the token's account), a ruleset for tags `v*` (creation restricted, no bypass for the token's account), `dev` left open for agents. Without the tag ruleset an agent could still create a stable `v*` tag.
+- **No rulesets (decision 2026-11-09):** a token of the owner's account cannot be told apart from the owner by rulesets. Instead: the agent publishes dev pre-releases itself and stable releases only on the maintainer's explicit request (`CLAUDE.md`, `--user-approved` in `scripts/`); the token has no Workflows or Deployments permission. See [develop-in-sandbox.md](develop-in-sandbox.md).
 - Releases remain **unsigned** ([../UPDATES.md](../UPDATES.md)).
 
 ## GitHub limits (docs: "About releases", checked 2026-11-09)
 Up to **1000 assets per release**, each file under **2 GiB**; **no limit on the total size of a release and no bandwidth limit**. The docs state no limit on the number of releases. Our assets are ~25 MB each, so the retention of 10 dev pre-releases is for tidiness only.
 
-## Plan
+## Plan (all steps done except the optional rulesets, which were decided against)
 1. Docs: this file, `UPDATES.md`, `ROADMAP.md`, `DEVELOPMENT.md`.
 2. Updater: channel setting, release list, pre-release ordering, tests.
 3. API and app: channel picker, strings (EN/DE), status field.
 4. Workflows: `ci.yml` for all branches, `dev-release.yml`, check `release.yml` rejects non-`vX.Y.Z` tags.
 5. Create the branch `dev`; run the dev workflow once and install the pre-release from the dev channel (needs the repository to be public or a token for the download).
-6. You: set up the rulesets above.
+6. ~~Rulesets~~ decided against (see Trust and security).
 
 ## Limits for the development loop
 Still manual: installing a build, notification permission and other macOS prompts, screenshots; no end-to-end tests with real VMs inside a sandbox; no signing/notarisation. Feedback loop for Swift changes: push to `dev` → CI (about 2–3 minutes) → install the pre-release. UI work is easier on your Mac with `tools/demoapi`.

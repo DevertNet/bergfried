@@ -13,7 +13,7 @@ An agent (or anything it runs, including prompt-injected instructions) misusing 
 | Use your SSH keys | Only during a grant you create (time window, key, target host key). The private key never leaves the Mac. |
 | Use GitHub | With the fine-grained token **you** created for that sandbox (see below). |
 | Reach the network | Yes (the VM has normal outbound access). |
-| `sudo` in the VM | Yes (Lima default). The boundary is the VM, not the Linux user. |
+| `sudo` in the VM | Yes (Lima default); agents are told to install missing software themselves with `sudo apt-get install`. The boundary is the VM, not the Linux user. |
 
 ## Invariants (covered by tests, please do not weaken)
 - The VM never sees your home, keys or the host Docker. Mounts: only `shared/in` (ro) and `shared/out`.
@@ -24,14 +24,17 @@ An agent (or anything it runs, including prompt-injected instructions) misusing 
 - Everything is audited (`audit` table; app "Audit log", CSV export with formula protection). Audit failures are not swallowed.
 
 ## GitHub token trade-off (deliberate)
-Each sandbox gets one fine-grained personal access token, stored **inside the VM** (`~/.git-credentials`, 0600) and used for all git operations and GitHub Actions.
+Each sandbox gets one fine-grained personal access token, stored **inside the VM** (`~/.git-credentials`, 0600; `gh` keeps a second copy in `~/.config/gh/hosts.yml`) and used for all git operations and GitHub Actions.
 The agent can read it. Within the repositories and permissions you selected it can therefore **push to any branch (including `main`, including force pushes)** — private repos on the Free plan have no branch protection —
 and workflows may expose repository secrets. Limits: choose *Only select repositories*, minimal permissions (no Workflows permission, so `.github/workflows` cannot be changed), one-year expiry, one token per sandbox.
 Revoking happens on GitHub; Bergfried only deletes its own copies when the sandbox is deleted. Details: [GITHUB.md](GITHUB.md).
 
 ## Updates
 The app can update itself from GitHub releases. **Releases are not signed**: whoever can publish a release in this repository can ship code that runs on your Mac.
-Releases are not gated: a push to `dev` or a tag `vX.Y.Z` publishes one, and by decision the agent of the development sandbox may do both. A token of your own account cannot be separated from you by rulesets. Keep the **Deployments** and **Workflows** permissions out of sandbox tokens. See [UPDATES.md](UPDATES.md) and [design/develop-in-sandbox.md](design/develop-in-sandbox.md).
+Releases are not technically gated: a push to `dev` or a tag `vX.Y.Z` publishes one. By decision the agent of the development sandbox publishes dev pre-releases on its own, but makes **stable releases only on the maintainer's explicit request** (rule in `CLAUDE.md`; `scripts/release.sh` and `scripts/pr.sh merge … main` refuse without `--user-approved`; this is a rule, not a barrier). A token of your own account cannot be separated from you by rulesets. Keep the **Deployments** and **Workflows** permissions out of sandbox tokens. See [UPDATES.md](UPDATES.md) and [design/develop-in-sandbox.md](design/develop-in-sandbox.md).
+
+## Logs
+`~/.bergfried/daemon.log` and the app's Log pane contain error texts, paths and VM names, not tokens or file contents; check before pasting a log somewhere public. The log endpoint (`GET /v1/log`) is on the owner-only app socket and reads fixed files only.
 
 ## Known gaps
 - A host key shown for an unknown SSH host must be verified by you; an approved grant could be used by the agent to add its own key to `authorized_keys` on the target. Use a restricted user whose `authorized_keys` is root-owned for important servers.

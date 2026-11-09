@@ -47,7 +47,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Get a file or folder | Only a read-only **copy**, after your approval |
 | Use SSH | Only during a **grant** (duration, key, host key); the private key never leaves the Mac |
 | Use GitHub | Through the fine-grained token you made for that sandbox (git over HTTPS, Actions via API) |
-| Anything inside its VM | Yes — install packages, run Docker, start servers (reachable on `127.0.0.1` of the Mac) |
+| Anything inside its VM | Yes — install packages (`sudo apt-get install`), run Docker, start servers (reachable on `127.0.0.1` of the Mac). The image has `git`, `gh`, `git-lfs`, `make`, Docker and headless Chromium (screenshots, rendered pages) |
 
 Security model, trade-offs and known gaps: [docs/SECURITY.md](docs/SECURITY.md). Short version: the VM is the boundary; the GitHub token inside the VM is a deliberate trade-off.
 
@@ -61,7 +61,7 @@ app/build.sh          # app/build/Bergfried.app
 open app/build/Bergfried.app
 ```
 In the app: **Settings → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. Log in to Claude once per VM, and open the agent from your phone.
-Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
+If something fails, the **Log** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.
@@ -81,7 +81,7 @@ Click **Done** (not "Move to Bin"), then use one of these:
 Updates installed from inside the app are not quarantined. Only do this if you trust the repository: releases are unsigned ([docs/SECURITY.md](docs/SECURITY.md)).
 
 ## Status
-Built by and for the author on macOS; **young software, not audited**. Unverified areas are listed in [docs/ROADMAP.md](docs/ROADMAP.md) (next: real-GitHub run, first release). A Debian VPS host is designed but postponed.
+Built by and for the author on macOS; **young software, not audited**. Releases come in two channels (stable and dev, see [docs/UPDATES.md](docs/UPDATES.md)); open work is in [docs/ROADMAP.md](docs/ROADMAP.md). The app is ad-hoc signed, so macOS asks for folder access again after each update. A Debian VPS host is designed but postponed.
 
 ## Documentation
 [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [Agent rules](CLAUDE.md)
