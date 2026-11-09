@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pull requests with plain curl + jq and the sandbox token (no gh needed).
 #   scripts/pr.sh open <base> "<title>" ["<body>"]   open a PR from the current branch into <base> (dev or main)
-#   scripts/pr.sh merge <number>                     merge a PR (squash into dev, merge commit into main), only if CI is green on its head commit
+#   scripts/pr.sh merge <number> [--user-approved]                     merge a PR (squash into dev, merge commit into main), only if CI is green on its head commit
 # REPO=owner/name overrides the repository derived from `git remote get-url origin`; GITHUB_API overrides the API base (tests).
 set -euo pipefail
 
@@ -21,7 +21,7 @@ case "${1:-}" in
     api -X POST -d "$payload" "$base_api/repos/$repo/pulls" | jq -r '"PR #\(.number): \(.html_url)"'
     ;;
   merge)
-    [ $# -eq 2 ] || { echo "usage: pr.sh merge <number>" >&2; exit 2; }
+    [ $# -ge 2 ] || { echo "usage: pr.sh merge <number> [--user-approved]" >&2; exit 2; }
     n="$2"
     pr=$(api "$base_api/repos/$repo/pulls/$n")
     state=$(echo "$pr" | jq -r .state); sha=$(echo "$pr" | jq -r .head.sha); base=$(echo "$pr" | jq -r .base.ref)
@@ -35,6 +35,10 @@ case "${1:-}" in
       exit 1
     fi
     # squash into dev (one commit per change); a real merge commit into main so dev and main do not diverge
+    if [ "$base" = "main" ] && [ "${3:-}" != "--user-approved" ]; then
+      echo "Merging into main prepares a stable release and needs the user's explicit instruction: pass --user-approved only if the user asked for it." >&2
+      exit 1
+    fi
     method=squash; [ "$base" = "main" ] && method=merge
     api -X PUT -d "{\"merge_method\":\"$method\"}" "$base_api/repos/$repo/pulls/$n/merge" | jq -r '"merged into '"$base"': \(.sha)"'
     ;;

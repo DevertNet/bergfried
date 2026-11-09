@@ -1,12 +1,16 @@
 #!/bin/bash
 # Publishes a stable release: tags the current main commit vX.Y.Z; .github/workflows/release.yml then builds and publishes it.
-#   scripts/release.sh vX.Y.Z [--dry-run]
+#   scripts/release.sh vX.Y.Z --user-approved [--dry-run]
+# Stable releases only happen when the USER explicitly asks for one; --user-approved states that (agents: never pass it on your own initiative).
 # Refuses unless: you are on an up-to-date, clean main; the version is higher than the latest stable tag; the tag does not exist;
 # CI is green for the commit. Uses plain curl + jq and the sandbox token (no gh). GITHUB_API overrides the API base (tests).
 set -euo pipefail
 
-ver="${1:-}"; dry="${2:-}"
-[[ "$ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: release.sh vX.Y.Z [--dry-run]" >&2; exit 2; }
+ver="${1:-}"; shift || true
+dry=""; approved=""
+for a in "$@"; do case "$a" in --dry-run) dry=--dry-run ;; --user-approved) approved=1 ;; *) echo "unknown option $a" >&2; exit 2 ;; esac; done
+[[ "$ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: release.sh vX.Y.Z --user-approved [--dry-run]" >&2; exit 2; }
+[ -n "$dry" ] || [ -n "$approved" ] || { echo "Stable releases need the user's explicit instruction; pass --user-approved only if the user asked for this release (use --dry-run to check)." >&2; exit 2; }
 repo="${REPO:-$(git remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')}"
 base_api="${GITHUB_API:-https://api.github.com}"
 token="$(sed -nE 's#^https://x-access-token:([^@]+)@github.com.*#\1#p' "$HOME/.git-credentials" 2>/dev/null | head -1 || true)"

@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Local private var upd: UpdateInfo?
     @Local private var updMsg: String?
     @Local private var confirmUpdate = false
+    @Local private var explainIndex = false
 
     var body: some View {
         Form {
@@ -28,9 +29,12 @@ struct SettingsView: View {
                 }
                 HStack {
                     Button(daemonInstalled ? "Restart daemon" : "Install and start daemon") {
-                        do { info = try DaemonController.install(); daemonInstalled = true } catch { info = error.localizedDescription }
+                        // First start: macOS will ask for access to many folders because the index scans the home folder. Explain it before.
+                        if !daemonInstalled && !UserDefaults.standard.bool(forKey: "indexExplained") { explainIndex = true } else { Task { await installDaemon() } }
                     }
-                    if daemonInstalled { Button("Remove daemon", role: .destructive) { info = DaemonController.uninstall(); daemonInstalled = false } }
+                        .disabled(model.running["daemon"] != nil)
+                    if daemonInstalled { Button("Remove daemon", role: .destructive) { Task { await removeDaemon() } }.disabled(model.running["daemon"] != nil) }
+                    if let l = model.running["daemon"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
                 }
                 Text("The daemon runs as a LaunchAgent (starts at login). Log: ~/.bergfried/daemon.log").font(.caption).foregroundStyle(.secondary)
                 if let info { Text(info).font(.caption) }
@@ -139,6 +143,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Why macOS asks for access to many folders", isPresented: $explainIndex) {
+            Button("Continue") { UserDefaults.standard.set(true, forKey: "indexExplained"); Task { await installDaemon() } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Right after the start, Bergfried builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
         .confirmationDialog(L("Install version %@?", upd?.latest ?? ""), isPresented: $confirmUpdate) {
             Button("Install and restart", role: .destructive) { Task { await installUpdate() } }
         } message: { Text("Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running.") }
@@ -157,9 +165,42 @@ struct SettingsView: View {
         await model.refresh()
     }
 
+    /// launchctl blocks for seconds: run it off the main thread (otherwise the beach ball appears) and show what happens.
+    func installDaemon() async {
+        info = nil
+        model.running["daemon"] = L("Registering the daemon with macOS (launchctl) …")
+        defer { model.running["daemon"] = nil }
+        let result: Result<String, Error> = await Task.detached { Result { try DaemonController.install() } }.value
+        switch result {
+        case .failure(let e): info = e.localizedDescription; return
+        case .success(let msg): info = msg; daemonInstalled = true
+        }
+        model.running["daemon"] = L("Waiting for the daemon to answer …")
+        for _ in 0..<30 {
+            await model.refresh()
+            if model.online { info = L("Daemon installed and started.") ; return }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        info = L("The daemon was started but does not answer yet. Check ~/.bergfried/daemon.log.")
+    }
+
+    func removeDaemon() async {
+        info = nil
+        model.running["daemon"] = L("Stopping and removing the daemon …")
+        defer { model.running["daemon"] = nil }
+        info = await Task.detached { DaemonController.uninstall() }.value
+        daemonInstalled = false
+    }
+
     func installUpdate() async {
         updMsg = nil
-        if let e = await model.runJob("update", L("Installing the update …"), "/v1/update/install", NameBody(name: "update")) { updMsg = e }
+        let restartMsg = L("The update is being installed: the app and daemon restart now. If nothing happens within a minute, see ~/.bergfried/update/update.log.")
+        if let e = await model.runJob("update", L("Starting the update …"), "/v1/update/install", NameBody(name: "update")) {
+            // A lost connection after the "Installing:" step is expected: the update helper stops the daemon on purpose.
+            updMsg = model.lastStep["update"]?.hasPrefix("Installing:") == true ? restartMsg : L("Update failed: %@", e)
+        } else {
+            updMsg = restartMsg
+        }
     }
 
     func load() async {

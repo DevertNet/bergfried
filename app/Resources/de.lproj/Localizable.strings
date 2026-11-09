@@ -68,6 +68,10 @@
 "Daemon not reachable" = "Daemon nicht erreichbar";
 "Daemon not reachable (%@)" = "Daemon nicht erreichbar (%@)";
 "Daemon removed." = "Daemon entfernt.";
+"Registering the daemon with macOS (launchctl) …" = "Daemon wird bei macOS angemeldet (launchctl) …";
+"Waiting for the daemon to answer …" = "Warte, bis der Daemon antwortet …";
+"The daemon was started but does not answer yet. Check ~/.bergfried/daemon.log." = "Der Daemon wurde gestartet, antwortet aber noch nicht. Siehe ~/.bergfried/daemon.log.";
+"Stopping and removing the daemon …" = "Daemon wird gestoppt und entfernt …";
 "Decide …" = "Entscheiden …";
 "Delete" = "Löschen";
 "Delete anyway" = "Trotzdem löschen";
@@ -104,7 +108,9 @@
 "Install and start daemon" = "Daemon installieren und starten";
 "Install version %@ …" = "Version %@ installieren …";
 "Install version %@?" = "Version %@ installieren?";
-"Installing the update …" = "Update wird installiert …";
+"Starting the update …" = "Update wird gestartet …";
+"The update is being installed: the app and daemon restart now. If nothing happens within a minute, see ~/.bergfried/update/update.log." = "Das Update wird installiert: App und Daemon starten gleich neu. Passiert nach einer Minute nichts, siehe ~/.bergfried/update/update.log.";
+"Update failed: %@" = "Update fehlgeschlagen: %@";
 "Invalid VM name" = "Ungültiger VM-Name";
 "Invalid chunk size" = "Ungültige Chunk-Größe";
 "Invalid name" = "Ungültiger Name";
@@ -262,3 +268,6 @@
 "Dev (builds from the development branch)" = "Dev (Builds aus dem Entwicklungszweig)";
 "Dev builds come from the development branch, may be broken and are not reviewed like stable releases. Switching back to stable only takes effect with the next stable release." = "Dev-Builds stammen aus dem Entwicklungszweig, können fehlerhaft sein und werden nicht wie stabile Releases geprüft. Der Wechsel zurück zu „Stabil“ wirkt erst beim nächsten stabilen Release.";
 "If an update breaks Bergfried, run this in a terminal to restore the previous version:" = "Wenn ein Update Bergfried beschädigt, stelle die vorherige Version im Terminal wieder her:";
+"Why macOS asks for access to many folders" = "Warum macOS den Zugriff auf viele Ordner abfragt";
+"Continue" = "Weiter";
+"Right after the start, Bergfried builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index." = "Direkt nach dem Start baut Bergfried einen Suchindex der Dateinamen in deinem Home-Ordner, damit Agenten Dateien mit list_files/search_files finden. Deshalb fragt macOS nacheinander nach Dokumenten, Schreibtisch, Downloads und weiteren Ordnern. Indexiert werden nur Namen, Größen und Datumsangaben, nie Inhalte. Den Inhalt einer Datei bekommt ein Agent erst, wenn du die Anfrage in der App freigibst. Gesperrte Orte (etwa ~/.ssh und ~/Library) werden übersprungen. Wenn du einen Ordner ablehnst, fehlt er einfach im Index.";

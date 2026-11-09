@@ -15,6 +15,8 @@ final class AppModel: ObservableObject {
     @Published var pane: Pane? = .sandboxes
     @Published var banner: String?
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
+    /// Last step text a job reported (survives the job; used to explain a lost connection during an update).
+    var lastStep: [String: String] = [:]
 
     var pendingCount: Int { requests.count }
     private var started = false
@@ -64,12 +66,13 @@ final class AppModel: ObservableObject {
     @discardableResult
     func runJob<B: Encodable>(_ key: String, _ label: String, _ path: String, _ body: B) async -> String? {
         running[key] = label
+        lastStep[key] = nil
         defer { running[key] = nil }
         do {
             let job: Job = try await api.send("POST", path, body)
             var j = job
             while j.state == "running" {
-                if let st = j.step, !st.isEmpty { running[key] = st }
+                if let st = j.step, !st.isEmpty { running[key] = st; lastStep[key] = st }
                 try await Task.sleep(nanoseconds: 700_000_000)
                 j = try await api.get("/v1/jobs/\(job.id)")
                 await refresh()

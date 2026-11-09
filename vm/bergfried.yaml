@@ -1,4 +1,4 @@
-# Bergfried VM template, version 3 (the daemon remembers the version per sandbox)
+# Bergfried VM template, version 4 (the daemon remembers the version per sandbox)
 # Deliberately NO `template:_default/mounts` -> home is not mounted.
 # The two sandbox mounts (shared/in ro, shared/out rw) are set by the daemon via `--mount`.
 minimumLimaVersion: 2.0.0
@@ -28,7 +28,7 @@ provision:
     set -eux -o pipefail
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq
+    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq make chromium
     if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | sh
     fi
