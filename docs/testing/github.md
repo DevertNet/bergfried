@@ -18,7 +18,7 @@ git clone http://127.0.0.1:8099/o/r.git $S/work   # works; with a wrong token: "
 ```
 Afterwards stop `fakegithub` and delete `/private/tmp/bft`. (Verified on 2026-11-08: clone and push with the `store` helper work, a wrong token fails.)
 
-## Manually against real GitHub (once; not done yet)
+## Manually against real GitHub (done once by the maintainer on 2026-11-09; repeat after changes to the token flow)
 1. Create a private test repo. New sandbox with a git repo: in the dialog click "Create token on GitHub …" — check the form is pre-filled (name `bergfried-<sandbox>`, one-year expiry, permissions Contents/Pull requests/Actions/Metadata), choose *Only select repositories* → only the test repo, paste the token, create.
 2. In the VM (Shell): `git -C ~/work/main push` to a branch; `ls -l ~/.git-credentials` (0600).
 3. Second repo: in the agent `git clone https://github.com/<owner>/<other-repo>` → fails → the agent calls `request_github_token` → card in "Requests" → add the repo to the token on GitHub → "Check access".

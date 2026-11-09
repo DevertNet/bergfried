@@ -1,6 +1,6 @@
-# Plan: develop Bergfried inside a sandbox (built; A is only the token, E is the first run)
+# Develop Bergfried inside a sandbox (built and verified in a first end-to-end run)
 
-**Status (2026-11-09):** steps 4–10 are implemented (CI, dev pre-releases, channel setting and picker, rollback, `scripts/`, `CLAUDE.md` section). The dev channel **replaces the installed app** (decision: no side-by-side instance). Still open: your GitHub rulesets (A), the first end-to-end run (E), optional `swiftc -parse` in the sandbox (11).
+**Status (2026-11-09):** implemented and run end to end (agent in a sandbox: branch → CI → PR into `dev` → dev pre-release → stable release; install via the dev channel and rollback on the Mac were confirmed by the maintainer). The dev channel **replaces the installed app** (decision: no side-by-side instance). No rulesets by decision (A2); stable releases only on the maintainer's explicit request. Still optional: `swiftc -parse` in the sandbox (11). The base image has `make`, `gh`, `git-lfs`, `chromium` and Docker, so the whole loop runs with the usual commands.
 
 **Goal:** an agent in a Linux sandbox does most of the development of Bergfried (Go, tests, docs, Swift source edits). The macOS-only parts (building and trying the app) are covered by CI and by releases on two channels. The 25.6 GB macOS VM is postponed ([macos-sandboxes.md](macos-sandboxes.md)); the channel design is in [release-channels.md](release-channels.md).
 
@@ -11,7 +11,7 @@ flowchart LR
   A -->|"PR into dev (CI green)"| D["branch dev"]
   D -->|"push"| R["dev-release.yml<br/>pre-release X.Y.Z-dev.N"]
   R -->|"Settings → Updates → channel dev"| M["Your Mac installs it"]
-  D -->|"you merge + tag vX.Y.Z"| S["release.yml<br/>stable release"]
+  D -->|"on your request: PR dev→main + tag vX.Y.Z"| S["release.yml<br/>stable release"]
   S -->|"channel stable"| M
   C1 -.->|"logs via GitHub API (curl + token)"| A
 ```
@@ -44,7 +44,7 @@ flowchart LR
 11. Optional: install the Swift toolchain in the sandbox for `swiftc -parse` (syntax only; SwiftUI cannot be type-checked on Linux — **untested**).
 
 **E. First run**
-12. Create a test sandbox with this repo, let the agent make a small change through the whole loop (branch → CI → PR → `dev` → pre-release → install on your Mac via the dev channel → roll back), and write down what failed.
+12. (Done 2026-11-09.) Create a test sandbox with this repo, let the agent make a small change through the whole loop (branch → CI → PR → `dev` → pre-release → install on your Mac via the dev channel → roll back), and write down what failed.
 
 ## Problems to expect
 **Verification gaps (cannot be closed inside a sandbox)**
