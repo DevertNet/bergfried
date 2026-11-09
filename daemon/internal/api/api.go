@@ -712,13 +712,14 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		AllAgents        bool   `json:"all_agents"`
 		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
+		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
 	}
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllAgents: q.AllAgents, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost})
+		AllAgents: q.AllAgents, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase)})
 	if err != nil {
 		fail(w, 409, err)
 		return
@@ -774,21 +775,23 @@ func (s *Server) extend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) {
-	ks, err := s.SSH.Keys()
-	if err != nil {
-		writeJSON(w, 200, map[string]any{"keys": []any{}, "error": err.Error()})
-		return
-	}
+	ks, err := s.SSH.KeysAll()
 	type k struct {
 		Fingerprint string `json:"fingerprint"`
 		Comment     string `json:"comment"`
 		Type        string `json:"type"`
+		Loaded      bool   `json:"loaded"`
+		Encrypted   bool   `json:"encrypted"`
 	}
 	out := []k{}
 	for _, x := range ks {
-		out = append(out, k{x.Fingerprint, x.Comment, x.Type})
+		out = append(out, k{x.Fingerprint, x.Comment, x.Type, x.Loaded, x.Encrypted})
 	}
-	writeJSON(w, 200, map[string]any{"keys": out})
+	resp := map[string]any{"keys": out}
+	if err != nil {
+		resp["error"] = err.Error() // the agent could not be listed; file keys are still offered
+	}
+	writeJSON(w, 200, resp)
 }
 
 func (s *Server) auditEntries(r *http.Request, def int) ([]auditJ, error) {

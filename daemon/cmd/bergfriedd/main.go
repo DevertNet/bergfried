@@ -280,6 +280,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	br := &broker.Broker{St: m.S, Up: broker.SocketUpstream{Path: upstream}}
 	sshSvc := broker.NewService(br, broker.ResolveHostKeys(knownHosts),
 		sandbox.Hooks{M: m, Render: broker.RenderSSHConfig}, nil, hc)
+	sshSvc.SSHDir = filepath.Join(userHome, ".ssh") // key files for passphrase keys that are not loaded in the agent
 	if !noDialog {
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach

@@ -28,3 +28,11 @@ In the agent: "I need SSH access to `server.example.com` to check X" → tool `r
 - "Only this agent" is display and audit only; technically the grant applies to the sandbox (same Linux user).
 - Broker behaviour (no session-bind → refuse, forwarding → refuse, no writes to the agent) is covered by tests in `daemon/internal/broker`.
 - The template uses `IdentityAgent /run/user/%i/bergfried-agent.sock` (system-wide); an existing `SSH_AUTH_SOCK` in the VM is not used.
+
+## Manual test: key with a passphrase that is not loaded
+Prerequisite: a key pair in `~/.ssh` with a passphrase that is **not** in your ssh-agent (`ssh-add -l` does not list it) and a test server that accepts it.
+1. In the VM run `ssh user@host`; the request card appears. "Approve": the key list shows the key with "(not loaded, passphrase)" and a passphrase field appears; "Approve" stays disabled until you typed something.
+2. A wrong passphrase: the error "wrong passphrase" appears, the request stays open, the field is empty again.
+3. The right passphrase: the grant is created, `ssh` in the VM connects. `ssh-add -l` on the Mac still does **not** list the key.
+4. Audit log: `ssh.grant_created … source=key file, decrypted in memory …`, no passphrase anywhere. Revoke the grant or let it expire: `ssh.key_unloaded` appears and a new `ssh` asks again (with a passphrase request).
+5. Extending an expired grant of such a key is refused ("decrypted key was removed …").
