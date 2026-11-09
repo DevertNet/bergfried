@@ -4,26 +4,26 @@ package bergfried.v1;
 
 option go_package = "github.com/DevertNet/bergfried/proto/gen/bergfried/v1;bergfriedv1";
 
-// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
-// Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
+// SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
+// The agent name is in the gRPC metadata "x-bergfried-agent".
 service SandboxAPI {
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse);
-  // Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
+  // Blocks until the user has decided (or the request expires).
   rpc RequestFile(AccessRequest) returns (AccessResult);
   rpc RequestFolder(AccessRequest) returns (AccessResult);
-  // SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+  // Request an SSH grant; blocks until decided.
   rpc RequestSSH(SSHAccessRequest) returns (SSHAccessResult);
-  // Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+  // Report of an SSH attempt from the VM (ssh hook): creates – without blocking – a request in the app.
   rpc SSHAttempt(SSHAttemptRequest) returns (SSHAttemptResult);
 
-  // GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
-  // in der App; blockiert, bis der Nutzer entschieden hat.
+  // GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
+  // in the app; blocks until the user has decided.
   rpc RequestGitHubToken(GitHubTokenRequest) returns (GitHubTokenResult);
 }
 
 message GitHubTokenRequest {
-  string repo = 1;     // owner/name, auf das der Zugriff fehlt (leer: es gibt noch gar kein Token)
+  string repo = 1;     // owner/name that access is missing for (empty: there is no token at all yet)
   string reason = 2;
 }
 message GitHubTokenResult {
@@ -35,15 +35,15 @@ message SSHAttemptRequest {
   string host = 1;
   string port = 2;
   string user = 3;
-  bool wait = 4;         // true: blockiert, bis die Anfrage entschieden ist (interaktives ssh)
+  bool wait = 4;         // true: blocks until the request is decided (interactive ssh)
 }
 message SSHAttemptResult {
   string message = 1;
-  // ignored | granted (aktive Freigabe) | pending | cooldown | allowed | denied | aborted
+  // ignored | granted (active grant) | pending | cooldown | allowed | denied | aborted
   string state = 2;
 }
 
-// Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
+// Admin: CLI/app -> daemon (local unix socket, 0600).
 service Admin {
   rpc ListRequests(ListRequestsRequest) returns (ListRequestsResponse);
   rpc Decide(DecideRequest) returns (DecideResponse);
@@ -55,10 +55,10 @@ service Admin {
 }
 
 message SSHAccessRequest {
-  string host = 1;       // Hostname, optional mit :port
-  int32 minutes = 2;     // nur ein Vorschlag
+  string host = 1;       // host name, optionally with :port
+  int32 minutes = 2;     // only a suggestion
   string reason = 3;
-  string user = 4;       // Benutzer auf dem Ziel, vom Agent vorgeschlagen (der Nutzer kann ihn ändern)
+  string user = 4;       // user on the target, suggested by the agent (the user can change it)
 }
 message SSHAccessResult {
   Verdict verdict = 1;
@@ -74,12 +74,12 @@ message DecideSSHRequest {
   string user = 5;
   bool all_agents = 6;
   bool per_connection = 7;
-  bool trust_unknown_host = 8;  // Host-Key war nicht in known_hosts
+  bool trust_unknown_host = 8;  // host key was not in known_hosts
 }
 message Grant {
   int64 id = 1;
   string sandbox = 2;
-  string agent = 3;      // leer = alle Agents der Sandbox
+  string agent = 3;      // empty = all agents of the sandbox
   string host = 4;
   string key_fingerprint = 5;
   string user = 6;
@@ -97,15 +97,15 @@ message ListKeysRequest {}
 message ListKeysResponse { repeated KeyInfo keys = 1; string error = 2; }
 
 message FileEntry {
-  string path = 1;       // relativ zum Home, mit "/" getrennt
+  string path = 1;       // relative to home, separated by "/"
   bool is_dir = 2;
   int64 size = 3;
   int64 mtime_unix = 4;
 }
 
 message ListFilesRequest {
-  string path = 1;       // relativ zum Home; leer = Home
-  string pattern = 2;    // optionaler Glob auf den Namen
+  string path = 1;       // relative to home; empty = home
+  string pattern = 2;    // optional glob on the name
 }
 message ListFilesResponse {
   repeated FileEntry entries = 1;
@@ -119,21 +119,21 @@ message SearchFilesResponse {
 }
 
 message AccessRequest {
-  string path = 1;       // relativ zum Home
-  string reason = 2;     // vom Agent geliefert, nur als Text anzeigen
+  string path = 1;       // relative to home
+  string reason = 2;     // supplied by the agent, display as text only
 }
 
 enum Verdict {
   VERDICT_UNSPECIFIED = 0;
   VERDICT_ALLOWED = 1;
   VERDICT_DENIED = 2;
-  VERDICT_BLOCKED = 3;   // Sperrliste, ohne Rückfrage abgelehnt
+  VERDICT_BLOCKED = 3;   // blocklist, refused without asking
   VERDICT_EXPIRED = 4;
 }
 
 message AccessResult {
   Verdict verdict = 1;
-  string vm_path = 2;    // Pfad in der VM unter shared/in/<sandbox>/...
+  string vm_path = 2;    // path in the VM under shared/in/<sandbox>/...
   string message = 3;
 }
 
@@ -156,6 +156,6 @@ message ListRequestsResponse { repeated Request requests = 1; }
 message DecideRequest {
   int64 id = 1;
   bool allow = 2;
-  bool confirm_large = 3; // zweite Bestätigung bei großen Ordnern
+  bool confirm_large = 3; // second confirmation for large folders
 }
 message DecideResponse { string message = 1; }

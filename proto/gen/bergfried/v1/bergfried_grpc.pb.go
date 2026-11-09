@@ -32,20 +32,20 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
-// Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
+// SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
+// The agent name is in the gRPC metadata "x-bergfried-agent".
 type SandboxAPIClient interface {
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	SearchFiles(ctx context.Context, in *SearchFilesRequest, opts ...grpc.CallOption) (*SearchFilesResponse, error)
-	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
+	// Blocks until the user has decided (or the request expires).
 	RequestFile(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
 	RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
-	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+	// Request an SSH grant; blocks until decided.
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
-	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+	// Report of an SSH attempt from the VM (ssh hook): creates – without blocking – a request in the app.
 	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
-	// GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
-	// in der App; blockiert, bis der Nutzer entschieden hat.
+	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
+	// in the app; blocks until the user has decided.
 	RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error)
 }
 
@@ -131,20 +131,20 @@ func (c *sandboxAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTok
 // All implementations must embed UnimplementedSandboxAPIServer
 // for forward compatibility.
 //
-// SandboxAPI: VM -> Daemon. Die Sandbox ergibt sich aus dem Socket, nie aus einem Feld.
-// Der Agent-Name steht in der gRPC-Metadata "x-bergfried-agent".
+// SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
+// The agent name is in the gRPC metadata "x-bergfried-agent".
 type SandboxAPIServer interface {
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	SearchFiles(context.Context, *SearchFilesRequest) (*SearchFilesResponse, error)
-	// Blockiert, bis der Nutzer entschieden hat (oder die Anfrage abläuft).
+	// Blocks until the user has decided (or the request expires).
 	RequestFile(context.Context, *AccessRequest) (*AccessResult, error)
 	RequestFolder(context.Context, *AccessRequest) (*AccessResult, error)
-	// SSH-Freigabe anfragen; blockiert bis zur Entscheidung.
+	// Request an SSH grant; blocks until decided.
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
-	// Meldung eines SSH-Versuchs aus der VM (ssh-Hook): legt – ohne zu blockieren – eine Anfrage in der App an.
+	// Report of an SSH attempt from the VM (ssh hook): creates – without blocking – a request in the app.
 	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
-	// GitHub-Zugriff (Token pro Sandbox, liegt in der VM): fehlt das Token oder der Zugriff auf ein Repo, startet das den Token-Ablauf
-	// in der App; blockiert, bis der Nutzer entschieden hat.
+	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
+	// in the app; blocks until the user has decided.
 	RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error)
 	mustEmbedUnimplementedSandboxAPIServer()
 }
@@ -378,7 +378,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
+// Admin: CLI/app -> daemon (local unix socket, 0600).
 type AdminClient interface {
 	ListRequests(ctx context.Context, in *ListRequestsRequest, opts ...grpc.CallOption) (*ListRequestsResponse, error)
 	Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error)
@@ -471,7 +471,7 @@ func (c *adminClient) ListKeys(ctx context.Context, in *ListKeysRequest, opts ..
 // All implementations must embed UnimplementedAdminServer
 // for forward compatibility.
 //
-// Admin: CLI/App -> Daemon (lokaler Unix-Socket, 0600).
+// Admin: CLI/app -> daemon (local unix socket, 0600).
 type AdminServer interface {
 	ListRequests(context.Context, *ListRequestsRequest) (*ListRequestsResponse, error)
 	Decide(context.Context, *DecideRequest) (*DecideResponse, error)

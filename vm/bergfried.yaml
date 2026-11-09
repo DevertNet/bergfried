@@ -1,6 +1,6 @@
-# Bergfried-VM-Vorlage, Version 3 (der Daemon merkt sich die Version je Sandbox)
-# Bewusst KEIN `template:_default/mounts` -> Home wird nicht gemountet.
-# Die zwei Sandbox-Mounts (shared/in ro, shared/out rw) setzt der Daemon per `--mount`.
+# Bergfried VM template, version 3 (the daemon remembers the version per sandbox)
+# Deliberately NO `template:_default/mounts` -> home is not mounted.
+# The two sandbox mounts (shared/in ro, shared/out rw) are set by the daemon via `--mount`.
 minimumLimaVersion: 2.0.0
 
 base:
@@ -14,7 +14,7 @@ disk: "60GiB"
 mounts: []
 mountType: virtiofs
 
-# Kein Docker-Socket nach außen, kein Agent-Forwarding: Isolation per Default.
+# No Docker socket to the outside, no agent forwarding: isolation by default.
 ssh:
   forwardAgent: false
 containerd:
@@ -32,9 +32,9 @@ provision:
     if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | sh
     fi
-    # Docker nur für den VM-User, kein Socket-Forwarding zum Host.
+    # Docker for the VM user only, no socket forwarding to the host.
     usermod -aG docker "{{.User}}"
-    # SSH nur über den Broker, ohne ControlMaster (Verbindungen leben nicht über eine Freigabe hinaus).
+    # SSH only through the broker, without ControlMaster (connections do not outlive a grant).
     mkdir -p /etc/ssh/ssh_config.d
     cat > /etc/ssh/ssh_config.d/50-bergfried.conf <<'CONF'
     Host *
@@ -50,13 +50,13 @@ provision:
     command -v claude >/dev/null 2>&1 && exit 0
     curl -fsSL https://claude.ai/install.sh | bash
     grep -q '.local/bin' ~/.profile || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
-# Daemon-Socket: in der VM lauscht /run/user/<uid>/bergfried.sock, Verbindungen gehen an den
-# Socket des Mac-Daemons dieser Instanz. Die Sandbox ergibt sich aus dem Socket-Pfad auf dem Mac.
+# Daemon socket: /run/user/<uid>/bergfried.sock listens in the VM, connections go to the
+# socket of this instance's Mac daemon. The sandbox is derived from the socket path on the Mac.
 portForwards:
 - guestSocket: "/run/user/{{.UID}}/bergfried.sock"
   hostSocket: "{{.Dir}}/sock/bergfried.sock"
   reverse: true
-# SSH-Broker: ssh-agent-Socket des Mac-Daemons (signiert nur während einer Freigabe).
+# SSH broker: ssh-agent socket of the Mac daemon (signs only during a grant).
 - guestSocket: "/run/user/{{.UID}}/bergfried-agent.sock"
   hostSocket: "{{.Dir}}/sock/ssh-agent.sock"
   reverse: true

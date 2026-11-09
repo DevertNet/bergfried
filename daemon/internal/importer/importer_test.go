@@ -107,16 +107,16 @@ func TestRejectedPaths(t *testing.T) {
 	_ = os.Symlink(outside, link)
 	_ = os.Symlink(filepath.Join(home, ".ssh"), filepath.Join(home, "sshdir"))
 	for name, p := range map[string]string{
-		"relativ":            "proj",
-		"Home selbst":        home,
-		"außerhalb":          outside,
-		"gesperrt":           filepath.Join(home, ".ssh"),
-		"symlink to .ssh":    filepath.Join(home, "sshdir"),
-		"symlink outside":    link,
-		"Sperrliste-Eintrag": filepath.Join(home, "proj", "keys"),
-		"file":               filepath.Join(home, "proj", "main.go"),
-		"fehlt":              filepath.Join(home, "gibtsnicht"),
-		"Elternpfad ..":      filepath.Join(home, "proj", "..", ".."),
+		"relative":        "proj",
+		"home itself":     home,
+		"outside":         outside,
+		"blocked":         filepath.Join(home, ".ssh"),
+		"symlink to .ssh": filepath.Join(home, "sshdir"),
+		"symlink outside": link,
+		"blocklist entry": filepath.Join(home, "proj", "keys"),
+		"file":            filepath.Join(home, "proj", "main.go"),
+		"missing":         filepath.Join(home, "does-not-exist"),
+		"parent path ..":  filepath.Join(home, "proj", "..", ".."),
 	} {
 		if _, _, err := im.Preview(p); err == nil {
 			t.Fatalf("%s must be rejected", name)

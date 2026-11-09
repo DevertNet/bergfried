@@ -27,7 +27,7 @@ const (
 	Verdict_VERDICT_UNSPECIFIED Verdict = 0
 	Verdict_VERDICT_ALLOWED     Verdict = 1
 	Verdict_VERDICT_DENIED      Verdict = 2
-	Verdict_VERDICT_BLOCKED     Verdict = 3 // Sperrliste, ohne Rückfrage abgelehnt
+	Verdict_VERDICT_BLOCKED     Verdict = 3 // blocklist, refused without asking
 	Verdict_VERDICT_EXPIRED     Verdict = 4
 )
 
@@ -78,7 +78,7 @@ func (Verdict) EnumDescriptor() ([]byte, []int) {
 
 type GitHubTokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"` // owner/name, auf das der Zugriff fehlt (leer: es gibt noch gar kein Token)
+	Repo          string                 `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"` // owner/name that access is missing for (empty: there is no token at all yet)
 	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -185,7 +185,7 @@ type SSHAttemptRequest struct {
 	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
 	Port          string                 `protobuf:"bytes,2,opt,name=port,proto3" json:"port,omitempty"`
 	User          string                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
-	Wait          bool                   `protobuf:"varint,4,opt,name=wait,proto3" json:"wait,omitempty"` // true: blockiert, bis die Anfrage entschieden ist (interaktives ssh)
+	Wait          bool                   `protobuf:"varint,4,opt,name=wait,proto3" json:"wait,omitempty"` // true: blocks until the request is decided (interactive ssh)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -251,7 +251,7 @@ func (x *SSHAttemptRequest) GetWait() bool {
 type SSHAttemptResult struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	// ignored | granted (aktive Freigabe) | pending | cooldown | allowed | denied | aborted
+	// ignored | granted (active grant) | pending | cooldown | allowed | denied | aborted
 	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -303,10 +303,10 @@ func (x *SSHAttemptResult) GetState() string {
 
 type SSHAccessRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`        // Hostname, optional mit :port
-	Minutes       int32                  `protobuf:"varint,2,opt,name=minutes,proto3" json:"minutes,omitempty"` // nur ein Vorschlag
+	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`        // host name, optionally with :port
+	Minutes       int32                  `protobuf:"varint,2,opt,name=minutes,proto3" json:"minutes,omitempty"` // only a suggestion
 	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
-	User          string                 `protobuf:"bytes,4,opt,name=user,proto3" json:"user,omitempty"` // Benutzer auf dem Ziel, vom Agent vorgeschlagen (der Nutzer kann ihn ändern)
+	User          string                 `protobuf:"bytes,4,opt,name=user,proto3" json:"user,omitempty"` // user on the target, suggested by the agent (the user can change it)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -446,7 +446,7 @@ type DecideSSHRequest struct {
 	User             string                 `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
 	AllAgents        bool                   `protobuf:"varint,6,opt,name=all_agents,json=allAgents,proto3" json:"all_agents,omitempty"`
 	PerConnection    bool                   `protobuf:"varint,7,opt,name=per_connection,json=perConnection,proto3" json:"per_connection,omitempty"`
-	TrustUnknownHost bool                   `protobuf:"varint,8,opt,name=trust_unknown_host,json=trustUnknownHost,proto3" json:"trust_unknown_host,omitempty"` // Host-Key war nicht in known_hosts
+	TrustUnknownHost bool                   `protobuf:"varint,8,opt,name=trust_unknown_host,json=trustUnknownHost,proto3" json:"trust_unknown_host,omitempty"` // host key was not in known_hosts
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -541,7 +541,7 @@ type Grant struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Sandbox             string                 `protobuf:"bytes,2,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
-	Agent               string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"` // leer = alle Agents der Sandbox
+	Agent               string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"` // empty = all agents of the sandbox
 	Host                string                 `protobuf:"bytes,4,opt,name=host,proto3" json:"host,omitempty"`
 	KeyFingerprint      string                 `protobuf:"bytes,5,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
 	User                string                 `protobuf:"bytes,6,opt,name=user,proto3" json:"user,omitempty"`
@@ -987,7 +987,7 @@ func (x *ListKeysResponse) GetError() string {
 
 type FileEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"` // relativ zum Home, mit "/" getrennt
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"` // relative to home, separated by "/"
 	IsDir         bool                   `protobuf:"varint,2,opt,name=is_dir,json=isDir,proto3" json:"is_dir,omitempty"`
 	Size          int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
 	MtimeUnix     int64                  `protobuf:"varint,4,opt,name=mtime_unix,json=mtimeUnix,proto3" json:"mtime_unix,omitempty"`
@@ -1055,8 +1055,8 @@ func (x *FileEntry) GetMtimeUnix() int64 {
 
 type ListFilesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`       // relativ zum Home; leer = Home
-	Pattern       string                 `protobuf:"bytes,2,opt,name=pattern,proto3" json:"pattern,omitempty"` // optionaler Glob auf den Namen
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`       // relative to home; empty = home
+	Pattern       string                 `protobuf:"bytes,2,opt,name=pattern,proto3" json:"pattern,omitempty"` // optional glob on the name
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1255,8 +1255,8 @@ func (x *SearchFilesResponse) GetTruncated() bool {
 
 type AccessRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`     // relativ zum Home
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // vom Agent geliefert, nur als Text anzeigen
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`     // relative to home
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // supplied by the agent, display as text only
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1308,7 +1308,7 @@ func (x *AccessRequest) GetReason() string {
 type AccessResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Verdict       Verdict                `protobuf:"varint,1,opt,name=verdict,proto3,enum=bergfried.v1.Verdict" json:"verdict,omitempty"`
-	VmPath        string                 `protobuf:"bytes,2,opt,name=vm_path,json=vmPath,proto3" json:"vm_path,omitempty"` // Pfad in der VM unter shared/in/<sandbox>/...
+	VmPath        string                 `protobuf:"bytes,2,opt,name=vm_path,json=vmPath,proto3" json:"vm_path,omitempty"` // path in the VM under shared/in/<sandbox>/...
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1573,7 +1573,7 @@ type DecideRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Allow         bool                   `protobuf:"varint,2,opt,name=allow,proto3" json:"allow,omitempty"`
-	ConfirmLarge  bool                   `protobuf:"varint,3,opt,name=confirm_large,json=confirmLarge,proto3" json:"confirm_large,omitempty"` // zweite Bestätigung bei großen Ordnern
+	ConfirmLarge  bool                   `protobuf:"varint,3,opt,name=confirm_large,json=confirmLarge,proto3" json:"confirm_large,omitempty"` // second confirmation for large folders
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
