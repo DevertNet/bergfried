@@ -88,7 +88,7 @@ struct SettingsView: View {
                 Text("VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Agents als Worktrees ~/work/<agent>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried").font(.callout).textSelection(.enabled)
             }
             Section("Sperrliste (nie im Index, nie freigebbar)") {
-                Text("Pfade relativ zum Home, eine pro Zeile. Die ersten vier Standardeinträge (.ssh, Library, .config, .mcp-einfach123-secrets) sind fest.").font(.caption).foregroundStyle(.secondary)
+                Text("Pfade relativ zum Home, eine pro Zeile. Die ersten drei Standardeinträge (.ssh, Library, .config) sind fest.").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $paths).font(.body.monospaced()).frame(height: 120).border(.secondary.opacity(0.4))
                 Text("Namensmuster (Glob auf Dateinamen, z. B. .env.*)").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $names).font(.body.monospaced()).frame(height: 70).border(.secondary.opacity(0.4))

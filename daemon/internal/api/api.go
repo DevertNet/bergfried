@@ -772,7 +772,7 @@ func (s *Server) putBlocklist(w http.ResponseWriter, r *http.Request) {
 	bl.Paths, bl.Names = clean(bl.Paths), clean(bl.Names)
 	// Sicherheitsnetz: Pflichteinträge dürfen nicht entfernt werden.
 	def := index.DefaultBlocklist()
-	for _, must := range def.Paths[:4] { // .ssh, Library, .config, .mcp-einfach123-secrets
+	for _, must := range def.Paths[:3] { // .ssh, Library, .config
 		found := false
 		for _, p := range bl.Paths {
 			if strings.EqualFold(p, must) {

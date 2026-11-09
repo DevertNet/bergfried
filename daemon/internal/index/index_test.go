@@ -24,7 +24,7 @@ func mk(t *testing.T, home string, files ...string) {
 func setup(t *testing.T) (string, *Index) {
 	home := t.TempDir()
 	mk(t, home, "Documents/a.txt", "Documents/sub/b.txt", ".ssh/id_rsa", "Library/Keychains/login.keychain-db",
-		"proj/.env", "proj/.env.local", "proj/main.go", ".config/gh/hosts.yml", ".mcp-einfach123-secrets/k", "x/id_ed25519")
+		"proj/.env", "proj/.env.local", "proj/main.go", ".config/gh/hosts.yml", ".gnupg/k", "x/id_ed25519")
 	ix, err := Build(home, DefaultBlocklist())
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestBlockedNeverInIndex(t *testing.T) {
 	_, ix := setup(t)
 	for _, e := range ix.entries {
 		l := strings.ToLower(e.Path)
-		for _, bad := range []string{".ssh", "library", ".config", ".mcp-einfach123-secrets", ".env", "id_rsa", "id_ed25519", "keychain"} {
+		for _, bad := range []string{".ssh", "library", ".config", ".gnupg", ".env", "id_rsa", "id_ed25519", "keychain"} {
 			if strings.Contains(l, bad) {
 				t.Fatalf("gesperrter Eintrag im Index: %s", e.Path)
 			}

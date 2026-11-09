@@ -82,7 +82,7 @@ func bind(t *testing.T, a agent.ExtendedAgent, host ssh.Signer, sid []byte, forw
 	}
 	m := struct {
 		HostKey, SSHSessionID, Signature []byte
-		IsForwarding                  bool
+		IsForwarding                     bool
 	}{host.PublicKey().Marshal(), sid, ssh.Marshal(struct {
 		Format string
 		Blob   []byte

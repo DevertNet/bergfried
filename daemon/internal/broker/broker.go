@@ -85,9 +85,9 @@ func (b *Broker) active(sandbox string) []store.SSHGrant {
 }
 
 type binding struct {
-	sshSessionID  []byte
-	hostKeyFP  string
-	forwarding bool
+	sshSessionID []byte
+	hostKeyFP    string
+	forwarding   bool
 }
 
 // Conn ist der Agent einer einzelnen Client-Verbindung (implementiert agent.ExtendedAgent).
@@ -197,7 +197,7 @@ func (c *Conn) Extension(extType string, contents []byte) ([]byte, error) {
 	}
 	var m struct {
 		HostKey      []byte
-		SSHSessionID    []byte
+		SSHSessionID []byte
 		Signature    []byte
 		IsForwarding bool
 	}

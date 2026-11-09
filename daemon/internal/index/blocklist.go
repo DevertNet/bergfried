@@ -18,7 +18,7 @@ type Blocklist struct {
 
 func DefaultBlocklist() Blocklist {
 	return Blocklist{
-		Paths: []string{".ssh", "Library", ".config", ".mcp-einfach123-secrets",
+		Paths: []string{".ssh", "Library", ".config",
 			".gnupg", ".aws", ".kube", ".docker", ".netrc", ".git-credentials",
 			".claude", ".claude.json", ".bergfried", ".lima"},
 		Names: []string{".env", ".env.*", "*.keychain", "*.keychain-db", "*.kdbx", "id_rsa", "id_ed25519", "id_ecdsa"},
