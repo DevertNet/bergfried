@@ -1,4 +1,4 @@
-// Package lima kapselt limactl. Alle Aufrufe laufen über Runner, damit Tests ohne Lima auskommen.
+// Package lima wraps limactl. All calls go through Runner so tests work without Lima.
 package lima
 
 import (
@@ -24,7 +24,7 @@ func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	if bin == "" {
 		bin = "limactl"
 	}
-	// stdout und stderr getrennt: Warnungen auf stderr dürfen die JSON-Ausgabe nicht stören.
+	// stdout and stderr separated: warnings on stderr must not disturb the JSON output.
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -35,7 +35,7 @@ func (r ExecRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// StdinRunner: optionale Fähigkeit des Runners, Eingabedaten an limactl zu streamen.
+// StdinRunner: optional capability of the runner to stream input data to limactl.
 type StdinRunner interface {
 	RunStdin(ctx context.Context, stdin io.Reader, args ...string) ([]byte, error)
 }
@@ -58,11 +58,11 @@ func (r ExecRunner) RunStdin(ctx context.Context, stdin io.Reader, args ...strin
 
 type Client struct{ R Runner }
 
-// ShellStdin führt ein Kommando in der VM aus und speist stdin ein.
+// ShellStdin runs a command in the VM and feeds stdin.
 func (c Client) ShellStdin(ctx context.Context, name string, stdin io.Reader, cmd ...string) ([]byte, error) {
 	sr, ok := c.R.(StdinRunner)
 	if !ok {
-		return nil, fmt.Errorf("Runner unterstützt kein stdin")
+		return nil, fmt.Errorf("runner does not support stdin")
 	}
 	return sr.RunStdin(ctx, stdin, append([]string{"shell", "--tty=false", name, "--"}, cmd...)...)
 }
@@ -75,7 +75,7 @@ type Instance struct {
 	Disk   int64  `json:"disk"`
 }
 
-// CreateArgs baut den limactl-Aufruf: genau zwei Mounts, nie Home.
+// CreateArgs builds the limactl call: exactly two mounts, never home.
 func CreateArgs(name, template, inDir, outDir string) []string {
 	return []string{"create", "--name=" + name, "--tty=false",
 		"--mount", inDir, "--mount", outDir + ":w", template}
@@ -98,7 +98,7 @@ func (c Client) Delete(ctx context.Context, name string) error {
 	return err
 }
 
-// Shell führt ein Kommando in der VM aus.
+// Shell runs a command in the VM.
 func (c Client) Shell(ctx context.Context, name string, cmd ...string) ([]byte, error) {
 	return c.R.Run(ctx, append([]string{"shell", "--tty=false", name, "--"}, cmd...)...)
 }
@@ -122,7 +122,7 @@ func (c Client) List(ctx context.Context) ([]Instance, error) {
 	return res, nil
 }
 
-// InstanceDir liefert das Lima-Verzeichnis einer Instanz (LIMA_HOME beachtet).
+// InstanceDir returns the Lima directory of an instance (respects LIMA_HOME).
 func InstanceDir(name string) (string, error) {
 	home := os.Getenv("LIMA_HOME")
 	if home == "" {
@@ -135,8 +135,8 @@ func InstanceDir(name string) (string, error) {
 	return filepath.Join(home, name), nil
 }
 
-// RepinHostKey löscht den von Lima gepinnten SSH-Host-Key, damit er nach bewusster
-// Neuerzeugung der Guest-Keys beim nächsten Start neu gepinnt wird.
+// RepinHostKey deletes the SSH host key pinned by Lima so it is pinned again on the next start
+// after the guest keys were deliberately regenerated.
 func RepinHostKey(name string) error {
 	d, err := InstanceDir(name)
 	if err != nil {

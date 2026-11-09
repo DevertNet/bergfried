@@ -25,14 +25,14 @@ win=api rc=0 theme=1 url=
 		t.Fatalf("%+v", a)
 	}
 	if st.stable() {
-		t.Fatal("ein Agent ohne RC darf nicht stabil sein")
+		t.Fatal("an agent without RC must not be stable")
 	}
 	f := parseProbe("login=false\n")
 	if f.LoggedIn == nil || *f.LoggedIn || f.stable() {
 		t.Fatal("ausgeloggt")
 	}
 	if parseProbe("").LoggedIn != nil {
-		t.Fatal("ohne Ausgabe ist der Login unbekannt")
+		t.Fatal("without output the login is unknown")
 	}
 }
 
@@ -47,14 +47,14 @@ func TestDecideRC(t *testing.T) {
 		since    time.Duration
 		want     rcAction
 	}{
-		{"Rückfrage beantworten", AgentState{Ask: true, Running: true}, 0, 0, rcAnswerYes},
-		{"Claude im Leerlauf: /remote-control", idle, 0, time.Hour, rcSlash},
-		{"Claude beschäftigt: nicht stören", busy, 0, time.Hour, rcNone},
-		{"Shell: Agent neu starten", shell, 0, time.Hour, rcRestart},
-		{"zu früh nach letztem Versuch", idle, 1, 5 * time.Second, rcNone},
-		{"nach Wartezeit erneut", idle, 1, time.Minute, rcSlash},
-		{"nach drei Versuchen aufgeben", idle, rcMaxAttempts, time.Hour, rcGiveUp},
-		{"Shell nach drei Versuchen aufgeben", shell, rcMaxAttempts, time.Hour, rcGiveUp},
+		{"answer prompt", AgentState{Ask: true, Running: true}, 0, 0, rcAnswerYes},
+		{"Claude idle: /remote-control", idle, 0, time.Hour, rcSlash},
+		{"Claude busy: do not disturb", busy, 0, time.Hour, rcNone},
+		{"shell: restart agent", shell, 0, time.Hour, rcRestart},
+		{"too soon after last attempt", idle, 1, 5 * time.Second, rcNone},
+		{"again after waiting", idle, 1, time.Minute, rcSlash},
+		{"give up after three attempts", idle, rcMaxAttempts, time.Hour, rcGiveUp},
+		{"shell: give up after three attempts", shell, rcMaxAttempts, time.Hour, rcGiveUp},
 	}
 	for _, c := range cases {
 		if got := decideRC(c.a, c.attempts, c.since); got != c.want {
@@ -94,24 +94,24 @@ func TestStickyRCSurvivesScrolledOffBanner(t *testing.T) {
 	if !a.RC {
 		t.Fatal("RC gesehen")
 	}
-	// Banner ist aus dem Sichtbereich gerutscht, derselbe Prozess läuft: weiter aktiv, Link bleibt
+	// banner scrolled out of view, same process still running: stays active, link is kept
 	b := mo.applySticky(k, AgentState{Window: true, Running: true, PID: 100})
 	if !b.RC || b.URL != "https://claude.ai/code/session_X" {
-		t.Fatalf("RC muss erhalten bleiben: %+v", b)
+		t.Fatalf("RC must be kept: %+v", b)
 	}
-	// Claude neu gestartet (neue PID), RC noch nicht gesehen: nicht mehr als aktiv annehmen, Zähler zurückgesetzt
+	// Claude restarted (new PID), RC not seen yet: do not assume active any more, counters reset
 	mo.norc[k], mo.attempts[k], mo.actions[k] = 9, 3, "failed"
 	c := mo.applySticky(k, AgentState{Window: true, Running: true, PID: 200})
 	if c.RC {
-		t.Fatal("nach Neustart nicht aktiv annehmen")
+		t.Fatal("do not assume active after a restart")
 	}
 	if mo.attempts[k] != 0 || mo.actions[k] != "" || mo.norc[k] != 0 {
-		t.Fatalf("Zähler müssen bei neuer PID zurückgesetzt sein: %v %v %v", mo.norc[k], mo.attempts[k], mo.actions[k])
+		t.Fatalf("counters must be reset on a new PID: %v %v %v", mo.norc[k], mo.attempts[k], mo.actions[k])
 	}
-	// Claude beendet: Merkzustand verfällt
+	// Claude exited: remembered state expires
 	mo.applySticky(k, AgentState{Window: true, Running: true, PID: 300, RC: true})
 	if d := mo.applySticky(k, AgentState{Window: true, Running: false}); d.RC {
-		t.Fatal("beendeter Prozess darf nicht aktiv sein")
+		t.Fatal("an exited process must not be active")
 	}
 }
 
@@ -123,17 +123,17 @@ func TestMarkRCClearsFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if mo.actions["s/a"] != "" || mo.attempts["s/a"] != 0 {
-		t.Fatal("fehlgeschlagen muss zurückgesetzt sein")
+		t.Fatal("failed must be reset")
 	}
 	if a, _ := mo.Get("s"); !a.Agents["a"].RC {
-		t.Fatal("RC muss aktiv gelten")
+		t.Fatal("RC must count as active")
 	}
 	if err := mo.MarkRC("s", "nix"); err == nil {
 		t.Fatal("unbekannter Agent")
 	}
 	mo.state["s"].Agents["b"] = AgentState{Window: true, Running: false}
 	if err := mo.MarkRC("s", "b"); err == nil {
-		t.Fatal("ohne laufendes Claude nicht bestätigbar")
+		t.Fatal("cannot be confirmed without a running Claude")
 	}
 }
 

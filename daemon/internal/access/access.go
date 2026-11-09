@@ -1,4 +1,4 @@
-// Package access: Datei-/Ordner-Anfragen prüfen, Entscheidung abwarten, Kopie nach shared/in.
+// Package access: check file/folder requests, wait for the decision, copy to shared/in.
 package access
 
 import (
@@ -23,7 +23,7 @@ const (
 	LargeFiles = 500
 )
 
-// Asker zeigt die Anfrage dem Nutzer. Die Antwort kommt später über Service.Decide.
+// Asker shows the request to the user. The answer comes later via Service.Decide.
 type Asker interface{ Ask(r store.Request) }
 
 type decision struct{ allow bool }
@@ -45,11 +45,11 @@ func New(s *store.Store, ix *index.Index, dataDir string, a Asker) *Service {
 
 func (v *Service) audit(event, sandbox, agent, detail string) {
 	if err := v.S.Audit("daemon", event, sandbox, agent, detail); err != nil {
-		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
+		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
 
-// Dest: Zielordner in shared/in der Sandbox (in der VM unter demselben Pfad sichtbar).
+// Dest: target folder in the sandbox's shared/in (visible in the VM under the same path).
 func (v *Service) Dest(sandbox string) string {
 	return filepath.Join(v.DataDir, "sandboxes", sandbox, "shared", "in", sandbox)
 }
@@ -82,7 +82,7 @@ func measure(abs string, isDir bool, size int64, ix *index.Index, relBase string
 	return
 }
 
-// Request verarbeitet request_file (folder=false) bzw. request_folder (folder=true).
+// Request handles request_file (folder=false) and request_folder (folder=true).
 func (v *Service) Request(ctx context.Context, sandbox, agent string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
 	kind := "file"
 	if folder {
@@ -95,17 +95,17 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 		if errors.Is(err, index.ErrBlocked) {
 			id, _ := v.S.AddRequest(store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
 			v.audit("request.blocked", sandbox, agent, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
-			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_BLOCKED, Message: "Pfad steht auf der Sperrliste und wird nicht freigegeben."}, nil
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_BLOCKED, Message: "Path is on the blocklist and will not be shared."}, nil
 		}
 		v.audit("request.invalid", sandbox, agent, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
-		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ungültig oder nicht vorhanden."}, nil
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Path invalid or does not exist."}, nil
 	}
 	info, err := os.Lstat(abs)
 	if err != nil {
-		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad nicht vorhanden."}, nil
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Path does not exist."}, nil
 	}
 	if folder != info.IsDir() || (!folder && !info.Mode().IsRegular()) {
-		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Pfad ist " + map[bool]string{true: "ein Ordner (nutze request_folder)", false: "keine normale Datei (nutze request_file)"}[info.IsDir()]}, nil
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Path is " + map[bool]string{true: "a folder (use request_folder)", false: "not a regular file (use request_file)"}[info.IsDir()]}, nil
 	}
 	b, n := measure(abs, info.IsDir(), info.Size(), v.Ix, rel)
 	req := store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
@@ -128,7 +128,7 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 	select {
 	case d := <-ch:
 		if !d.allow {
-			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Der Nutzer hat abgelehnt."}, nil
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "The user declined."}, nil
 		}
 		dst, err := v.copyOut(sandbox, rel, abs, info.IsDir())
 		if err != nil {
@@ -136,12 +136,12 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Kopieren fehlgeschlagen: " + err.Error()}, nil
 		}
 		v.audit("request.copied", sandbox, agent, fmt.Sprintf("id=%d -> %s", id, dst))
-		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, VmPath: dst, Message: "Freigegeben und kopiert."}, nil
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, VmPath: dst, Message: "Approved and copied."}, nil
 	case <-timer.C:
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
 			v.audit("request.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
 		}
-		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_EXPIRED, Message: "Keine Antwort, Anfrage abgelaufen."}, nil
+		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_EXPIRED, Message: "No answer, request expired."}, nil
 	case <-ctx.Done():
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
 			v.audit("request.cancelled", sandbox, agent, fmt.Sprintf("id=%d", id))
@@ -150,30 +150,30 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 	}
 }
 
-// Decide entscheidet eine offene Anfrage. Große Anfragen brauchen confirmLarge.
+// Decide decides an open request. Large requests need confirmLarge.
 func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
 	r, err := v.S.GetRequest(id)
 	if err != nil {
 		return "", err
 	}
 	if r.Status != "pending" {
-		return "", fmt.Errorf("Anfrage %d ist nicht mehr offen (%s)", id, r.Status)
+		return "", fmt.Errorf("request %d is no longer open (%s)", id, r.Status)
 	}
 	if allow && Large(r) && !confirmLarge {
-		return "", fmt.Errorf("große Anfrage (%d MB, %d Dateien): zweite Bestätigung nötig", r.Bytes>>20, r.Files)
+		return "", fmt.Errorf("large request (%d MB, %d files): second confirmation required", r.Bytes>>20, r.Files)
 	}
 	v.mu.Lock()
 	ch, ok := v.waiters[id]
 	v.mu.Unlock()
 	if !ok {
-		return "", fmt.Errorf("Anfrage %d wartet nicht mehr (Agent hat abgebrochen)", id)
+		return "", fmt.Errorf("request %d is no longer waiting (agent gave up)", id)
 	}
 	status := "denied"
 	if allow {
 		status = "allowed"
 	}
 	if ok, err := v.S.SetRequestStatus(id, status); err != nil || !ok {
-		return "", fmt.Errorf("Anfrage %d ist nicht mehr offen", id)
+		return "", fmt.Errorf("request %d is no longer open", id)
 	}
 	v.audit("request."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
 	ch <- decision{allow: allow}
@@ -186,7 +186,7 @@ func (v *Service) copyOut(sandbox, rel, abs string, isDir bool) (string, error) 
 	base := v.Dest(sandbox)
 	dst := filepath.Join(base, filepath.FromSlash(rel))
 	if !strings.HasPrefix(dst, base+string(os.PathSeparator)) {
-		return "", errors.New("Zielpfad außerhalb von shared/in")
+		return "", errors.New("target path outside shared/in")
 	}
 	if !isDir {
 		return dst, copyFile(abs, dst)
@@ -198,7 +198,7 @@ func (v *Service) copyOut(sandbox, rel, abs string, isDir bool) (string, error) 
 		r2, _ := filepath.Rel(abs, p)
 		relFull := filepath.ToSlash(filepath.Join(rel, r2))
 		if r2 != "." {
-			// jede Datei erneut prüfen (Sperrliste, Symlink-Auflösung)
+			// re-check every file (blocklist, symlink resolution)
 			if _, _, e := v.Ix.Resolve(relFull); e != nil {
 				if d.IsDir() {
 					return fs.SkipDir
@@ -226,7 +226,7 @@ func copyFile(src, dst string) error {
 	defer in.Close()
 	st, err := in.Stat()
 	if err != nil || !st.Mode().IsRegular() {
-		return errors.New("keine normale Datei")
+		return errors.New("not a regular file")
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
@@ -242,7 +242,7 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// sanitize: Steuerzeichen raus, Länge begrenzen. Agent-Text ist nur Anzeige-Daten.
+// sanitize: strip control characters, limit length. Agent text is display data only.
 func sanitize(s string, max int) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 32 && r != '\n' || r == 127 {

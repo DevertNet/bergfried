@@ -28,7 +28,7 @@ func TestLink(t *testing.T) {
 		t.Fatalf("%v", q)
 	}
 	if q.Get("workflows") != "" {
-		t.Fatal("Workflows-Recht darf nicht vorbelegt sein")
+		t.Fatal("the Workflows permission must not be pre-filled")
 	}
 	if n := Link(strings.Repeat("a", 30)); !strings.Contains(n, "name=bergfried-"+strings.Repeat("a", 30)[:30]) {
 		t.Fatal(n)
@@ -42,7 +42,7 @@ func TestLink(t *testing.T) {
 func TestValidTokenAndCredentials(t *testing.T) {
 	for _, bad := range []string{"", "kurz", tok + " x", "ab\ncd" + tok, tok + "@evil", tok + "/x", tok + "'"} {
 		if ValidToken(bad) == nil {
-			t.Errorf("%q hätte abgelehnt werden müssen", bad)
+			t.Errorf("%q should have been rejected", bad)
 		}
 	}
 	if err := ValidToken(" " + tok + "\n"); err != nil {
@@ -56,13 +56,13 @@ func TestValidTokenAndCredentials(t *testing.T) {
 func TestStorePerms(t *testing.T) {
 	s := Store{Home: t.TempDir()}
 	if s.Has("a") {
-		t.Fatal("Token ohne Set")
+		t.Fatal("token without Set")
 	}
 	if _, err := s.Get("a"); err != github.ErrNoToken {
 		t.Fatal(err)
 	}
-	if err := s.Set("a", "zu kurz"); err == nil {
-		t.Fatal("ungültiges Token gespeichert")
+	if err := s.Set("a", "too short"); err == nil {
+		t.Fatal("invalid token stored")
 	}
 	if err := s.Set("a", tok); err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestStorePerms(t *testing.T) {
 	}
 	s.Delete("a")
 	if s.Has("a") {
-		t.Fatal("nicht gelöscht")
+		t.Fatal("not deleted")
 	}
 }
 
@@ -133,7 +133,7 @@ func waitPending(t *testing.T, st *store.Store) store.Request {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("keine offene Anfrage")
+	t.Fatal("no open request")
 	return store.Request{}
 }
 
@@ -159,16 +159,16 @@ func TestRequestFirstTokenFlow(t *testing.T) {
 	if req.Kind != "ghtoken" || req.Path != "o/r" || !strings.Contains(req.Extra, "personal-access-tokens/new") {
 		t.Fatalf("%+v", req)
 	}
-	// Ohne Token kann man nicht einfach „erledigt“ sagen.
+	// Without a token you cannot simply say "done".
 	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err == nil {
-		t.Fatal("ohne Token hätte es scheitern müssen")
+		t.Fatal("it should have failed without a token")
 	}
-	// Ungültiges Token (GitHub lehnt ab).
-	if err := f.svc.Decide(context.Background(), req.ID, true, strings.Replace(tok, "11ABC", "22ZZZ", 1)); err == nil || !strings.Contains(err.Error(), "lehnt") {
+	// Invalid token (GitHub rejects it).
+	if err := f.svc.Decide(context.Background(), req.ID, true, strings.Replace(tok, "11ABC", "22ZZZ", 1)); err == nil || !strings.Contains(err.Error(), "rejects") {
 		t.Fatalf("%v", err)
 	}
 	if len(f.installed) != 0 || f.svc.Tokens.Has("shop") {
-		t.Fatal("ungültiges Token wurde abgelegt")
+		t.Fatal("an invalid token was stored")
 	}
 	if err := f.svc.Decide(context.Background(), req.ID, true, tok); err != nil {
 		t.Fatal(err)
@@ -184,19 +184,19 @@ func TestRequestFirstTokenFlow(t *testing.T) {
 
 func TestTokenWithoutRepoAccessKeepsRequestOpen(t *testing.T) {
 	f := setup(t)
-	ch := ask(f, "o/neu")
+	ch := ask(f, "o/new")
 	req := waitPending(t, f.st)
 	err := f.svc.Decide(context.Background(), req.ID, true, tok)
-	if err == nil || !strings.Contains(err.Error(), "keinen Zugriff auf o/neu") {
+	if err == nil || !strings.Contains(err.Error(), "no access to o/new") {
 		t.Fatalf("%v", err)
 	}
 	if f.svc.Tokens.Has("shop") || len(f.installed) != 0 {
-		t.Fatal("Token ohne Repo-Zugriff darf nicht abgelegt werden")
+		t.Fatal("a token without repo access must not be stored")
 	}
 	if rs, _ := f.st.ListRequests(true, 10); len(rs) != 1 {
-		t.Fatal("Anfrage muss offen bleiben")
+		t.Fatal("request must stay open")
 	}
-	f.access["o/neu"] = true
+	f.access["o/new"] = true
 	if err := f.svc.Decide(context.Background(), req.ID, true, tok); err != nil {
 		t.Fatal(err)
 	}
@@ -210,21 +210,21 @@ func TestExtendAccessWithoutNewToken(t *testing.T) {
 	if err := f.svc.Deposit(context.Background(), "shop", tok, "o/r"); err != nil {
 		t.Fatal(err)
 	}
-	// Repo schon erreichbar: sofort bestätigt, keine Anfrage.
+	// Repo already reachable: confirmed immediately, no request.
 	ok, msg, err := f.svc.Request(context.Background(), "shop", "main", "o/r", "")
-	if err != nil || !ok || !strings.Contains(msg, "bereits Zugriff") {
+	if err != nil || !ok || !strings.Contains(msg, "already has access") {
 		t.Fatal(ok, msg, err)
 	}
 	if rs, _ := f.st.ListRequests(true, 10); len(rs) != 0 {
-		t.Fatal("unnötige Anfrage")
+		t.Fatal("unnecessary request")
 	}
-	// Neues Repo: Anfrage; Nutzer erweitert die Auswahl bei GitHub und bestätigt ohne neues Token.
+	// New repo: request; the user extends the selection on GitHub and confirms without a new token.
 	ch := ask(f, "https://github.com/o/zwei.git")
 	req := waitPending(t, f.st)
 	if req.Path != "o/zwei" {
 		t.Fatal(req.Path)
 	}
-	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err == nil || !strings.Contains(err.Error(), "keinen Zugriff") {
+	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err == nil || !strings.Contains(err.Error(), "no access") {
 		t.Fatalf("%v", err)
 	}
 	f.access["o/zwei"] = true
@@ -235,7 +235,7 @@ func TestExtendAccessWithoutNewToken(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	if len(f.installed) != 1 {
-		t.Fatalf("Token darf bei reiner Erweiterung nicht neu installiert werden: %v", f.installed)
+		t.Fatalf("the token must not be reinstalled on a mere extension: %v", f.installed)
 	}
 }
 
@@ -246,7 +246,7 @@ func TestDenyAndBadRepo(t *testing.T) {
 	if err := f.svc.Decide(context.Background(), req.ID, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if r := <-ch; r.ok || !strings.Contains(r.msg, "abgelehnt") {
+	if r := <-ch; r.ok || !strings.Contains(r.msg, "declined") {
 		t.Fatalf("%+v", r)
 	}
 	ok, msg, _ := f.svc.Request(context.Background(), "shop", "main", "evil.com/../x", "")
@@ -259,10 +259,10 @@ func TestExpire(t *testing.T) {
 	f := setup(t)
 	f.svc.Timeout = 50 * time.Millisecond
 	ok, msg, _ := f.svc.Request(context.Background(), "shop", "main", "o/x", "")
-	if ok || !strings.Contains(msg, "abgelaufen") {
+	if ok || !strings.Contains(msg, "expired") {
 		t.Fatal(ok, msg)
 	}
 	if rs, _ := f.st.ListRequests(true, 10); len(rs) != 0 {
-		t.Fatal("Anfrage nicht abgelaufen")
+		t.Fatal("request did not expire")
 	}
 }

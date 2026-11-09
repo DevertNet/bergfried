@@ -24,7 +24,7 @@ func TestParseRemote(t *testing.T) {
 	for _, bad := range []string{"", "https://evil.com/o/r.git", "https://user:tok@github.com/o/r.git", "https://github.com/o", "https://github.com/o/r/x",
 		"https://github.com/../r", "https://github.com/o/..", "git@github.com:o/r;rm", "file:///etc/passwd", "https://github.com.evil.com/o/r", "https://github.com/o/r name"} {
 		if _, err := ParseRemote(bad); err == nil {
-			t.Fatalf("%q muss abgelehnt werden", bad)
+			t.Fatalf("%q must be rejected", bad)
 		}
 	}
 }

@@ -59,7 +59,7 @@ In the app: **Settings → Install and start daemon**, **Settings → Base VM �
 Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ## Status
-Works and is used daily by the author on macOS; **young software, not audited**. Unverified areas are listed in [docs/ROADMAP.md](docs/ROADMAP.md) (next: real-GitHub run, first release). A Debian VPS host is designed but postponed.
+Built by and for the author on macOS; **young software, not audited**. Unverified areas are listed in [docs/ROADMAP.md](docs/ROADMAP.md) (next: real-GitHub run, first release). A Debian VPS host is designed but postponed.
 
 ## Documentation
 [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [Agent rules](CLAUDE.md)

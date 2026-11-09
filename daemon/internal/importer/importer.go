@@ -1,6 +1,6 @@
-// Package importer kopiert einen vom Nutzer gewählten Ordner als tar-Strom in die VM.
-// Es wird nie gemountet: die VM bekommt eine Kopie. Sperrliste, Symlinks, .env/Schlüssel und
-// Rauschen-Ordner (node_modules, Caches) bleiben draußen; Zugangsdaten in .git/config werden entfernt.
+// Package importer copies a folder chosen by the user into the VM as a tar stream.
+// It is never mounted: the VM gets a copy. Blocklist, symlinks, .env/keys and
+// noise folders (node_modules, caches) stay out; credentials in .git/config are removed.
 package importer
 
 import (
@@ -30,10 +30,10 @@ type Importer struct {
 
 var credRe = regexp.MustCompile(`(?i)(https?://)[^/@\s]+@`)
 
-// resolve prüft den Ordner: absolut, echter Pfad unterhalb des Homes (nicht das Home selbst), nicht gesperrt.
+// resolve checks the folder: absolute, real path below home (not home itself), not blocked.
 func (im Importer) resolve(p string) (real, rel string, err error) {
 	if !filepath.IsAbs(p) || strings.ContainsRune(p, 0) {
-		return "", "", errors.New("Pfad muss absolut sein")
+		return "", "", errors.New("path must be absolute")
 	}
 	home, err := filepath.EvalSymlinks(im.Home)
 	if err != nil {
@@ -41,25 +41,25 @@ func (im Importer) resolve(p string) (real, rel string, err error) {
 	}
 	real, err = filepath.EvalSymlinks(p)
 	if err != nil {
-		return "", "", fmt.Errorf("Ordner nicht gefunden: %w", err)
+		return "", "", fmt.Errorf("folder not found: %w", err)
 	}
 	fi, err := os.Stat(real)
 	if err != nil || !fi.IsDir() {
-		return "", "", errors.New("Pfad ist kein Ordner")
+		return "", "", errors.New("path is not a folder")
 	}
 	r, err := filepath.Rel(home, real)
 	if err != nil || r == "." || r == ".." || strings.HasPrefix(r, ".."+string(os.PathSeparator)) {
-		return "", "", errors.New("Der Ordner muss unterhalb deines Home-Verzeichnisses liegen (nicht das Home selbst)")
+		return "", "", errors.New("the folder must be below your home directory (not home itself)")
 	}
 	rel = filepath.ToSlash(r)
 	if im.BL().BlockedRel(rel) {
-		return "", "", errors.New("Dieser Ordner steht auf der Sperrliste")
+		return "", "", errors.New("this folder is on the blocklist")
 	}
 	return real, rel, nil
 }
 
 type entry struct {
-	sub  string // relativ zum Ordner
+	sub  string // relative to the folder
 	abs  string
 	dir  bool
 	mode fs.FileMode
@@ -111,14 +111,14 @@ func (im Importer) collect(real, rel string) (es []entry, bytes, skipped int64, 
 		es = append(es, entry{sub: sub, abs: p, mode: info.Mode().Perm(), size: size, mt: info.ModTime().Unix()})
 		bytes += size
 		if int64(len(es)) > MaxFiles || bytes > MaxBytes {
-			return fmt.Errorf("Ordner zu groß (max. %d GB / %d Dateien)", MaxBytes>>30, MaxFiles)
+			return fmt.Errorf("folder too large (max. %d GB / %d files)", MaxBytes>>30, MaxFiles)
 		}
 		return nil
 	})
 	return
 }
 
-// Preview: Anzahl Dateien/Bytes, die kopiert würden.
+// Preview: number of files/bytes that would be copied.
 func (im Importer) Preview(p string) (files, bytes int64, err error) {
 	real, rel, err := im.resolve(p)
 	if err != nil {
@@ -136,7 +136,7 @@ func (im Importer) Preview(p string) (files, bytes int64, err error) {
 	return files, b, nil
 }
 
-// Stream schreibt den Ordner als tar nach w.
+// Stream writes the folder as tar to w.
 func (im Importer) Stream(p string, w io.Writer) (files, bytes int64, err error) {
 	real, rel, err := im.resolve(p)
 	if err != nil {
@@ -156,7 +156,7 @@ func (im Importer) Stream(p string, w io.Writer) (files, bytes int64, err error)
 		}
 		f, err := os.Open(e.abs)
 		if err != nil {
-			continue // verschwunden/unlesbar: überspringen
+			continue // vanished/unreadable: skip
 		}
 		st, err := f.Stat()
 		if err != nil || !st.Mode().IsRegular() {

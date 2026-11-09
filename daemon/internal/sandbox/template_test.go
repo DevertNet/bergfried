@@ -42,11 +42,11 @@ func TestIsolationRulesEnforced(t *testing.T) {
 	}
 	for name, y := range bad {
 		if _, err := CheckTemplate(y); err == nil {
-			t.Fatalf("%s muss abgelehnt werden", name)
+			t.Fatalf("%s must be rejected", name)
 		}
 	}
 	if _, err := CheckTemplate(strings.Repeat("a", MaxTemplateBytes+1)); err == nil {
-		t.Fatal("zu groß")
+		t.Fatal("too large")
 	}
 }
 
@@ -69,24 +69,24 @@ func TestStoreRevisionAndReset(t *testing.T) {
 	}
 	y, _ := ts.Read()
 	if _, err := ts.Save(context.Background(), y); err != nil || ts.Rev() != TemplateVersion {
-		t.Fatalf("unverändert darf die Revision nicht erhöhen: %v %d", err, ts.Rev())
+		t.Fatalf("unchanged must not increase the revision: %v %d", err, ts.Rev())
 	}
-	if _, err := ts.Save(context.Background(), y+"\n# Änderung\n"); err != nil || ts.Rev() != TemplateVersion+1 {
+	if _, err := ts.Save(context.Background(), y+"\n# change\n"); err != nil || ts.Rev() != TemplateVersion+1 {
 		t.Fatalf("%v %d", err, ts.Rev())
 	}
 	if len(r.calls) != 1 || r.calls[0][0] != "validate" {
-		t.Fatalf("limactl validate muss laufen: %v", r.calls)
+		t.Fatalf("limactl validate must run: %v", r.calls)
 	}
-	// limactl verlangt Dateinamen nach ^[A-Za-z0-9]+(?:[._-](?:[A-Za-z0-9]+))*$ (kein führender Punkt).
+	// limactl requires file names matching ^[A-Za-z0-9]+(?:[._-](?:[A-Za-z0-9]+))*$ (no leading dot).
 	if !regexp.MustCompile(`^[A-Za-z0-9]+(?:[._-](?:[A-Za-z0-9]+))*\.yaml$`).MatchString(filepath.Base(r.calls[0][1])) {
-		t.Fatalf("Dateiname für limactl ungültig: %s", r.calls[0][1])
+		t.Fatalf("file name invalid for limactl: %s", r.calls[0][1])
 	}
 	bad := strings.Replace(y, "mounts: []", "mounts:\n- location: \"/\"", 1)
 	if _, err := ts.Save(context.Background(), bad); err == nil || ts.Rev() != TemplateVersion+1 {
-		t.Fatal("unsichere Vorlage darf nicht gespeichert werden")
+		t.Fatal("an unsafe template must not be saved")
 	}
 	if cur, _ := ts.Read(); strings.Contains(cur, "location") {
-		t.Fatal("Datei darf nicht überschrieben worden sein")
+		t.Fatal("file must not have been overwritten")
 	}
 	if err := ts.Reset(); err != nil || ts.Rev() != TemplateVersion+2 {
 		t.Fatalf("%v %d", err, ts.Rev())
@@ -107,12 +107,12 @@ func TestManagerBaseNameFollowsContent(t *testing.T) {
 	_, _ = ts.Save(context.Background(), shippedYAML(t)+"\n#x\n")
 	changed := m.BaseName()
 	if changed == first {
-		t.Fatal("geänderter Inhalt braucht eine neue Basis")
+		t.Fatal("changed content needs a new base")
 	}
 	if err := ts.Reset(); err != nil {
 		t.Fatal(err)
 	}
 	if m.BaseName() != first {
-		t.Fatal("wiederhergestellter Inhalt muss die vorhandene Basis wiederverwenden")
+		t.Fatal("restored content must reuse the existing base")
 	}
 }

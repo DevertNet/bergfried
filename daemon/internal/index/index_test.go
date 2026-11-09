@@ -38,15 +38,15 @@ func TestBlockedNeverInIndex(t *testing.T) {
 		l := strings.ToLower(e.Path)
 		for _, bad := range []string{".ssh", "library", ".config", ".gnupg", ".env", "id_rsa", "id_ed25519", "keychain"} {
 			if strings.Contains(l, bad) {
-				t.Fatalf("gesperrter Eintrag im Index: %s", e.Path)
+				t.Fatalf("blocked entry in the index: %s", e.Path)
 			}
 		}
 	}
 	if es, _ := ix.Search("main"); len(es) != 1 {
-		t.Fatal("proj/main.go muss auffindbar sein")
+		t.Fatal("proj/main.go must be findable")
 	}
 	if es, _ := ix.Search("keychain"); len(es) != 0 {
-		t.Fatal("Keychain darf nicht suchbar sein")
+		t.Fatal("Keychain must not be searchable")
 	}
 }
 
@@ -57,11 +57,11 @@ func TestListAndTraversal(t *testing.T) {
 		t.Fatalf("%v %v", es, err)
 	}
 	if _, _, err := ix.List(".ssh", ""); !errors.Is(err, ErrBlocked) {
-		t.Fatal("List auf gesperrten Pfad muss ErrBlocked liefern")
+		t.Fatal("List on a blocked path must return ErrBlocked")
 	}
 	for _, bad := range []string{"../etc/passwd", "/etc/passwd", "~/x", "a/../../b", "Documents/../../x", "a\x00b"} {
 		if _, _, err := ix.Resolve(bad); err == nil {
-			t.Fatalf("%q muss abgelehnt werden", bad)
+			t.Fatalf("%q must be rejected", bad)
 		}
 	}
 }
@@ -70,7 +70,7 @@ func TestResolveBlockedVariants(t *testing.T) {
 	_, ix := setup(t)
 	for _, p := range []string{".ssh/id_rsa", ".SSH/id_rsa", "library/Keychains/login.keychain-db", "LIBRARY", "proj/.env", "proj/.ENV.local", ".config/gh/hosts.yml", "./.ssh/id_rsa", "Documents/../.ssh/id_rsa"} {
 		if _, _, err := ix.Resolve(p); err == nil {
-			t.Fatalf("%q muss abgelehnt werden", p)
+			t.Fatalf("%q must be rejected", p)
 		}
 	}
 	if _, _, err := ix.Resolve("Documents/a.txt"); err != nil {
@@ -88,11 +88,11 @@ func TestSymlinkEscapes(t *testing.T) {
 	_ = ix.Refresh()
 	for _, p := range []string{"Documents/out/secret.txt", "Documents/sshlink/id_rsa", "Documents/keylink"} {
 		if _, _, err := ix.Resolve(p); err == nil {
-			t.Fatalf("Symlink-Ausbruch %q muss scheitern", p)
+			t.Fatalf("symlink escape %q must fail", p)
 		}
 	}
 	if es, _ := ix.Search("link"); len(es) != 0 {
-		t.Fatal("Symlinks dürfen nicht im Index stehen")
+		t.Fatal("symlinks must not be in the index")
 	}
 }
 
@@ -117,11 +117,11 @@ func TestNotReadyAndSkipDirs(t *testing.T) {
 	mk(t, home, "p/node_modules/x/y.js", "p/.git/config", "p/a.txt")
 	ix, _ := New(home, DefaultBlocklist())
 	if _, _, err := ix.List("", ""); !errors.Is(err, ErrNotReady) {
-		t.Fatal("vor dem Aufbau muss ErrNotReady kommen")
+		t.Fatal("before the build ErrNotReady must be returned")
 	}
 	_ = ix.Refresh()
 	if es, _ := ix.Search("y.js"); len(es) != 0 {
-		t.Fatal("node_modules gehört nicht in den Index")
+		t.Fatal("node_modules does not belong in the index")
 	}
 	if _, _, err := ix.Resolve("p/node_modules/x/y.js"); err != nil {
 		t.Fatal("per Pfad bleibt es freigebbar")

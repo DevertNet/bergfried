@@ -1,5 +1,5 @@
-// Package rpc: gRPC-Server. Pro laufender Sandbox ein eigener Unix-Socket (Identität = Socket),
-// dazu ein Admin-Socket für CLI/App. Alle Sockets 0600 in 0700-Verzeichnissen.
+// Package rpc: gRPC server. One unix socket per running sandbox (identity = socket),
+// plus an admin socket for CLI/app. All sockets 0600 in 0700 directories.
 package rpc
 
 import (
@@ -40,7 +40,7 @@ func agentFrom(ctx context.Context) string {
 	return "unknown"
 }
 
-// ListenUnix: Verzeichnis 0700, Socket 0600, alter Socket wird ersetzt.
+// ListenUnix: directory 0700, socket 0600, an old socket is replaced.
 func ListenUnix(path string) (net.Listener, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -83,7 +83,7 @@ func (s *sandboxServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubToke
 	v := pb.Verdict_VERDICT_DENIED
 	if ok {
 		v = pb.Verdict_VERDICT_ALLOWED
-	} else if strings.Contains(msg, "abgelaufen") {
+	} else if strings.Contains(msg, "expired") {
 		v = pb.Verdict_VERDICT_EXPIRED
 	}
 	return &pb.GitHubTokenResult{Verdict: v, Message: msg}, nil
@@ -93,14 +93,14 @@ func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) 
 	return s.ssh.RequestSSH(ctx, s.sandbox, s.agent(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
-// agent: Name ohne das "<sandbox>/"-Präfix, das die VM mitschickt.
+// agent: name without the "<sandbox>/" prefix that the VM sends along.
 func (s *sandboxServer) agent(ctx context.Context) string {
 	return strings.TrimPrefix(agentFrom(ctx), s.sandbox+"/")
 }
 
 func (s *sandboxServer) audit(ctx context.Context, event, detail string) {
 	if err := s.st.Audit("agent", event, s.sandbox, s.agent(ctx), detail); err != nil {
-		fmt.Fprintln(os.Stderr, "WARNUNG: Audit-Log nicht geschrieben:", err)
+		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
 
@@ -119,8 +119,8 @@ func (s *sandboxServer) ListFiles(ctx context.Context, r *pb.ListFilesRequest) (
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 	if err != nil {
-		// Existenz gesperrter Pfade nicht verraten.
-		return nil, status.Error(codes.NotFound, "Pfad nicht gefunden")
+		// do not reveal the existence of blocked paths
+		return nil, status.Error(codes.NotFound, "path not found")
 	}
 	return &pb.ListFilesResponse{Entries: toPB(es), Truncated: trunc}, nil
 }
@@ -185,7 +185,7 @@ func (a *adminServer) ExtendGrant(ctx context.Context, r *pb.ExtendGrantRequest)
 	if err != nil {
 		return nil, fail(err)
 	}
-	return &pb.DecideResponse{Message: "gültig bis " + exp.Format("2006-01-02 15:04")}, nil
+	return &pb.DecideResponse{Message: "valid until " + exp.Format("2006-01-02 15:04")}, nil
 }
 
 func (a *adminServer) ListKeys(context.Context, *pb.ListKeysRequest) (*pb.ListKeysResponse, error) {
@@ -217,7 +217,7 @@ func (a *adminServer) Decide(_ context.Context, r *pb.DecideRequest) (*pb.Decide
 	return &pb.DecideResponse{Message: msg}, nil
 }
 
-// Daemon verwaltet Admin-Socket und Sandbox-Sockets.
+// Daemon manages the admin socket and the sandbox sockets.
 type Daemon struct {
 	St        *store.Store
 	Svc       *access.Service
@@ -305,7 +305,7 @@ func (d *Daemon) startSandbox(name, vm string) error {
 	return nil
 }
 
-// Reconcile: für jede laufende Sandbox einen Socket, für beendete/gelöschte abbauen.
+// Reconcile: one socket per running sandbox, tear down for stopped/deleted ones.
 func (d *Daemon) Reconcile(ctx context.Context) error {
 	ss, err := d.St.ListSandboxes()
 	if err != nil {
@@ -327,7 +327,7 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 			want[s.Name] = true
 			if _, ok := d.servers[s.Name]; !ok {
 				if err := d.startSandbox(s.Name, s.VM); err != nil {
-					fmt.Fprintln(os.Stderr, "Socket für", s.Name, "fehlgeschlagen:", err)
+					fmt.Fprintln(os.Stderr, "socket for", s.Name, "failed:", err)
 					continue
 				}
 				_ = d.St.Audit("daemon", "socket.open", s.Name, "", "")
@@ -352,7 +352,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err := d.startAdmin(); err != nil {
 		return err
 	}
-	t := time.NewTicker(5 * time.Second) // auch Takt für Ablauf-Prüfung der SSH-Freigaben
+	t := time.NewTicker(5 * time.Second) // also the tick for the expiry check of SSH grants
 	defer t.Stop()
 	for {
 		if err := d.Reconcile(ctx); err != nil {

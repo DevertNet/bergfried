@@ -15,7 +15,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 )
 
-// probeScript läuft in der VM und meldet Login, Plattenbelegung sowie je Agent-Fenster den RC-Status.
+// probeScript runs in the VM and reports login, disk usage and, per agent window, the RC status.
 const probeScript = `export PATH="$HOME/.local/bin:$PATH"
 echo "login=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
@@ -23,7 +23,7 @@ if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
     p=$(tmux capture-pane -p -J -t "bf:$w" -S - 2>/dev/null)
     rc=0; echo "$p" | grep -qE 'remote-control is active|/rc active|available in the Claude mobile app' && rc=1
-    # Der RC-Dialog (von /remote-control geöffnet, bietet "Disconnect") bedeutet: RC ist aktiv; er blockiert die Eingabe.
+    # The RC dialog (opened by /remote-control, offers "Disconnect") means: RC is active; it blocks input.
     dlg=0; echo "$p" | tail -15 | grep -q 'Disconnect this session' && { dlg=1; rc=1; }
     th=0; echo "$p" | grep -qE 'Choose the text style|Press Enter to continue' && th=1
     tty=$(tmux display-message -p -t "bf:$w" '#{pane_tty}' 2>/dev/null)
@@ -40,11 +40,11 @@ fi`
 type AgentState struct {
 	Window, RC, Theme bool
 	Idle, Ask         bool
-	Running           bool // Prozess "claude" läuft im Fenster
+	Running           bool // process "claude" runs in the window
 	PID               int  // PID dieses claude-Prozesses (0 = keiner)
-	Dialog            bool // RC-Dialog ("Disconnect this session") ist geöffnet
+	Dialog            bool // RC dialog ("Disconnect this session") is open
 	URL               string
-	Action            string // "", "activating", "failed", "waiting" – Stand der automatischen RC-Aktivierung
+	Action            string // "", "activating", "failed", "waiting" – state of the automatic RC activation
 }
 
 type rcAction int
@@ -59,13 +59,13 @@ const (
 
 const (
 	rcMaxAttempts = 3
-	rcMissTicks   = 4 // so viele Prüfungen in Folge ohne RC, bevor aktiviert wird (Schonfrist fürs Hochfahren)
+	rcMissTicks   = 4 // this many checks in a row without RC before activating (grace period for booting)
 	rcRetryAfter  = 20 * time.Second
 )
 
-// decideRC entscheidet, wie ein Agent ohne aktive Remote Control wieder in Gang gebracht wird.
-// Reihenfolge: offene Rückfrage beantworten, Claude läuft nicht (nur Shell) neu starten,
-// bei leerem Eingabefeld /remote-control tippen; nach rcMaxAttempts aufgeben.
+// decideRC decides how an agent without active Remote Control is brought back on track.
+// Order: answer an open prompt, restart if Claude is not running (shell only),
+// type /remote-control if the input field is empty; give up after rcMaxAttempts.
 func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 	if a.Ask {
 		return rcAnswerYes
@@ -99,28 +99,28 @@ type Monitor struct {
 	mu        sync.Mutex
 	state     map[string]*SandboxState
 	inflight  map[string]bool
-	hold      map[string]int       // Sandboxes mit laufendem Job: nicht abfragen
+	hold      map[string]int       // sandboxes with a running job: do not poll
 	failures  map[string]int       // aufeinanderfolgende Abfragefehler
-	norc      map[string]int       // Prüfungen ohne RC je Agent
+	norc      map[string]int       // checks without RC per agent
 	attempts  map[string]int       // Aktivierungsversuche je Agent
 	last      map[string]time.Time // letzter Versuch je Agent
 	actions   map[string]string    // Anzeige-Stand je Agent
 	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
-	sticky    map[string]stickyRC  // einmal gesehene aktive RC je Agent, gebunden an die claude-PID
+	sticky    map[string]stickyRC  // active RC seen once per agent, bound to the claude PID
 	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
 }
 
-// stickyRC: Der Banner „Remote Control aktiv“ steht am Anfang der Ausgabe und rutscht bei längerer Arbeit aus dem
-// Sichtbereich. Deshalb gilt RC als aktiv, solange derselbe claude-Prozess läuft, in dem sie einmal gesehen wurde.
+// stickyRC: the banner "Remote Control active" is at the start of the output and scrolls out of view during longer work.
+// So RC counts as active as long as the same claude process runs in which it was seen once.
 type stickyRC struct {
 	pid int
 	url string
 }
 
-// applySticky wertet den Merkzustand aus (Aufrufer hält mo.mu). Liefert den ggf. ergänzten Agent-Zustand.
+// applySticky evaluates the remembered state (caller holds mo.mu). Returns the agent state, supplemented if needed.
 func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
 	if a.PID > 0 {
-		// Neuer claude-Prozess (Neustart, manuell oder automatisch): Zähler und „fehlgeschlagen“ zurücksetzen.
+		// New claude process (restart, manual or automatic): reset counters and "failed".
 		if old, ok := mo.pids[key]; ok && old != a.PID {
 			delete(mo.norc, key)
 			delete(mo.attempts, key)
@@ -141,23 +141,23 @@ func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
 			}
 			return a
 		}
-		delete(mo.sticky, key) // claude beendet oder neu gestartet
+		delete(mo.sticky, key) // claude exited or was restarted
 	}
 	return a
 }
 
-// MarkRC bestätigt manuell, dass Remote Control in diesem Agent läuft (Ausweg, falls die Erkennung sie nicht sieht).
+// MarkRC confirms manually that Remote Control runs in this agent (escape hatch if detection does not see it).
 func (mo *Monitor) MarkRC(sandbox, agent string) error {
 	key := sandbox + "/" + agent
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
 	st := mo.state[sandbox]
 	if st == nil {
-		return fmt.Errorf("Sandbox wurde noch nicht abgefragt")
+		return fmt.Errorf("sandbox has not been polled yet")
 	}
 	a, ok := st.Agents[agent]
 	if !ok || !a.Running || a.PID == 0 {
-		return fmt.Errorf("Claude läuft in diesem Agent gerade nicht")
+		return fmt.Errorf("Claude is not running in this agent right now")
 	}
 	mo.sticky[key] = stickyRC{pid: a.PID, url: a.URL}
 	delete(mo.norc, key)
@@ -174,7 +174,7 @@ func NewMonitor(m *sandbox.Manager) *Monitor {
 		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
-// Hold/Release: während eines Jobs (Start, Stopp, Create …) wird die Sandbox nicht abgefragt.
+// Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
 func (mo *Monitor) Hold(name string) { mo.mu.Lock(); mo.hold[name]++; mo.mu.Unlock() }
 func (mo *Monitor) Release(name string) {
 	mo.mu.Lock()
@@ -188,7 +188,7 @@ func (mo *Monitor) Poke2(name string) {
 	}
 }
 
-// ResetAgent setzt die automatische RC-Aktivierung eines Agents zurück (z. B. nach manuellem Neustart).
+// ResetAgent resets an agent's automatic RC activation (e.g. after a manual restart).
 func (mo *Monitor) ResetAgent(sandbox, agent string) {
 	k := sandbox + "/" + agent
 	mo.mu.Lock()
@@ -211,7 +211,7 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 	for k, v := range s.Agents {
 		if !v.RC {
 			v.Action = mo.actions[name+"/"+k]
-			// Läuft, ist aber weder im Leerlauf noch aktiv: vermutlich wartet Claude auf eine Eingabe.
+			// Running but neither idle nor active: Claude is probably waiting for input.
 			if v.Action == "" && v.Running && !v.Idle && mo.norc[name+"/"+k] >= 8 {
 				v.Action = "waiting"
 			}
@@ -221,7 +221,7 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 	return cp, true
 }
 
-// Poke erzwingt eine baldige Neuprüfung.
+// Poke forces a prompt re-check.
 func (mo *Monitor) Poke(name string) {
 	mo.mu.Lock()
 	if s, ok := mo.state[name]; ok {
@@ -297,7 +297,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.mu.Lock()
 	prev := mo.state[name]
 	if err != nil {
-		// Beim Hochfahren schlägt die Abfrage zwangsläufig fehl: erst nach mehreren Fehlern melden.
+		// While booting the poll necessarily fails: report only after several failures.
 		mo.failures[name]++
 		if prev == nil {
 			prev = &SandboxState{Agents: map[string]AgentState{}}
@@ -316,12 +316,12 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		mo.installed[name] = true
 	}
 	if needInstall {
-		// Laufende VMs bekommen einmal je Daemon-Start die aktuelle Fassung (MCP-Server, ssh-Hook, Hinweistext).
+		// Running VMs get the current version once per daemon start (MCP server, ssh hook, hint text).
 		go func() {
 			ictx, icancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer icancel()
 			if err := mo.M.InstallMCP(ictx, vm, name); err != nil {
-				fmt.Fprintln(os.Stderr, "Aktualisierung der VM", name, ":", err)
+				fmt.Fprintln(os.Stderr, "updating VM", name, ":", err)
 				mo.mu.Lock()
 				delete(mo.installed, name)
 				mo.mu.Unlock()
@@ -332,7 +332,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	}
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
-	// Nur registrierte Agents zählen (kein tmux-Standardfenster "bash"/"shell"); fehlende Fenster gelten als "kein Fenster".
+	// Only registered agents count (no tmux default window "bash"/"shell"); missing windows count as "no window".
 	registered, _ := mo.M.S.ListAgents(name)
 	regSet := map[string]bool{}
 	for _, a := range registered {
@@ -343,13 +343,13 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			delete(st.Agents, w)
 		}
 	}
-	// Ältere Sandboxes ohne Agent bekommen einmalig den ersten Agent "main".
+	// Older sandboxes without an agent get the first agent "main" once.
 	if !mo.M.S.Seeded(name) {
 		if len(registered) == 0 && st.LoggedIn != nil {
 			if err := mo.M.AgentAdd(cctx, name, "main"); err != nil {
 				fmt.Fprintln(os.Stderr, "Erster Agent:", err)
 			} else {
-				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "Sandbox hatte keinen Agent")
+				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "sandbox had no agent")
 			}
 		}
 		_ = mo.M.S.SetSeeded(name)
@@ -367,12 +367,12 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	if st.LoggedIn == nil || !*st.LoggedIn {
 		return
 	}
-	// Login gerade erst erkannt: Agents neu starten, damit sie mit Login und Remote Control laufen.
+	// Login just detected: restart agents so they run with login and Remote Control.
 	if wasLoggedIn != nil && !*wasLoggedIn {
 		ags, _ := mo.M.S.ListAgents(name)
 		for _, a := range ags {
 			if err := mo.M.RestartAgent(cctx, name, a.Name); err != nil {
-				fmt.Fprintln(os.Stderr, "Neustart nach Login:", err)
+				fmt.Fprintln(os.Stderr, "restart after login:", err)
 			}
 		}
 		_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("agents=%d", len(ags)))
@@ -381,12 +381,12 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	}
 	for w, a := range st.Agents {
 		key := name + "/" + w
-		// Offener RC-Dialog (z. B. von früherem /remote-control): mit Escape schließen – niemals Enter (Vorauswahl könnte "Disconnect" werden).
+		// Open RC dialog (e.g. from an earlier /remote-control): close with Escape – never Enter (the preselection could be "Disconnect").
 		if a.Dialog {
 			_ = mo.M.SendKey(cctx, vm, w, "Escape")
 			continue
 		}
-		// Onboarding-Fragen (Theme, "Press Enter to continue") mit Enter bestätigen.
+		// Onboarding questions (theme, "Press Enter to continue"): confirm with Enter.
 		if a.Theme {
 			_ = mo.M.PressEnter(cctx, vm, w)
 			continue
@@ -428,7 +428,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			mo.last[key] = time.Now()
 			mo.actions[key] = "activating"
 			mo.mu.Unlock()
-			detail := map[rcAction]string{rcSlash: "/remote-control", rcRestart: "neu gestartet", rcAnswerYes: "Rückfrage mit y beantwortet"}[act]
+			detail := map[rcAction]string{rcSlash: "/remote-control", rcRestart: "restarted", rcAnswerYes: "prompt answered with y"}[act]
 			if err != nil {
 				detail += ": " + err.Error()
 			}
@@ -494,7 +494,7 @@ func (mo *Monitor) tick(ctx context.Context) {
 	}
 }
 
-// hostDiskUsed: tatsächlich belegte Bytes der VM-Dateien auf dem Mac (Blöcke, nicht scheinbare Größe).
+// hostDiskUsed: bytes of the VM files actually used on the Mac (blocks, not apparent size).
 func hostDiskUsed(vm string) int64 {
 	dir, err := lima.InstanceDir(vm)
 	if err != nil {

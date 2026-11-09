@@ -58,13 +58,13 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	no := func() { _, _ = d.Decide(broker.Decision{ID: r.ID, Allow: false}) }
 	warn := ""
 	if info.Source != "known_hosts" {
-		warn = "\n\n⚠ Host-Key ist NEU (nicht in deiner known_hosts). Fingerprint:\n" + strings.Join(info.HostKeyFPs, "\n") + "\nNur bestätigen, wenn du ihn kennst."
+		warn = "\n\n⚠ Host key is NEW (not in your known_hosts). Fingerprint:\n" + strings.Join(info.HostKeyFPs, "\n") + "\nOnly confirm if you know it."
 	}
 	user := info.RequestedUser
 	if user == "" {
 		user = info.DefaultUser
 	}
-	text := fmt.Sprintf("Sandbox „%s“ / Agent „%s“ möchte per SSH auf %s zugreifen (Benutzer: %s).%s\n\nBegründung (vom Agent, ungeprüft):\n%s", r.Sandbox, r.Agent, r.Path, user, warn, r.Reason)
+	text := fmt.Sprintf("Sandbox \"%s\" / agent \"%s\" wants SSH access to %s (user: %s).%s\n\nReason (from the agent, unchecked):\n%s", r.Sandbox, r.Agent, r.Path, user, warn, r.Reason)
 	if !ask(text, "Ablehnen", "Weiter …") {
 		no()
 		return
@@ -77,7 +77,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 			def = x.Label
 		}
 	}
-	dl, ok := choose("Wie lange soll die Freigabe gelten?", def, labels)
+	dl, ok := choose("How long should the grant last?", def, labels)
 	if !ok {
 		no()
 		return
@@ -90,7 +90,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	}
 	keys, err := d.Keys()
 	if err != nil || len(keys) == 0 {
-		d.log("SSH-Dialog #%d: keine Keys im Upstream-Agent (%v)", r.ID, err)
+		d.log("SSH dialog #%d: no keys in the upstream agent (%v)", r.ID, err)
 		no()
 		return
 	}
@@ -110,12 +110,12 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		no()
 		return
 	}
-	scope, ok := choose("Geltung der Freigabe:", "Nur dieser Agent (Anzeige/Protokoll)", []string{"Nur dieser Agent (Anzeige/Protokoll)", "Alle Agents der Sandbox"})
+	scope, ok := choose("Scope of the grant:", "This agent only (display/audit)", []string{"This agent only (display/audit)", "All agents of the sandbox"})
 	if !ok {
 		no()
 		return
 	}
-	mode, ok := choose("Signieren:", "Still im Zeitfenster (nur protokolliert)", []string{"Still im Zeitfenster (nur protokolliert)", "Jede Verbindung einzeln bestätigen"})
+	mode, ok := choose("Signing:", "Silent within the window (logged only)", []string{"Silent within the window (logged only)", "Confirm every connection"})
 	if !ok {
 		no()
 		return
@@ -127,7 +127,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	}
 }
 
-// ConfirmEach: Einzelbestätigung je Verbindung.
+// ConfirmEach: confirmation per connection.
 func ConfirmEach(g store.SSHGrant, hostKeyFP string) bool {
-	return ask(fmt.Sprintf("SSH-Verbindung zu %s (Freigabe #%d, Sandbox „%s“) erlauben?", g.Host, g.ID, g.Sandbox), "Ablehnen", "Erlauben")
+	return ask(fmt.Sprintf("Allow SSH connection to %s (grant #%d, sandbox \"%s\")?", g.Host, g.ID, g.Sandbox), "Deny", "Allow")
 }

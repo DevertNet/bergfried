@@ -69,7 +69,7 @@ func TestBlocklistMandatoryEntriesProtected(t *testing.T) {
 	_, ts := srv(t)
 	code, _ := do(t, "PUT", ts.URL+"/v1/blocklist", `{"paths":["Private"],"names":[".env"]}`)
 	if code != 400 {
-		t.Fatalf("Entfernen der festen Sperrliste muss scheitern, code=%d", code)
+		t.Fatalf("removing the fixed blocklist must fail, code=%d", code)
 	}
 	bl := index.DefaultBlocklist()
 	bl.Paths = append(bl.Paths, "Private")
@@ -108,7 +108,7 @@ func TestJobLifecycleAndAuditSearch(t *testing.T) {
 			break
 		}
 	}
-	if j.State != "failed" || !strings.Contains(j.Error, "existiert nicht") {
+	if j.State != "failed" || !strings.Contains(j.Error, "does not exist") {
 		t.Fatalf("%+v", j)
 	}
 	_ = s.M.S.Audit("t", "request.created", "shop", "main", "id=1 =cmd|calc")
@@ -121,7 +121,7 @@ func TestJobLifecycleAndAuditSearch(t *testing.T) {
 		t.Fatal(csv)
 	}
 	if strings.Contains(csv, ",=cmd") {
-		t.Fatal("Formel-Injektion im CSV")
+		t.Fatal("formula injection in the CSV")
 	}
 }
 
@@ -132,7 +132,7 @@ func TestGitHubLink(t *testing.T) {
 		t.Fatalf("%d %s", code, body)
 	}
 	if code, _ := do(t, "GET", ts.URL+"/v1/github/link?sandbox=x%3By", ""); code != 400 {
-		t.Fatal("ungültiger Name")
+		t.Fatal("invalid name")
 	}
 }
 
@@ -166,14 +166,14 @@ func TestGitHubDecideNeverEchoesToken(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if id == 0 {
-		t.Fatal("keine Anfrage")
+		t.Fatal("no request")
 	}
 	_, list := do(t, "GET", ts.URL+"/v1/requests", "")
 	if !strings.Contains(list, `"github"`) || !strings.Contains(list, `"repo":"o/r"`) || !strings.Contains(list, `"has_token":false`) {
-		t.Fatalf("Anfrage fehlt Details: %s", list)
+		t.Fatalf("request lacks details: %s", list)
 	}
-	code, body := do(t, "POST", ts.URL+"/v1/github/decide", fmt.Sprintf(`{"id":%d,"allow":true,"token":"falsch-aber-lang-genug-0123456789"}`, id))
-	if code != 409 || strings.Contains(body, "falsch-aber") {
+	code, body := do(t, "POST", ts.URL+"/v1/github/decide", fmt.Sprintf(`{"id":%d,"allow":true,"token":"wrong-but-long-enough-0123456789"}`, id))
+	if code != 409 || strings.Contains(body, "wrong-but") {
 		t.Fatalf("%d %s", code, body)
 	}
 	code, body = do(t, "POST", ts.URL+"/v1/github/decide", fmt.Sprintf(`{"id":%d,"allow":true,"token":%q}`, id, tok))
@@ -181,7 +181,7 @@ func TestGitHubDecideNeverEchoesToken(t *testing.T) {
 		t.Fatalf("%d %s", code, body)
 	}
 	if !<-done || installed != tok {
-		t.Fatal("Token nicht in die VM geschrieben")
+		t.Fatal("token was not written into the VM")
 	}
 	_, sandboxes := do(t, "GET", ts.URL+"/v1/sandboxes", "")
 	if !strings.Contains(sandboxes, `"has_github_token":true`) || strings.Contains(sandboxes, tok) {

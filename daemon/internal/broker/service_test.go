@@ -63,34 +63,34 @@ func TestRequestAllowedCreatesGrantAndExpiryCleansUp(t *testing.T) {
 		t.Fatalf("%+v", gs)
 	}
 	if h.applied == 0 {
-		t.Fatal("VM-Config muss geschrieben werden")
+		t.Fatal("VM config must be written")
 	}
 	f.now = f.now.Add(31 * time.Minute)
 	s.Sweep(context.Background())
 	if h.kill != 1 {
-		t.Fatalf("bei Ablauf müssen ssh-Prozesse beendet werden (kill=%d)", h.kill)
+		t.Fatalf("on expiry ssh processes must be terminated (kill=%d)", h.kill)
 	}
 	s.Sweep(context.Background())
 	if h.kill != 1 {
-		t.Fatal("nur einmal aufräumen")
+		t.Fatal("clean up only once")
 	}
 }
 
 func TestUnknownHostKeyNeedsExplicitTrust(t *testing.T) {
-	s, f, _ := svcFx(t, "keyscan", []string{"SHA256:neu"})
+	s, f, _ := svcFx(t, "keyscan", []string{"SHA256:new"})
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
 	ask := &autoAsker{s, Decision{Allow: true, Minutes: 10, KeyFP: fp}}
 	s.Asker = ask
 	s.Timeout = 300 * time.Millisecond
 	res, _ := s.RequestSSH(context.Background(), "shop", "main", "new.example.com", "", 10, "")
 	if res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("neuer Host-Key ohne Bestätigung darf nicht freigegeben werden")
+		t.Fatal("a new host key without confirmation must not be approved")
 	}
 	ask.d.TrustUnknownHost = true
 	s.Timeout = 2 * time.Second
 	res, _ = s.RequestSSH(context.Background(), "shop", "main", "new.example.com", "", 10, "")
 	if res.Verdict != pb.Verdict_VERDICT_ALLOWED {
-		t.Fatalf("mit Bestätigung muss es gehen: %v", res)
+		t.Fatalf("with confirmation it must work: %v", res)
 	}
 }
 
@@ -99,14 +99,14 @@ func TestInvalidHostsAndUsersRejected(t *testing.T) {
 	for _, h := range []string{"", "a b", "host;rm", "-oProxyCommand=x", "host\nHost *", "a/../b", "$(id)", strings.Repeat("a", 300)} {
 		res, _ := s.RequestSSH(context.Background(), "shop", "main", h, "", 5, "")
 		if res.Verdict != pb.Verdict_VERDICT_DENIED {
-			t.Fatalf("%q muss abgelehnt werden", h)
+			t.Fatalf("%q must be refused", h)
 		}
 	}
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, User: "root\nHost *"}}
 	s.Timeout = 300 * time.Millisecond
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("ungültiger Benutzername darf nie in die Config")
+		t.Fatal("an invalid user name must never reach the config")
 	}
 }
 
@@ -115,12 +115,12 @@ func TestDecideRejectsBadKeyAndDuration(t *testing.T) {
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: "SHA256:gibtsnicht"}}
 	s.Timeout = 300 * time.Millisecond
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("Key außerhalb des Upstream-Agents")
+		t.Fatal("key outside the upstream agent")
 	}
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: MaxMinutes + 1, KeyFP: fp}}
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("unzulässige Dauer")
+		t.Fatal("illegal duration")
 	}
 }
 
@@ -135,10 +135,10 @@ func TestExtendAndRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	if h.kill != 1 {
-		t.Fatal("Entzug muss ssh beenden")
+		t.Fatal("revocation must terminate ssh")
 	}
 	if _, err := s.Extend(context.Background(), id, 5); err == nil {
-		t.Fatal("entzogene Freigabe darf nicht verlängert werden")
+		t.Fatal("a revoked grant must not be extended")
 	}
 }
 
@@ -150,7 +150,7 @@ func TestRenderSSHConfigIsSafe(t *testing.T) {
 		{Host: "ok.example.com", User: "root\nProxyCommand evil"},
 	})
 	if strings.Contains(out, "evil") || strings.Contains(out, "ProxyCommand") {
-		t.Fatalf("unsichere Werte in der Config:\n%s", out)
+		t.Fatalf("unsafe values in the config:\n%s", out)
 	}
 	if !strings.Contains(out, "Host example.com") || !strings.Contains(out, "Port 2222") {
 		t.Fatalf("\n%s", out)
@@ -169,19 +169,19 @@ func TestParseKeyLines(t *testing.T) {
 func TestAgentRequestedUserIsUsedUnlessUserOverrides(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
-	// ohne Eingabe des Nutzers gilt der Wunsch des Agents
+	// without user input the agent's wish applies
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
 	res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "deploy", 5, "")
 	if res.Verdict != pb.Verdict_VERDICT_ALLOWED || res.User != "deploy" {
 		t.Fatalf("%v", res)
 	}
-	// Eingabe des Nutzers hat Vorrang
+	// user input takes precedence
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, User: "claude"}}
 	res, _ = s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "deploy", 5, "")
 	if res.User != "claude" {
-		t.Fatalf("Nutzer-Eingabe muss gewinnen: %v", res)
+		t.Fatalf("user input must win: %v", res)
 	}
-	// ohne beides: Standard des Hosts
+	// without both: host default
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
 	res, _ = s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, "")
 	if res.User == "" {
@@ -194,7 +194,7 @@ func TestInvalidRequestedUserRejected(t *testing.T) {
 	for _, u := range []string{"Root", "root\nHost *", "a b", "-oProxyCommand=x", "$(id)", "x;y"} {
 		res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", u, 5, "")
 		if res.Verdict != pb.Verdict_VERDICT_DENIED {
-			t.Fatalf("%q muss abgelehnt werden", u)
+			t.Fatalf("%q must be refused", u)
 		}
 	}
 }
@@ -207,7 +207,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("Zeitüberschreitung: %s", what)
+	t.Fatalf("timeout: %s", what)
 }
 
 func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
@@ -222,44 +222,44 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 		}
 		return n
 	}
-	// ohne Freigabe: Anfrage entsteht, ssh bleibt unberührt
-	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "angefragt") {
+	// without a grant: a request is created, ssh stays untouched
+	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "requested") {
 		t.Fatalf("%q", msg)
 	}
-	waitFor(t, "offene Anfrage", func() bool { return pending() == 1 })
+	waitFor(t, "open request", func() bool { return pending() == 1 })
 	rs, _ := f.b.St.ListRequests(true, 5)
-	if rs[0].Agent != "terminal" || !strings.Contains(rs[0].Reason, "Verbindungsversuch") {
+	if rs[0].Agent != "terminal" || !strings.Contains(rs[0].Reason, "connection attempt") {
 		t.Fatalf("%+v", rs[0])
 	}
-	// zweiter Versuch: keine zweite Anfrage
-	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "bereits angefragt") {
+	// second attempt: no second request
+	if msg := att(s, "shop", "srv.example.com", "22", "deploy"); !strings.Contains(msg, "already requested") {
 		t.Fatalf("%q", msg)
 	}
 	time.Sleep(100 * time.Millisecond)
 	if pending() != 1 {
 		t.Fatal("Duplikat")
 	}
-	// ablehnen -> Abkühlzeit
+	// deny -> cooldown
 	if _, err := s.DecideSSH(Decision{ID: rs[0].ID, Allow: false}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "Anfrage erledigt", func() bool { return pending() == 0 })
+	waitFor(t, "request finished", func() bool { return pending() == 0 })
 	time.Sleep(100 * time.Millisecond)
-	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "kürzlich nicht erteilt") {
-		t.Fatalf("Abkühlzeit erwartet: %q", msg)
+	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "was not granted recently") {
+		t.Fatalf("cooldown expected: %q", msg)
 	}
 	f.now = f.now.Add(AttemptCooldown + time.Second)
-	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "angefragt") {
-		t.Fatalf("nach der Abkühlzeit wieder anfragen: %q", msg)
+	if msg := att(s, "shop", "srv.example.com", "22", ""); !strings.Contains(msg, "requested") {
+		t.Fatalf("ask again after the cooldown: %q", msg)
 	}
-	waitFor(t, "neue Anfrage", func() bool { return pending() == 1 })
+	waitFor(t, "new request", func() bool { return pending() == 1 })
 }
 
 func TestAttemptIgnoresGrantedAndInvalid(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	f.grant(t, "shop", 10, false) // Host "srv"
 	if msg := att(s, "shop", "srv", "22", ""); msg != "" {
-		t.Fatalf("bei aktiver Freigabe nichts melden: %q", msg)
+		t.Fatalf("report nothing with an active grant: %q", msg)
 	}
 	for _, h := range []string{"", "a b", "host;rm", "$(id)", "-oProxyCommand=x"} {
 		if msg := att(s, "shop", h, "22", "x"); msg != "" {
@@ -270,8 +270,8 @@ func TestAttemptIgnoresGrantedAndInvalid(t *testing.T) {
 	if msg := att(s, "shop", "srv", "2222", "claude"); !strings.Contains(msg, "srv:2222") {
 		t.Fatalf("%q", msg)
 	}
-	// ungültiger Benutzer wird verworfen, die Anfrage entsteht trotzdem
-	if msg := att(s, "other", "ok.example.com", "22", "Root\nx"); !strings.Contains(msg, "angefragt") {
+	// an invalid user is discarded, the request is still created
+	if msg := att(s, "other", "ok.example.com", "22", "Root\nx"); !strings.Contains(msg, "requested") {
 		t.Fatalf("%q", msg)
 	}
 }
@@ -289,17 +289,17 @@ func TestAttemptWaitReturnsDecision(t *testing.T) {
 		return s.Attempt(context.Background(), "wait", "w.example.com", "22", "", true)
 	}
 	st, msg := run(Decision{Allow: true, Minutes: 5, KeyFP: fp})
-	if st != "allowed" || !strings.Contains(msg, "erteilt") {
+	if st != "allowed" || !strings.Contains(msg, "granted") {
 		t.Fatalf("%s %q", st, msg)
 	}
-	// aktive Freigabe: sofort granted, ohne zu warten
+	// active grant: granted immediately, without waiting
 	if st, _ := s.Attempt(context.Background(), "wait", "w.example.com", "22", "", true); st != "granted" {
 		t.Fatalf("granted erwartet, bekam %s", st)
 	}
 	// Ablehnung
 	s2, _, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	s2.Asker = &autoAsker{s2, Decision{Allow: false}}
-	if st, msg := s2.Attempt(context.Background(), "wait", "d.example.com", "22", "", true); st != "denied" || !strings.Contains(msg, "nicht erteilt") {
+	if st, msg := s2.Attempt(context.Background(), "wait", "d.example.com", "22", "", true); st != "denied" || !strings.Contains(msg, "not granted") {
 		t.Fatalf("%s %q", st, msg)
 	}
 }
@@ -308,11 +308,11 @@ func TestAttemptWaitAbortAndSharedWaiters(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
 	s.Asker = silentAsker2{}
 	s.Timeout = 5 * time.Second
-	// Abbruch (Strg-C) beendet nur das Warten, die Anfrage bleibt offen
+	// abort (Ctrl-C) ends only the wait, the request stays open
 	ctx, cancel := context.WithCancel(context.Background())
 	res := make(chan string, 1)
 	go func() { st, _ := s.Attempt(ctx, "wait", "a.example.com", "22", "", true); res <- st }()
-	waitFor(t, "offene Anfrage", func() bool {
+	waitFor(t, "open request", func() bool {
 		rs, _ := f.b.St.ListRequests(true, 10)
 		return len(rs) == 1
 	})
@@ -322,16 +322,16 @@ func TestAttemptWaitAbortAndSharedWaiters(t *testing.T) {
 	}
 	rs, _ := f.b.St.ListRequests(true, 10)
 	if len(rs) != 1 {
-		t.Fatal("Anfrage muss offen bleiben")
+		t.Fatal("request must stay open")
 	}
-	// zwei Wartende teilen sich dieselbe Anfrage und bekommen dieselbe Antwort
+	// two waiters share the same request and get the same answer
 	out := make(chan string, 2)
 	for i := 0; i < 2; i++ {
 		go func() { st, _ := s.Attempt(context.Background(), "wait", "a.example.com", "22", "", true); out <- st }()
 	}
 	time.Sleep(100 * time.Millisecond)
 	if rs, _ = f.b.St.ListRequests(true, 10); len(rs) != 1 {
-		t.Fatalf("keine zweite Anfrage erwartet: %d", len(rs))
+		t.Fatalf("no second request expected: %d", len(rs))
 	}
 	if _, err := s.DecideSSH(Decision{ID: rs[0].ID, Allow: false}); err != nil {
 		t.Fatal(err)
@@ -353,11 +353,11 @@ func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
 	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, PerConn: true}}
 	s.Timeout = 300 * time.Millisecond
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("ohne ConfirmEach darf keine Einzelbestätigungs-Freigabe entstehen")
+		t.Fatal("without ConfirmEach no per-connection grant may be created")
 	}
 	f.b.ConfirmEach = func(store.SSHGrant, string) bool { return true }
 	s.Timeout = 2 * time.Second
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict != pb.Verdict_VERDICT_ALLOWED {
-		t.Fatalf("mit ConfirmEach muss es gehen: %v", res)
+		t.Fatalf("with ConfirmEach it must work: %v", res)
 	}
 }

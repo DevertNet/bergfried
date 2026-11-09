@@ -70,7 +70,7 @@ func TestImportSkipsSecretsAndNoise(t *testing.T) {
 	}
 	for _, bad := range []string{".env", ".env.local", "id_rsa", "node_modules/x/y.js", "sshlink", "etclink", "keys/secret.txt"} {
 		if _, ok := n[bad]; ok {
-			t.Fatalf("%s darf nicht kopiert werden", bad)
+			t.Fatalf("%s must not be copied", bad)
 		}
 	}
 	for k := range n {
@@ -83,7 +83,7 @@ func TestImportSkipsSecretsAndNoise(t *testing.T) {
 	}
 	cfg := n[".git/config"]
 	if strings.Contains(cfg, "ghp_TOKEN123") || !strings.Contains(cfg, "https://github.com/x/y.git") {
-		t.Fatalf("Zugangsdaten müssen aus .git/config entfernt sein: %q", cfg)
+		t.Fatalf("credentials must be removed from .git/config: %q", cfg)
 	}
 }
 
@@ -111,18 +111,18 @@ func TestRejectedPaths(t *testing.T) {
 		"Home selbst":        home,
 		"außerhalb":          outside,
 		"gesperrt":           filepath.Join(home, ".ssh"),
-		"Symlink nach .ssh":  filepath.Join(home, "sshdir"),
-		"Symlink nach außen": link,
+		"symlink to .ssh":    filepath.Join(home, "sshdir"),
+		"symlink outside":    link,
 		"Sperrliste-Eintrag": filepath.Join(home, "proj", "keys"),
-		"Datei":              filepath.Join(home, "proj", "main.go"),
+		"file":               filepath.Join(home, "proj", "main.go"),
 		"fehlt":              filepath.Join(home, "gibtsnicht"),
 		"Elternpfad ..":      filepath.Join(home, "proj", "..", ".."),
 	} {
 		if _, _, err := im.Preview(p); err == nil {
-			t.Fatalf("%s muss abgelehnt werden", name)
+			t.Fatalf("%s must be rejected", name)
 		}
 		if _, _, err := im.Stream(p, io.Discard); err == nil {
-			t.Fatalf("%s (Stream) muss abgelehnt werden", name)
+			t.Fatalf("%s (Stream) must be rejected", name)
 		}
 	}
 }

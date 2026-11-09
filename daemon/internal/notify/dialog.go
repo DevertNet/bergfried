@@ -1,5 +1,5 @@
-// Package notify: Freigabe-Dialog per osascript (macOS). Der Agent-Text wird nur als
-// Argument übergeben, nie in AppleScript-Quelltext eingebaut.
+// Package notify: approval dialog via osascript (macOS). The agent text is only passed as an
+// argument, never built into AppleScript source.
 package notify
 
 import (
@@ -34,11 +34,11 @@ func ask(text, no, yes string) bool {
 }
 
 func Text(r store.Request) string {
-	what := "die Datei"
+	what := "the file"
 	if r.Kind == "folder" {
-		what = "den Ordner"
+		what = "the folder"
 	}
-	return fmt.Sprintf("Sandbox „%s“ / Agent „%s“ möchte %s kopiert haben:\n\n~/%s\n(%d Datei(en), %.1f MB)\n\nBegründung (vom Agent, ungeprüft):\n%s",
+	return fmt.Sprintf("Sandbox \"%s\" / agent \"%s\" wants %s copied:\n\n~/%s\n(%d file(s), %.1f MB)\n\nReason (from the agent, unchecked):\n%s",
 		r.Sandbox, r.Agent, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
 }
 
@@ -52,7 +52,7 @@ func (d *Dialog) Ask(r store.Request) {
 		}
 		confirm := false
 		if access.Large(r) {
-			confirm = ask(fmt.Sprintf("Sehr große Freigabe: %.0f MB in %d Dateien.\nWirklich kopieren?", float64(r.Bytes)/1048576, r.Files), "Abbrechen", "Ja, kopieren")
+			confirm = ask(fmt.Sprintf("Very large approval: %.0f MB in %d files.\nReally copy?", float64(r.Bytes)/1048576, r.Files), "Cancel", "Yes, copy")
 			if !confirm {
 				_, _ = d.Decide(r.ID, false, false)
 				return

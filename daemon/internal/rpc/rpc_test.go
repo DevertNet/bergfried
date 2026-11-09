@@ -22,7 +22,7 @@ func TestListenUnixPerms(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Dir(p)); fi.Mode().Perm() != 0o700 {
 		t.Fatalf("dir %v", fi.Mode().Perm())
 	}
-	l2, err := ListenUnix(p) // alter Socket wird ersetzt
+	l2, err := ListenUnix(p) // old socket is replaced
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestAgentHeaderValidated(t *testing.T) {
 		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(AgentHeader, v))
 	}
 	if agentFrom(mk("shop/main")) != "shop/main" {
-		t.Fatal("gültiger Name")
+		t.Fatal("valid name")
 	}
 	for _, bad := range []string{"Evil\nname", "a b", "../x", "", "x'; rm"} {
 		if agentFrom(mk(bad)) != "unknown" {
@@ -42,6 +42,6 @@ func TestAgentHeaderValidated(t *testing.T) {
 		}
 	}
 	if agentFrom(context.Background()) != "unknown" {
-		t.Fatal("ohne Header")
+		t.Fatal("without header")
 	}
 }

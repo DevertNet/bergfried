@@ -1,4 +1,4 @@
-// Package store hält Sandboxes, Agents und das Audit-Log in SQLite (reines Go, kein cgo).
+// Package store keeps sandboxes, agents and the audit log in SQLite (pure Go, no cgo).
 package store
 
 import (
@@ -30,7 +30,7 @@ type AuditEntry struct {
 	Actor, Event, Sandbox, Agent, Detail string
 }
 
-// Open legt das Datenverzeichnis mit 0700 und die DB mit 0600 an.
+// Open creates the data directory with 0700 and the DB with 0600.
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func Open(dir string) (*Store, error) {
 	return s, s.migrate()
 }
 
-// renameLegacy benennt Tabellen und Spalten aus der Zeit vor „Sandbox“ um (sessions -> sandboxes, Spalte session -> sandbox).
+// renameLegacy renames tables and columns from before "sandbox" (sessions -> sandboxes, column session -> sandbox).
 func (s *Store) renameLegacy() {
 	has := func(table, column string) bool {
 		rows, err := s.DB.Query(`SELECT name FROM pragma_table_info(?)`, table)
@@ -85,10 +85,10 @@ func (s *Store) renameLegacy() {
 func (s *Store) migrate() error {
 	s.renameLegacy()
 	defer func() {
-		// Migration älterer DBs (Spalte extra); Fehler "duplicate column" ist erwartet.
+		// Migration of older DBs (column extra); the "duplicate column" error is expected.
 		_, _ = s.DB.Exec(`ALTER TABLE requests ADD COLUMN extra TEXT`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0`)
-		// Reste des früheren Mac-Push-Konzepts (Token liegt jetzt in der VM, siehe docs/DESIGN-GIT.md).
+		// Leftovers of the former Mac-push concept (the token now lives in the VM, see docs/GITHUB.md).
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS git_pushes`)
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS ci_grants`)
 	}()
@@ -110,7 +110,7 @@ func (s *Store) GetSandbox(name string) (Sandbox, error) {
 	var c int64
 	err := s.DB.QueryRow(`SELECT name,vm,repo,template_version,created FROM sandboxes WHERE name=?`, name).Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c)
 	if err == sql.ErrNoRows {
-		return x, fmt.Errorf("Sandbox %q existiert nicht", name)
+		return x, fmt.Errorf("sandbox %q does not exist", name)
 	}
 	x.Created = time.Unix(c, 0)
 	return x, err
@@ -163,7 +163,7 @@ func (s *Store) ListAgents(sandbox string) ([]Agent, error) {
 	return out, rows.Err()
 }
 
-// Audit schreibt einen Eintrag; Fehler dürfen nie verschluckt werden.
+// Audit writes an entry; errors must never be swallowed.
 func (s *Store) Audit(actor, event, sandbox, agent, detail string) error {
 	_, err := s.DB.Exec(`INSERT INTO audit(ts,actor,event,sandbox,agent,detail) VALUES(?,?,?,?,?,?)`, time.Now().Unix(), actor, event, sandbox, agent, detail)
 	return err
@@ -193,7 +193,7 @@ type Request struct {
 	Status                             string
 	Created                            time.Time
 	Bytes, Files                       int64
-	Extra                              string // z. B. Host-Key-Fingerprints bei SSH-Anfragen
+	Extra                              string // e.g. host key fingerprints for SSH requests
 }
 
 func (s *Store) AddRequest(r Request) (int64, error) {
@@ -205,7 +205,7 @@ func (s *Store) AddRequest(r Request) (int64, error) {
 	return res.LastInsertId()
 }
 
-// SetRequestStatus ändert nur eine noch offene Anfrage (pending); sonst false.
+// SetRequestStatus changes only a still open request (pending); otherwise false.
 func (s *Store) SetRequestStatus(id int64, status string) (bool, error) {
 	res, err := s.DB.Exec(`UPDATE requests SET status=? WHERE id=? AND status='pending'`, status, id)
 	if err != nil {
@@ -229,7 +229,7 @@ const reqCols = `id,sandbox,agent,kind,path,reason,status,created,bytes,files,ex
 func (s *Store) GetRequest(id int64) (Request, error) {
 	r, err := scanReq(s.DB.QueryRow(`SELECT `+reqCols+` FROM requests WHERE id=?`, id))
 	if err == sql.ErrNoRows {
-		return r, fmt.Errorf("Anfrage %d existiert nicht", id)
+		return r, fmt.Errorf("request %d does not exist", id)
 	}
 	return r, err
 }
@@ -255,8 +255,8 @@ func (s *Store) ListRequests(onlyPending bool, limit int) ([]Request, error) {
 	return out, rows.Err()
 }
 
-// ExpirePending markiert beim Daemon-Start alle offenen Anfragen als abgelaufen
-// (die wartenden Agent-Aufrufe sind mit dem Neustart ohnehin weg).
+// ExpirePending marks all open requests as expired at daemon start
+// (the waiting agent calls are gone with the restart anyway).
 func (s *Store) ExpirePending() error {
 	_, err := s.DB.Exec(`UPDATE requests SET status='expired' WHERE status='pending'`)
 	return err
@@ -298,12 +298,12 @@ func scanGrant(sc interface{ Scan(...any) error }) (SSHGrant, error) {
 func (s *Store) GetGrant(id int64) (SSHGrant, error) {
 	g, err := scanGrant(s.DB.QueryRow(`SELECT `+grantCols+` FROM ssh_grants WHERE id=?`, id))
 	if err == sql.ErrNoRows {
-		return g, fmt.Errorf("Freigabe %d existiert nicht", id)
+		return g, fmt.Errorf("grant %d does not exist", id)
 	}
 	return g, err
 }
 
-// ListGrants: nur aktive (nicht entzogen, nicht abgelaufen) oder alle.
+// ListGrants: only active (not revoked, not expired) or all.
 func (s *Store) ListGrants(onlyActive bool, now time.Time) ([]SSHGrant, error) {
 	q := `SELECT ` + grantCols + ` FROM ssh_grants`
 	var args []any
@@ -333,7 +333,7 @@ func (s *Store) RevokeGrant(id int64) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
-		return fmt.Errorf("Freigabe %d existiert nicht", id)
+		return fmt.Errorf("grant %d does not exist", id)
 	}
 	return nil
 }
@@ -343,7 +343,7 @@ func (s *Store) SetGrantExpiry(id int64, t time.Time) error {
 	return err
 }
 
-// AuditSearch: neueste zuerst, optional Textfilter über alle Felder.
+// AuditSearch: newest first, optional text filter over all fields.
 func (s *Store) AuditSearch(limit int, q string) ([]AuditEntry, error) {
 	like := "%" + strings.ReplaceAll(strings.ReplaceAll(q, "%", ""), "_", "") + "%"
 	rows, err := s.DB.Query(`SELECT ts,actor,event,COALESCE(sandbox,''),COALESCE(agent,''),COALESCE(detail,'') FROM audit
@@ -366,11 +366,11 @@ func (s *Store) AuditSearch(limit int, q string) ([]AuditEntry, error) {
 	return out, rows.Err()
 }
 
-// Seeded: Der erste Agent ("main") wurde für die Sandbox bereits angelegt. Danach wird nie wieder automatisch einer erzeugt.
+// Seeded: the first agent ("main") was already created for the sandbox. After that none is ever created automatically again.
 func (s *Store) Seeded(name string) bool {
 	var v int
 	if err := s.DB.QueryRow(`SELECT seeded FROM sandboxes WHERE name=?`, name).Scan(&v); err != nil {
-		return true // im Zweifel nichts automatisch anlegen
+		return true // when in doubt create nothing automatically
 	}
 	return v == 1
 }

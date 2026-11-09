@@ -23,10 +23,10 @@ func TestPermsAndRoundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.AddSandbox(Sandbox{Name: "a", VM: "bf-a2", TemplateVersion: 1, Created: time.Now()}); err == nil {
-		t.Fatal("Duplikat muss scheitern")
+		t.Fatal("a duplicate must fail")
 	}
 	if _, err := s.GetSandbox("nix"); err == nil {
-		t.Fatal("fehlende Sandbox muss Fehler liefern")
+		t.Fatal("a missing sandbox must return an error")
 	}
 	_ = s.Audit("cli", "sandbox.create", "a", "", "x")
 	l, _ := s.AuditList(10)
@@ -36,7 +36,7 @@ func TestPermsAndRoundtrip(t *testing.T) {
 	_ = s.AddAgent(Agent{Sandbox: "a", Name: "main", Worktree: "/w", ComposeProject: "a-main", Created: time.Now()})
 	_ = s.DeleteSandbox("a")
 	if ag, _ := s.ListAgents("a"); len(ag) != 0 {
-		t.Fatal("Agents müssen mitgelöscht werden")
+		t.Fatal("agents must be deleted too")
 	}
 }
 
@@ -47,7 +47,7 @@ func TestSeededAndDeleteAgent(t *testing.T) {
 	}
 	_ = s.AddSandbox(Sandbox{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now()})
 	if s.Seeded("a") {
-		t.Fatal("neue Sandbox ist zunächst nicht markiert")
+		t.Fatal("a new sandbox is not marked at first")
 	}
 	if !s.Seeded("unbekannt") {
 		t.Fatal("unbekannte Sandbox: nie automatisch anlegen")
@@ -59,7 +59,7 @@ func TestSeededAndDeleteAgent(t *testing.T) {
 	_ = s.AddAgent(Agent{Sandbox: "a", Name: "x", Worktree: "/w", ComposeProject: "a-x", Created: time.Now()})
 	_ = s.DeleteAgent("a", "x")
 	if ag, _ := s.ListAgents("a"); len(ag) != 0 {
-		t.Fatal("Agent muss weg sein")
+		t.Fatal("agent must be gone")
 	}
 }
 
@@ -69,7 +69,7 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Alte DB nachbauen: Tabellen und Spalten mit dem früheren Namen.
+	// Rebuild an old DB: tables and columns with the former name.
 	for _, q := range []string{
 		`DROP TABLE sandboxes`, `DROP TABLE agents`, `DROP TABLE requests`, `DROP TABLE ssh_grants`, `DROP TABLE audit`,
 		`CREATE TABLE sessions(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL, seeded INTEGER NOT NULL DEFAULT 0)`,
@@ -94,11 +94,11 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 		t.Fatal(x, err)
 	}
 	if ag, _ := s.ListAgents("alt"); len(ag) != 1 {
-		t.Fatalf("Agents nach Migration: %v", ag)
+		t.Fatalf("agents after migration: %v", ag)
 	}
 	au, _ := s.AuditSearch(10, "sandbox.create")
 	if len(au) != 1 || au[0].Sandbox != "alt" {
-		t.Fatalf("Audit nach Migration: %+v", au)
+		t.Fatalf("audit after migration: %+v", au)
 	}
 	if _, err := s.AddRequest(Request{Sandbox: "alt", Kind: "file", Path: "x", Status: "pending"}); err != nil {
 		t.Fatal(err)

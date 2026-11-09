@@ -32,10 +32,10 @@ func TestCreateArgsExactlyTwoMountsNoHome(t *testing.T) {
 		t.Fatalf("mounts=%d", n)
 	}
 	if a[len(a)-3] != "/s/out:w" && !strings.Contains(strings.Join(a, " "), "/s/out:w") {
-		t.Fatal("out muss beschreibbar sein")
+		t.Fatal("out must be writable")
 	}
 	if strings.Contains(strings.Join(a, " "), "/s/in:w") {
-		t.Fatal("in muss read-only sein")
+		t.Fatal("in must be read-only")
 	}
 }
 
@@ -57,9 +57,9 @@ func TestRepinHostKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(d + "/ssh.known_hosts"); err == nil {
-		t.Fatal("Datei muss weg sein")
+		t.Fatal("file must be gone")
 	}
 	if err := RepinHostKey("vm1"); err != nil {
-		t.Fatal("zweiter Aufruf darf nicht scheitern")
+		t.Fatal("a second call must not fail")
 	}
 }

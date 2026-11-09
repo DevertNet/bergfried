@@ -1,9 +1,9 @@
-// fakegithub: lokaler GitHub-Ersatz für Entwicklung und End-to-End-Tests (nicht für den Betrieb).
-// Bietet auf einem Port: die benötigten REST-Endpunkte (Repo, Pull Request, Actions-Läufe/-Jobs/-Logs, Rerun, /user) und einen echten
-// Git-Smart-HTTP-Server (git http-backend) mit Basic-Auth (Passwort = Token). Zustand der CI per PUT /_fake/state, Protokoll per GET /_fake/log.
+// fakegithub: local GitHub stand-in for development and end-to-end tests (not for production).
+// Offers on one port: the needed REST endpoints (repo, pull request, Actions runs/jobs/logs, rerun, /user) and a real
+// git smart HTTP server (git http-backend) with basic auth (password = token). CI state via PUT /_fake/state, log via GET /_fake/log.
 //
-//	fakegithub -addr 127.0.0.1:8099 -root /pfad/zu/repos -token geheim
-//	Bare-Repo muss unter <root>/<owner>/<repo>.git liegen (git init --bare; git config http.receivepack true).
+//	fakegithub -addr 127.0.0.1:8099 -root /path/to/repos -token secret
+//	A bare repo must live under <root>/<owner>/<repo>.git (git init --bare; git config http.receivepack true).
 package main
 
 import (
@@ -29,11 +29,11 @@ type state struct {
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8099", "Adresse")
-	root := flag.String("root", "", "Wurzelverzeichnis der Bare-Repos (<owner>/<repo>.git)")
-	token := flag.String("token", "", "erwartetes Token/Passwort")
+	root := flag.String("root", "", "root directory of the bare repos (<owner>/<repo>.git)")
+	token := flag.String("token", "", "expected token/password")
 	flag.Parse()
 	if *root == "" || *token == "" {
-		log.Fatal("-root und -token sind Pflicht")
+		log.Fatal("-root and -token are required")
 	}
 	execPath, err := exec.Command("git", "--exec-path").Output()
 	if err != nil {
@@ -130,8 +130,8 @@ func main() {
 		http.Redirect(w, r, "/_blob/"+r.PathValue("id"), http.StatusFound)
 	}))
 	mux.HandleFunc("GET /_blob/{id}", func(w http.ResponseWriter, r *http.Request) {
-		// Hinweis: Bei echtem GitHub zeigt die Weiterleitung auf eine andere Domain (Go entfernt dann den Authorization-Header);
-		// hier ist es derselbe Host, der Header kommt also mit an – das ist für den Ersatz ohne Bedeutung.
+		// Note: with real GitHub the redirect points to another domain (Go then drops the Authorization header);
+		// here it is the same host, so the header comes along – irrelevant for the stand-in.
 		mu.Lock()
 		text := st.Logs[r.PathValue("id")]
 		mu.Unlock()

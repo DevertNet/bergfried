@@ -17,8 +17,8 @@ import (
 
 const MaxTemplateBytes = 64 << 10
 
-// TemplateStore: vom Nutzer änderbare Kopie der VM-Vorlage unter <Home>/template/.
-// Der Name der Basis-VM ergibt sich aus dem Inhalts-Hash (bergfried-base-<hash>); die Revision zählt Änderungen (Anzeige).
+// TemplateStore: user-editable copy of the VM template under <Home>/template/.
+// The base VM's name derives from the content hash (bergfried-base-<hash>); the revision counts changes (display).
 type TemplateStore struct {
 	Dir  string // <Home>/template
 	Seed string // mitgelieferte Vorlage (Bundle/Repo)
@@ -36,14 +36,14 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, b, 0o600)
 }
 
-// Ensure legt das Verzeichnis (0700) an und übernimmt beim ersten Mal die mitgelieferte Vorlage.
+// Ensure creates the directory (0700) and adopts the bundled template the first time.
 func (t TemplateStore) Ensure() error {
 	if err := os.MkdirAll(t.Dir, 0o700); err != nil {
 		return err
 	}
 	if _, err := os.Stat(t.Path()); os.IsNotExist(err) {
 		if t.Seed == "" {
-			return errors.New("keine Vorlage vorhanden und keine mitgelieferte angegeben")
+			return errors.New("no template present and no bundled one given")
 		}
 		if err := copyFile(t.Seed, t.Path()); err != nil {
 			return err
@@ -67,7 +67,7 @@ func (t TemplateStore) Rev() int {
 	return n
 }
 
-// Hash: Kurz-Hash des Vorlagen-Inhalts; benennt die Basis-VM (gleicher Inhalt = gleiche Basis).
+// Hash: short hash of the template content; names the base VM (same content = same base).
 func (t TemplateStore) Hash() string {
 	b, err := os.ReadFile(t.Path())
 	if err != nil {
@@ -86,7 +86,7 @@ func (t TemplateStore) bump() error {
 	return os.WriteFile(t.revPath(), []byte(strconv.Itoa(t.Rev()+1)), 0o600)
 }
 
-// Save prüft, validiert (limactl) und speichert; erhöht die Revision, wenn sich der Inhalt ändert.
+// Save checks, validates (limactl) and stores; increases the revision if the content changes.
 func (t TemplateStore) Save(ctx context.Context, yml string) (warnings []string, err error) {
 	warnings, err = CheckTemplate(yml)
 	if err != nil {
@@ -110,14 +110,14 @@ func (t TemplateStore) Save(ctx context.Context, yml string) (warnings []string,
 	return warnings, t.bump()
 }
 
-// Reset stellt die mitgelieferte Vorlage wieder her.
+// Reset restores the bundled template.
 func (t TemplateStore) Reset() error {
 	b, err := os.ReadFile(t.Seed)
 	if err != nil {
 		return err
 	}
 	if _, err := CheckTemplate(string(b)); err != nil {
-		return fmt.Errorf("mitgelieferte Vorlage ungültig: %w", err)
+		return fmt.Errorf("bundled template invalid: %w", err)
 	}
 	cur, _ := t.Read()
 	if cur == string(b) {
@@ -129,22 +129,22 @@ func (t TemplateStore) Reset() error {
 	return t.bump()
 }
 
-// CheckTemplate erzwingt die Isolationsregeln. Fehler = nicht speicherbar, Warnungen = Hinweis.
+// CheckTemplate enforces the isolation rules. Errors = cannot be saved, warnings = hint.
 func CheckTemplate(yml string) (warnings []string, err error) {
 	if len(yml) > MaxTemplateBytes {
-		return nil, fmt.Errorf("Vorlage zu groß (max. %d KB)", MaxTemplateBytes>>10)
+		return nil, fmt.Errorf("template too large (max. %d KB)", MaxTemplateBytes>>10)
 	}
 	var m map[string]any
 	if err := yaml.Unmarshal([]byte(yml), &m); err != nil {
-		return nil, fmt.Errorf("YAML ungültig: %w", err)
+		return nil, fmt.Errorf("invalid YAML: %w", err)
 	}
 	if m == nil {
-		return nil, errors.New("Vorlage ist leer")
+		return nil, errors.New("template is empty")
 	}
 	var errs []string
 	if mounts, ok := m["mounts"]; ok {
 		if l, ok := mounts.([]any); !ok || len(l) > 0 {
-			errs = append(errs, "`mounts` muss leer bleiben – Mounts (shared/in, shared/out) setzt der Daemon je Sandbox; Home darf nie gemountet werden")
+			errs = append(errs, "`mounts` must stay empty – the daemon sets the mounts (shared/in, shared/out) per sandbox; home must never be mounted")
 		}
 	}
 	if base, ok := m["base"]; ok {
@@ -155,13 +155,13 @@ func CheckTemplate(yml string) (warnings []string, err error) {
 		for _, b := range list {
 			s := fmt.Sprint(b)
 			if strings.Contains(s, "mounts") || s == "template:default" || strings.HasPrefix(s, "template:docker") || s == "template://default" {
-				errs = append(errs, fmt.Sprintf("Basis %q bringt Mounts/Docker-Socket-Weiterleitung mit (Home-Mount)", s))
+				errs = append(errs, fmt.Sprintf("base %q brings mounts/Docker socket forwarding (home mount)", s))
 			}
 		}
 	}
 	if ssh, ok := m["ssh"].(map[string]any); ok {
 		if fa, ok := ssh["forwardAgent"].(bool); ok && fa {
-			errs = append(errs, "`ssh.forwardAgent` darf nicht true sein (der private Key verlässt den Mac nie)")
+			errs = append(errs, "`ssh.forwardAgent` must not be true (the private key never leaves the Mac)")
 		}
 	}
 	guestSockets := map[string]bool{}
@@ -171,21 +171,21 @@ func CheckTemplate(yml string) (warnings []string, err error) {
 			gs, _ := f["guestSocket"].(string)
 			hs, _ := f["hostSocket"].(string)
 			if strings.Contains(gs, "docker.sock") || strings.Contains(hs, "docker.sock") {
-				errs = append(errs, "Docker-Socket des Hosts/der VM darf nicht weitergeleitet werden")
+				errs = append(errs, "the host's/VM's Docker socket must not be forwarded")
 			}
 			if gs != "" {
 				guestSockets[gs] = true
 				if !strings.HasPrefix(hs, "{{.Dir}}/sock/") {
-					warnings = append(warnings, fmt.Sprintf("Socket-Weiterleitung %q liegt außerhalb von {{.Dir}}/sock", gs))
+					warnings = append(warnings, fmt.Sprintf("socket forward %q is outside {{.Dir}}/sock", gs))
 				}
 			} else {
-				warnings = append(warnings, "Port-Weiterleitung in der Vorlage: Ports werden zum Mac durchgereicht")
+				warnings = append(warnings, "port forward in the template: ports are passed through to the Mac")
 			}
 		}
 	}
 	for _, need := range []string{"/run/user/{{.UID}}/bergfried.sock", "/run/user/{{.UID}}/bergfried-agent.sock"} {
 		if !guestSockets[need] {
-			errs = append(errs, fmt.Sprintf("Pflicht-Weiterleitung %q fehlt (Datei-/SSH-Anfragen würden nicht funktionieren)", need))
+			errs = append(errs, fmt.Sprintf("mandatory forward %q is missing (file/SSH requests would not work)", need))
 		}
 	}
 	if len(errs) > 0 {

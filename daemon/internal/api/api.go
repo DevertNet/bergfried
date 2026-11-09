@@ -1,5 +1,5 @@
-// Package api: HTTP/JSON-Schnittstelle der Control-App (nur lokaler Unix-Socket, 0600).
-// Lange Aktionen laufen als Jobs; die App fragt den Status ab.
+// Package api: HTTP/JSON interface of the control app (local unix socket only, 0600).
+// Long actions run as jobs; the app polls their status.
 package api
 
 import (
@@ -53,7 +53,7 @@ func (s *Server) job(kind string, f func(ctx context.Context) error) *Job {
 	return s.jobFor(kind, "", f)
 }
 
-// jobFor wie job; solange der Job läuft, wird die Sandbox vom Monitor nicht abgefragt.
+// jobFor is like job; while the job runs the monitor does not poll the sandbox.
 func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *Job {
 	if sess != "" && s.Mon != nil {
 		s.Mon.Hold(sess)
@@ -210,7 +210,7 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// Serve lauscht auf dem Unix-Socket (Verzeichnis 0700, Socket 0600).
+// Serve listens on the unix socket (directory 0700, socket 0600).
 func (s *Server) Serve(ctx context.Context, sock string) error {
 	if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
 		return err
@@ -351,7 +351,7 @@ func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
-		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
 	writeJSON(w, 202, s.jobFor("agent.add", q.Sandbox, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Sandbox, q.Agent) }))
@@ -364,7 +364,7 @@ func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
-		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
 	writeJSON(w, 202, s.jobFor("agent.restart", q.Sandbox, func(ctx context.Context) error {
@@ -384,7 +384,7 @@ func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
 		Token string `json:"token"`
 	}
 	if err := decode(r, &q); err != nil || s.GH == nil {
-		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
 	if err := s.GH.Decide(r.Context(), q.ID, q.Allow, q.Token); err != nil {
@@ -394,20 +394,20 @@ func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
-// githubLink: vorausgefüllter Link zum Erzeugen eines Fine-grained Tokens (vor dem Anlegen der Sandbox, deshalb nur der Name).
+// githubLink: pre-filled link for creating a fine-grained token (before the sandbox exists, so only the name).
 func (s *Server) githubLink(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("sandbox")
 	if name == "" {
-		name = "neu"
+		name = "new"
 	}
 	if sandbox.ValidName(name) != nil {
-		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
 	writeJSON(w, 200, map[string]string{"url": ghtoken.Link(name), "hint": ghtoken.Hint})
 }
 
-// agentRCOK: Nutzer bestätigt, dass Remote Control läuft (setzt „nicht aktivierbar“ zurück).
+// agentRCOK: the user confirms that Remote Control is running (resets "cannot be activated").
 func (s *Server) agentRCOK(w http.ResponseWriter, r *http.Request) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
@@ -415,14 +415,14 @@ func (s *Server) agentRCOK(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil || s.Mon == nil {
-		fail(w, 400, fmt.Errorf("ungültige Anfrage"))
+		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
 	if err := s.Mon.MarkRC(q.Sandbox, q.Agent); err != nil {
 		fail(w, 409, err)
 		return
 	}
-	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Sandbox, q.Agent, "vom Nutzer als aktiv bestätigt")
+	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Sandbox, q.Agent, "confirmed active by the user")
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
@@ -438,7 +438,7 @@ func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
-		fail(w, 400, fmt.Errorf("ungültiger Name"))
+		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
 	writeJSON(w, 202, s.jobFor("agent.remove", q.Sandbox, func(ctx context.Context) error {
@@ -480,7 +480,7 @@ func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.M.Imp == nil {
-		fail(w, 500, fmt.Errorf("Import nicht verfügbar"))
+		fail(w, 500, fmt.Errorf("import not available"))
 		return
 	}
 	files, bytes, err := s.M.Imp.Preview(q.Path)
@@ -681,7 +681,7 @@ func (s *Server) extend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"message": "verlängert", "expires_unix": exp.Unix()})
+	writeJSON(w, 200, map[string]any{"message": "extended", "expires_unix": exp.Unix()})
 }
 
 func (s *Server) keys(w http.ResponseWriter, r *http.Request) {
@@ -727,7 +727,7 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
-// csvSafe verhindert Formel-Injektion beim Öffnen in Tabellenkalkulationen.
+// csvSafe prevents formula injection when opened in spreadsheets.
 func csvSafe(v string) string {
 	if v != "" && strings.ContainsRune("=+-@\t\r", rune(v[0])) {
 		return "'" + v
@@ -770,7 +770,7 @@ func (s *Server) putBlocklist(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 	bl.Paths, bl.Names = clean(bl.Paths), clean(bl.Names)
-	// Sicherheitsnetz: Pflichteinträge dürfen nicht entfernt werden.
+	// Safety net: mandatory entries must not be removed.
 	def := index.DefaultBlocklist()
 	for _, must := range def.Paths[:3] { // .ssh, Library, .config
 		found := false
@@ -780,7 +780,7 @@ func (s *Server) putBlocklist(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			fail(w, 400, fmt.Errorf("%q gehört zur festen Sperrliste und kann nicht entfernt werden", must))
+			fail(w, 400, fmt.Errorf("%q is part of the fixed blocklist and cannot be removed", must))
 			return
 		}
 	}

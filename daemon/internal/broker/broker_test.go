@@ -68,7 +68,7 @@ func (f *fx) grant(t *testing.T, sandbox string, mins int, perConn bool) int64 {
 	return id
 }
 
-// client verbindet sich wie ssh: eigener Agent-Client gegen Conn.
+// client connects like ssh: its own agent client against Conn.
 func (f *fx) client(sandbox string) agent.ExtendedAgent {
 	c, s := net.Pipe()
 	go f.b.NewConn(sandbox).Serve(s)
@@ -99,12 +99,12 @@ func TestNoGrantNoKeysNoSignature(t *testing.T) {
 	f := setup(t)
 	a := f.client("shop")
 	if ks, _ := a.List(); len(ks) != 0 {
-		t.Fatal("ohne Freigabe muss die Liste leer sein")
+		t.Fatal("without a grant the list must be empty")
 	}
 	sid := []byte("sid-1")
 	_ = bind(t, a, f.host, sid, false, f.host)
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("ohne Freigabe darf nichts signiert werden")
+		t.Fatal("without a grant nothing may be signed")
 	}
 }
 
@@ -114,11 +114,11 @@ func TestSignOnlyWithGrantAndMatchingHost(t *testing.T) {
 	a := f.client("shop")
 	ks, _ := a.List()
 	if len(ks) != 1 || ssh.FingerprintSHA256(ks[0]) != ssh.FingerprintSHA256(f.userKey.PublicKey()) {
-		t.Fatalf("nur der gewählte Key darf sichtbar sein: %v", ks)
+		t.Fatalf("only the chosen key may be visible: %v", ks)
 	}
 	sid := []byte("sid-2")
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("ohne session-bind muss abgelehnt werden (fail closed)")
+		t.Fatal("without session-bind it must be refused (fail closed)")
 	}
 	if err := bind(t, a, f.host, sid, false, f.host); err != nil {
 		t.Fatal(err)
@@ -128,10 +128,10 @@ func TestSignOnlyWithGrantAndMatchingHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.userKey.PublicKey().Verify(authData(sid), sig); err != nil {
-		t.Fatal("Signatur muss gültig sein:", err)
+		t.Fatal("signature must be valid:", err)
 	}
 	if _, err := a.Sign(f.other.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("anderer Key darf nicht signieren")
+		t.Fatal("another key must not sign")
 	}
 }
 
@@ -142,21 +142,21 @@ func TestWrongHostForwardingAndForgedBind(t *testing.T) {
 	a := f.client("shop")
 	_ = bind(t, a, f.host2, sid, false, f.host2) // anderer Host
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("nicht freigegebener Host")
+		t.Fatal("host not approved")
 	}
 	a = f.client("shop")
-	if err := bind(t, a, f.host, sid, false, f.host2); err == nil { // gefälschte Signatur
-		t.Fatal("gefälschtes session-bind muss scheitern")
+	if err := bind(t, a, f.host, sid, false, f.host2); err == nil { // forged signature
+		t.Fatal("forged session-bind must fail")
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, true, f.host) // Weiterleitung
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("Agent-Weiterleitung muss abgelehnt werden")
+		t.Fatal("agent forwarding must be refused")
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, false, f.host)
 	if _, err := a.Sign(f.userKey.PublicKey(), authData([]byte("andere-session"))); err == nil {
-		t.Fatal("Daten einer anderen Verbindung dürfen nicht signiert werden")
+		t.Fatal("data of another connection must not be signed")
 	}
 }
 
@@ -173,24 +173,24 @@ func TestExpiryRevokeAndOtherSandbox(t *testing.T) {
 	b := f.client("other")
 	_ = bind(t, b, f.host, sid, false, f.host)
 	if _, err := b.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("Freigabe gilt nur für die eigene Sandbox")
+		t.Fatal("a grant applies to its own sandbox only")
 	}
 	// Ablauf
 	f.now = f.now.Add(11 * time.Minute)
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("nach Ablauf muss abgelehnt werden")
+		t.Fatal("after expiry it must be refused")
 	}
 	if ks, _ := a.List(); len(ks) != 0 {
-		t.Fatal("nach Ablauf leere Liste")
+		t.Fatal("empty list after expiry")
 	}
-	// Verlängern, dann Entziehen
+	// extend, then revoke
 	_ = f.b.St.SetGrantExpiry(id, f.now.Add(time.Hour))
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err != nil {
-		t.Fatal("verlängert muss wieder gehen:", err)
+		t.Fatal("extended must work again:", err)
 	}
 	_ = f.b.St.RevokeGrant(id)
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("nach Entzug muss abgelehnt werden")
+		t.Fatal("after revocation it must be refused")
 	}
 }
 
@@ -201,7 +201,7 @@ func TestPerConnectionConfirm(t *testing.T) {
 	a := f.client("shop")
 	_ = bind(t, a, f.host, sid, false, f.host)
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("ohne ConfirmEach muss abgelehnt werden")
+		t.Fatal("without ConfirmEach it must be refused")
 	}
 	f.b.ConfirmEach = func(store.SSHGrant, string) bool { return false }
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
@@ -219,12 +219,12 @@ func TestVMCannotManageKeys(t *testing.T) {
 	a := f.client("shop")
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	if err := a.Add(agent.AddedKey{PrivateKey: priv}); err == nil {
-		t.Fatal("Add muss scheitern")
+		t.Fatal("Add must fail")
 	}
 	if err := a.RemoveAll(); err == nil {
-		t.Fatal("RemoveAll muss scheitern")
+		t.Fatal("RemoveAll must fail")
 	}
 	if err := a.Lock([]byte("x")); err == nil {
-		t.Fatal("Lock muss scheitern")
+		t.Fatal("Lock must fail")
 	}
 }

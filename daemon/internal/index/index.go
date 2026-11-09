@@ -15,14 +15,14 @@ import (
 const MaxResults = 1000
 
 type Entry struct {
-	Path  string // relativ zum Home, "/"
+	Path  string // relative to home, "/"
 	IsDir bool
 	Size  int64
 	MTime int64
 }
 
 type Index struct {
-	home    string // aufgelöster echter Pfad
+	home    string // resolved real path
 	blMu    sync.RWMutex
 	bl      Blocklist
 	mu      sync.RWMutex
@@ -30,7 +30,7 @@ type Index struct {
 	ready   atomic.Bool
 }
 
-// New legt den Index an, ohne zu scannen; Refresh baut ihn auf (z. B. in einer Goroutine).
+// New creates the index without scanning; Refresh builds it (e.g. in a goroutine).
 func New(home string, bl Blocklist) (*Index, error) {
 	real, err := filepath.EvalSymlinks(home)
 	if err != nil {
@@ -47,10 +47,10 @@ func (ix *Index) blocklist() Blocklist {
 	return ix.bl
 }
 
-// Blocklist liefert die aktuelle Sperrliste.
+// Blocklist returns the current blocklist.
 func (ix *Index) Blocklist() Blocklist { return ix.blocklist() }
 
-// SetBlocklist ersetzt die Sperrliste sofort (für Prüfungen) und baut den Index neu auf.
+// SetBlocklist replaces the blocklist immediately (for checks) and rebuilds the index.
 func (ix *Index) SetBlocklist(bl Blocklist) {
 	ix.blMu.Lock()
 	ix.bl = bl
@@ -58,16 +58,16 @@ func (ix *Index) SetBlocklist(bl Blocklist) {
 	go func() { _ = ix.Refresh() }()
 }
 
-var ErrBlocked = errors.New("Pfad ist gesperrt")
-var ErrInvalid = errors.New("ungültiger Pfad")
-var ErrNotReady = errors.New("Index wird noch aufgebaut")
+var ErrBlocked = errors.New("path is blocked")
+var ErrInvalid = errors.New("invalid path")
+var ErrNotReady = errors.New("index is still being built")
 
-// SkipDirs: Verzeichnisse, in die der Index nicht absteigt (Rauschen). Sie bleiben per Pfad
-// freigebbar, sind aber nicht Teil von Listen/Suche.
+// SkipDirs: directories the index does not descend into (noise). They remain shareable
+// by path but are not part of lists/search.
 var SkipDirs = map[string]bool{"node_modules": true, ".git": true, ".cache": true, ".npm": true,
 	".gradle": true, ".Trash": true, ".cocoapods": true, "DerivedData": true, ".cargo": true, ".rustup": true}
 
-// Build erfasst das Home. Symlinks werden weder gelistet noch verfolgt.
+// Build scans the home. Symlinks are neither listed nor followed.
 func Build(home string, bl Blocklist) (*Index, error) {
 	real, err := filepath.EvalSymlinks(home)
 	if err != nil {
@@ -84,7 +84,7 @@ func (ix *Index) Refresh() error {
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
-			return nil // unlesbar: überspringen
+			return nil // unreadable: skip
 		}
 		rel, rerr := filepath.Rel(ix.home, p)
 		if rerr != nil || rel == "." {
@@ -141,7 +141,7 @@ func cleanRel(rel string) (string, error) {
 	return c, nil
 }
 
-// List: direkte Kinder von rel; Glob optional auf den Namen. Nur Metadaten.
+// List: direct children of rel; optional glob on the name. Metadata only.
 func (ix *Index) List(rel, pattern string) ([]Entry, bool, error) {
 	if !ix.Ready() {
 		return nil, false, ErrNotReady
@@ -199,9 +199,9 @@ func (ix *Index) Search(query string) ([]Entry, bool) {
 	return out, false
 }
 
-// Resolve prüft einen Pfad für eine Freigabe und liefert den echten absoluten Pfad.
-// Lexikalisch UND nach Auflösung von Symlinks wird gegen die Sperrliste geprüft;
-// der echte Pfad muss im Home liegen.
+// Resolve checks a path for an approval and returns the real absolute path.
+// Checked against the blocklist both lexically AND after resolving symlinks;
+// the real path must be inside home.
 func (ix *Index) Resolve(rel string) (abs string, relClean string, err error) {
 	c, err := cleanRel(rel)
 	if err != nil || c == "" {

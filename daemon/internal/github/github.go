@@ -1,5 +1,5 @@
-// Package github: schmaler REST-Client für das, was der Daemon mit dem Token einer Sandbox erledigt
-// (Zugriff prüfen, Actions-Läufe/-Jobs/-Logs lesen, Läufe wiederholen). Die Agents bekommen nur Ergebnisse (geschwärzt, gekürzt).
+// Package github: slim REST client for what the daemon does with a sandbox's token
+// (check access). Agents only ever see results, never the token handling.
 package github
 
 import (
@@ -17,7 +17,7 @@ import (
 
 const apiVersion = "2022-11-28"
 
-// TokenSource liefert das GitHub-Token (Schlüsselbund, Umgebung oder Test).
+// TokenSource provides the GitHub token (keychain, environment or test).
 type TokenSource interface{ Token() (string, error) }
 
 type StaticToken string
@@ -29,7 +29,7 @@ func (s StaticToken) Token() (string, error) {
 	return string(s), nil
 }
 
-var ErrNoToken = errors.New("für diese Sandbox ist kein GitHub-Token hinterlegt – rufe request_github_token auf")
+var ErrNoToken = errors.New("no GitHub token is stored for this sandbox – call request_github_token")
 
 type Repo struct{ Owner, Name string }
 
@@ -38,8 +38,8 @@ func (r Repo) HTTPSURL() string { return "https://github.com/" + r.Owner + "/" +
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
-// ParseRemote versteht https://github.com/o/r(.git), git@github.com:o/r(.git) und ssh://git@github.com/o/r(.git).
-// Andere Hosts werden abgelehnt.
+// ParseRemote understands https://github.com/o/r(.git), git@github.com:o/r(.git) and ssh://git@github.com/o/r(.git).
+// Other hosts are rejected.
 func ParseRemote(u string) (Repo, error) {
 	u = strings.TrimSpace(u)
 	var path string
@@ -51,13 +51,13 @@ func ParseRemote(u string) (Repo, error) {
 	case strings.HasPrefix(u, "ssh://git@github.com/"):
 		path = strings.TrimPrefix(u, "ssh://git@github.com/")
 	default:
-		// https://user:token@github.com/… wird bewusst nicht akzeptiert (keine Zugangsdaten in URLs)
-		return Repo{}, fmt.Errorf("nur github.com wird unterstützt (Remote: %q)", truncate(u, 80))
+		// https://user:token@github.com/… is deliberately not accepted (no credentials in URLs)
+		return Repo{}, fmt.Errorf("only github.com is supported (remote: %q)", truncate(u, 80))
 	}
 	path = strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
 	parts := strings.Split(path, "/")
 	if len(parts) != 2 || !nameRe.MatchString(parts[0]) || !nameRe.MatchString(parts[1]) || parts[0] == "." || parts[1] == ".." || parts[0] == ".." || parts[1] == "." {
-		return Repo{}, fmt.Errorf("ungültiger Repo-Pfad %q", truncate(path, 80))
+		return Repo{}, fmt.Errorf("invalid repo path %q", truncate(path, 80))
 	}
 	return Repo{parts[0], parts[1]}, nil
 }
@@ -79,7 +79,7 @@ func New(t TokenSource) *Client {
 	return &Client{Base: "https://api.github.com", HTTP: &http.Client{Timeout: 60 * time.Second}, Tokens: t}
 }
 
-// APIError: Fehlerantwort von GitHub.
+// APIError: error response from GitHub.
 type APIError struct {
 	Status  int
 	Message string
@@ -124,13 +124,13 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
-			return resp.StatusCode, fmt.Errorf("Antwort nicht lesbar: %w", err)
+			return resp.StatusCode, fmt.Errorf("response not readable: %w", err)
 		}
 	}
 	return resp.StatusCode, nil
 }
 
-// Ping prüft, ob GitHub das Token akzeptiert (GET /rate_limit; 401 = ungültig/abgelaufen). Sagt nichts über Repo-Rechte.
+// Ping checks whether GitHub accepts the token (GET /rate_limit; 401 = invalid/expired). Says nothing about repo permissions.
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.do(ctx, "GET", "/rate_limit", nil, nil)
 	return err

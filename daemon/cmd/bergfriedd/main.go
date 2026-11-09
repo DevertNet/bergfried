@@ -1,4 +1,4 @@
-// bergfriedd (M1): CLI zum Verwalten von Bergfried-Sandboxes.
+// bergfriedd: CLI and daemon for managing Bergfried sandboxes.
 package main
 
 import (
@@ -31,23 +31,23 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const usage = `bergfriedd – Bergfried-CLI (M1)
+const usage = `bergfriedd – Bergfried CLI
 
-  base build [--rebuild]        Basis-VM aus der Vorlage bauen
-  create <name> [--repo URL | --import ORDNER]   Sandbox aus Basis-VM klonen
+    base build [--rebuild]        build the base VM from the template
+    create <name> [--repo URL | --import FOLDER]   clone a sandbox from the base VM
   start|stop <name>
-  delete <name> [--force]       warnt bei ungepushten Commits
-  list                          Sandboxes mit VM-Status und Agents
-  agent add <sandbox> <agent>   neuer Agent (tmux-Fenster + Worktree + Remote Control)
-  login <sandbox>               claude auth login in der VM (einmal pro VM)
-  attach <sandbox>              tmux der Sandbox öffnen
-  shell <sandbox>               Shell in der VM
-  audit [-n 50]                 Audit-Log
-  serve [--no-dialog]           Daemon: Index, Sockets je Sandbox, Freigabe-Dialog (läuft im Vordergrund)
-  ssh keys|grants|allow|deny|revoke|extend   SSH-Freigaben
-  requests [list|allow|deny] [id] [--confirm-large] [--all]   Anfragen ansehen/entscheiden
+    delete <name> [--force]       warns about unpushed commits
+    list                          sandboxes with VM status and agents
+    agent add <sandbox> <agent>   new agent (tmux window + worktree + Remote Control)
+    login <sandbox>               claude auth login in the VM (once per VM)
+    attach <sandbox>              open the sandbox's tmux
+    shell <sandbox>               shell in the VM
+    audit [-n 50]                 audit log
+    serve [--no-dialog]           daemon: index, sockets per sandbox, approval dialog (runs in the foreground)
+    ssh keys|grants|allow|deny|revoke|extend   SSH grants
+    requests [list|allow|deny] [id] [--confirm-large] [--all]   show/decide requests
 
-Umgebung: BERGFRIED_HOME (Standard ~/.bergfried), BERGFRIED_TEMPLATE (Standard vm/bergfried.yaml)
+Environment: BERGFRIED_HOME (default ~/.bergfried), BERGFRIED_TEMPLATE (default vm/bergfried.yaml)
 `
 
 func main() {
@@ -56,7 +56,7 @@ func main() {
 		os.Exit(2)
 	}
 	if err := run(os.Args[1], os.Args[2:]); err != nil {
-		fmt.Fprintln(os.Stderr, "Fehler:", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
@@ -84,7 +84,7 @@ func run(cmd string, args []string) error {
 	}
 	m := &sandbox.Manager{L: lima.Client{R: lima.ExecRunner{}}, S: st, Home: home,
 		Template: getenv("BERGFRIED_TEMPLATE", "vm/bergfried.yaml"), Actor: "cli"}
-	// Vorlage im Datenverzeichnis (änderbar in der App); CLI und Daemon nutzen dieselbe Revision.
+	// Template in the data directory (editable in the app); CLI and daemon use the same revision.
 	ts := sandbox.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
 	if err := ts.Ensure(); err == nil {
 		m.Tpl = &ts
@@ -93,7 +93,7 @@ func run(cmd string, args []string) error {
 	}
 	need := func(n int) error {
 		if len(args) < n {
-			return errors.New("zu wenige Argumente\n\n" + usage)
+			return errors.New("too few arguments\n\n" + usage)
 		}
 		return nil
 	}
@@ -111,8 +111,8 @@ func run(cmd string, args []string) error {
 			return err
 		}
 		fs := flag.NewFlagSet("create", flag.ExitOnError)
-		repo := fs.String("repo", "", "Git-URL, wird nach ~/work/main geklont")
-		imp := fs.String("import", "", "bestehender Ordner im Home, wird nach ~/work/main KOPIERT (Sperrliste, ohne .env/Schlüssel)")
+		repo := fs.String("repo", "", "git URL, cloned to ~/work/main")
+		imp := fs.String("import", "", "existing folder in home, COPIED to ~/work/main (blocklist, without .env/keys)")
 		_ = fs.Parse(args[1:])
 		if *imp != "" {
 			bl, err := index.LoadBlocklist(filepath.Join(home, "blocklist.json"))
@@ -168,9 +168,9 @@ func run(cmd string, args []string) error {
 		return syscall.Exec(lc, append([]string{"limactl", "shell", s.VM, "--"}, inner...), os.Environ())
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
-		noDialog := fs.Bool("no-dialog", false, "keinen macOS-Dialog zeigen (nur CLI-Entscheidung)")
-		knownHosts := fs.String("known-hosts", filepath.Join(h, ".ssh", "known_hosts"), "known_hosts für Host-Key-Prüfung der Ziele")
-		upstream := fs.String("upstream-agent", os.Getenv("SSH_AUTH_SOCK"), "ssh-agent-Socket mit deinen echten Keys")
+		noDialog := fs.Bool("no-dialog", false, "do not show a macOS dialog (CLI decisions only)")
+		knownHosts := fs.String("known-hosts", filepath.Join(h, ".ssh", "known_hosts"), "known_hosts for host key checks of the targets")
+		upstream := fs.String("upstream-agent", os.Getenv("SSH_AUTH_SOCK"), "ssh-agent socket with your real keys")
 		_ = fs.Parse(args)
 		return serve(ctx, m, home, h, *noDialog, *upstream, *knownHosts)
 	case "requests":
@@ -230,7 +230,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 		return err
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return errors.New("bergfriedd serve läuft bereits")
+		return errors.New("bergfriedd serve is already running")
 	}
 	bl, err := index.LoadBlocklist(filepath.Join(home, "blocklist.json"))
 	if err != nil {
@@ -246,7 +246,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 			fmt.Fprintln(os.Stderr, "Index-Aufbau:", err)
 			return
 		}
-		fmt.Printf("Index bereit (%s)\n", time.Since(t0).Round(time.Second))
+		fmt.Printf("Index ready (%s)\n", time.Since(t0).Round(time.Second))
 		for range time.Tick(15 * time.Minute) {
 			if err := ix.Refresh(); err != nil {
 				fmt.Fprintln(os.Stderr, "Index-Refresh:", err)
@@ -258,7 +258,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 		svc.Asker = &notify.Dialog{Decide: svc.Decide, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 	}
 	if upstream == "" {
-		fmt.Fprintln(os.Stderr, "WARNUNG: kein Upstream-ssh-agent (SSH_AUTH_SOCK / --upstream-agent): SSH-Freigaben gehen nicht.")
+		fmt.Fprintln(os.Stderr, "WARNING: no upstream ssh-agent (SSH_AUTH_SOCK / --upstream-agent): SSH grants will not work.")
 	}
 	hc, err := broker.LoadHostConfig(filepath.Join(home, "hosts.json"))
 	if err != nil {
@@ -271,11 +271,11 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
 	}
-	// GitHub: ein Fine-grained Token pro Sandbox (liegt in der VM, Kopie auf dem Mac für Repo-Prüfungen; siehe docs/DESIGN-GIT.md).
+	// GitHub: one fine-grained token per sandbox (lives in the VM, copy on the Mac for repo checks; see docs/GITHUB.md).
 	tokStore := ghtoken.Store{Home: home}
 	mkClient := func(tok string) *github.Client {
 		c := github.New(github.StaticToken(tok))
-		if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // nur Entwicklung/Tests: lokaler GitHub-Ersatz
+		if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // development/tests only: local GitHub stand-in
 			c.Base = v
 		}
 		return c
@@ -314,7 +314,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 		}
 	}()
 	_ = m.S.Audit("daemon", "serve.start", "", "", fmt.Sprintf("dialog=%v", !noDialog))
-	fmt.Println("bergfriedd serve läuft (Strg-C beendet). Admin-Socket:", d.AdminSock)
+	fmt.Println("bergfriedd serve is running (Ctrl-C stops it). Admin socket:", d.AdminSock)
 	err = d.Run(ctx)
 	_ = m.S.Audit("daemon", "serve.stop", "", "", "")
 	if errors.Is(err, context.Canceled) {
@@ -337,29 +337,29 @@ func requests(ctx context.Context, home string, args []string) error {
 	switch sub {
 	case "list":
 		fs := flag.NewFlagSet("requests list", flag.ExitOnError)
-		all := fs.Bool("all", false, "auch erledigte")
+		all := fs.Bool("all", false, "include finished")
 		if len(args) > 1 {
 			_ = fs.Parse(args[1:])
 		}
 		r, err := c.ListRequests(ctx, &pb.ListRequestsRequest{OnlyPending: !*all})
 		if err != nil {
-			return fmt.Errorf("Daemon nicht erreichbar (läuft `bergfriedd serve`?): %w", err)
+			return fmt.Errorf("daemon not reachable (is `bergfriedd serve` running?): %w", err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/AGENT\tART\tPFAD\tGRÖSSE\tBEGRÜNDUNG")
+		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/AGENT\tKIND\tPATH\tSIZE\tREASON")
 		for _, q := range r.Requests {
-			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d Dat., %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
+			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d files, %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
 		}
 		return tw.Flush()
 	case "allow", "deny":
 		fs := flag.NewFlagSet("requests "+sub, flag.ExitOnError)
-		big := fs.Bool("confirm-large", false, "zweite Bestätigung für große Ordner")
+		big := fs.Bool("confirm-large", false, "second confirmation for large folders")
 		if len(args) < 2 {
-			return errors.New("nutze: requests " + sub + " <id> [--confirm-large]")
+			return errors.New("usage: requests " + sub + " <id> [--confirm-large]")
 		}
 		var id int64
 		if _, err := fmt.Sscan(args[1], &id); err != nil {
-			return errors.New("ungültige ID")
+			return errors.New("invalid ID")
 		}
 		_ = fs.Parse(args[2:])
 		r, err := c.Decide(ctx, &pb.DecideRequest{Id: id, Allow: sub == "allow", ConfirmLarge: *big})
@@ -390,7 +390,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		_, err := fmt.Sscan(args[i], &n)
 		return n, err
 	}
-	unreachable := func(err error) error { return fmt.Errorf("Daemon nicht erreichbar oder abgelehnt: %w", err) }
+	unreachable := func(err error) error { return fmt.Errorf("daemon not reachable or refused: %w", err) }
 	switch args[0] {
 	case "keys":
 		r, err := c.ListKeys(ctx, &pb.ListKeysRequest{})
@@ -405,28 +405,28 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		}
 	case "grants":
 		fs := flag.NewFlagSet("ssh grants", flag.ExitOnError)
-		all := fs.Bool("all", false, "auch abgelaufene/entzogene")
+		all := fs.Bool("all", false, "include expired/revoked")
 		_ = fs.Parse(args[1:])
 		r, err := c.ListGrants(ctx, &pb.ListGrantsRequest{OnlyActive: !*all})
 		if err != nil {
 			return unreachable(err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSANDBOX\tAGENT\tHOST\tUSER\tBIS\tMODUS\tSTATUS")
+		fmt.Fprintln(tw, "ID\tSANDBOX\tAGENT\tHOST\tUSER\tUNTIL\tMODE\tSTATUS")
 		for _, g := range r.Grants {
-			st := "aktiv"
+			st := "active"
 			if g.Revoked {
-				st = "entzogen"
+				st = "revoked"
 			} else if time.Unix(g.ExpiresUnix, 0).Before(time.Now()) {
-				st = "abgelaufen"
+				st = "expired"
 			}
 			ag := g.Agent
 			if ag == "" {
-				ag = "(alle)"
+				ag = "(all)"
 			}
-			mode := "still"
+			mode := "silent"
 			if g.PerConnection {
-				mode = "einzeln"
+				mode = "each"
 			}
 			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Sandbox, ag, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
 		}
@@ -438,11 +438,11 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		}
 		fs := flag.NewFlagSet("ssh allow", flag.ExitOnError)
 		minutes := fs.Int("minutes", 15, "Dauer")
-		key := fs.String("key", "", "Key-Fingerprint (SHA256:…); sonst Standard des Hosts")
-		user := fs.String("user", "", "Benutzer auf dem Ziel (Standard: claude)")
-		allAg := fs.Bool("all-agents", false, "für alle Agents der Sandbox")
-		per := fs.Bool("per-connection", false, "jede Verbindung einzeln bestätigen")
-		trust := fs.Bool("trust-host-key", false, "neuen Host-Key bestätigen")
+		key := fs.String("key", "", "key fingerprint (SHA256:…); otherwise the host default")
+		user := fs.String("user", "", "user on the target (default: claude)")
+		allAg := fs.Bool("all-agents", false, "for all agents of the sandbox")
+		per := fs.Bool("per-connection", false, "confirm every connection individually")
+		trust := fs.Bool("trust-host-key", false, "confirm a new host key")
 		_ = fs.Parse(args[2:])
 		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
 			User: *user, AllAgents: *allAg, PerConnection: *per, TrustUnknownHost: *trust})
@@ -466,7 +466,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			return err
 		}
 		fs := flag.NewFlagSet("ssh extend", flag.ExitOnError)
-		minutes := fs.Int("minutes", 15, "zusätzliche Minuten")
+		minutes := fs.Int("minutes", 15, "additional minutes")
 		_ = fs.Parse(args[2:])
 		r, err := c.ExtendGrant(ctx, &pb.ExtendGrantRequest{Id: id, Minutes: int32(*minutes)})
 		if err != nil {

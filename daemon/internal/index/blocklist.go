@@ -1,5 +1,5 @@
-// Package index: Dateinamen-Index über das Home. Gesperrte Pfade tauchen nie auf
-// und werden nie freigegeben. Vergleiche sind case-insensitiv (macOS-Dateisystem).
+// Package index: file-name index over the home. Blocked paths never show up
+// and are never shared. Comparisons are case-insensitive (macOS file system).
 package index
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Blocklist: Pfade relativ zum Home (Präfix, auch Verzeichnisse) und Namensmuster (Glob auf Basename).
+// Blocklist: paths relative to home (prefix, also directories) and name patterns (glob on the base name).
 type Blocklist struct {
 	Paths []string `json:"paths"`
 	Names []string `json:"names"`
@@ -48,7 +48,7 @@ func (bl Blocklist) Save(file string) error {
 	return os.WriteFile(file, b, 0o600)
 }
 
-// BlockedRel prüft einen Pfad relativ zum Home (mit "/").
+// BlockedRel checks a path relative to home (with "/").
 func (bl Blocklist) BlockedRel(rel string) bool {
 	rel = strings.ToLower(path.Clean(filepath.ToSlash(rel)))
 	if rel == "." {

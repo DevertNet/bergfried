@@ -22,7 +22,7 @@ func TestValidName(t *testing.T) {
 	}
 	for _, bad := range []string{"", "Shop", "1a", "a b", "a;rm -rf", "a'b", "../x", strings.Repeat("a", 40)} {
 		if ValidName(bad) == nil {
-			t.Fatalf("%q muss abgelehnt werden", bad)
+			t.Fatalf("%q must be rejected", bad)
 		}
 	}
 }
@@ -37,7 +37,7 @@ func TestAgentCmdIsolatesComposeProject(t *testing.T) {
 func TestErrUnpushed(t *testing.T) {
 	var err error = ErrUnpushed{Report: "x"}
 	if !strings.Contains(err.Error(), "--force") {
-		t.Fatal("Hinweis auf --force fehlt")
+		t.Fatal("hint about --force is missing")
 	}
 	_ = context.Background()
 }
@@ -48,22 +48,22 @@ func TestSandboxNamesAndBaseProtection(t *testing.T) {
 	}
 	for _, ok := range []string{"shop", "a", "my-app-2", "x23456789012345678901234"} {
 		if ValidSandboxName(ok) != nil {
-			t.Fatalf("%q muss gültig sein", ok)
+			t.Fatalf("%q must be valid", ok)
 		}
 	}
 	for _, bad := range []string{"base", "base-aa94f061", "x234567890123456789012345", "Shop", "a b", ""} {
 		if ValidSandboxName(bad) == nil {
-			t.Fatalf("%q muss abgelehnt werden", bad)
+			t.Fatalf("%q must be rejected", bad)
 		}
 	}
 	for _, yes := range []string{"bergfried-base-aa94f061", "bergfried-base-v3"} {
 		if !baseVMRe.MatchString(yes) {
-			t.Fatalf("%s ist eine Basis-VM", yes)
+			t.Fatalf("%s is a base VM", yes)
 		}
 	}
 	for _, no := range []string{"bergfried-base-foo", "bergfried-shop", "bf-base-aa94f061", "bergfried-base-aa94f06", "bergfried-base-aa94f061x"} {
 		if baseVMRe.MatchString(no) {
-			t.Fatalf("%s darf nie als Basis gelöscht werden", no)
+			t.Fatalf("%s must never be deleted as a base", no)
 		}
 	}
 }
@@ -93,20 +93,20 @@ func mgr(t *testing.T, out string) (*Manager, *shellFake) {
 func TestAgentRemoveRules(t *testing.T) {
 	m, f := mgr(t, "")
 	if err := m.AgentRemove(context.Background(), "shop", "main", true, true); err == nil {
-		t.Fatal("das Verzeichnis von main darf nie gelöscht werden")
+		t.Fatal("main's directory must never be deleted")
 	}
 	if err := m.AgentRemove(context.Background(), "shop", "main", false, false); err != nil {
-		t.Fatal("main beenden (ohne Verzeichnis) ist erlaubt:", err)
+		t.Fatal("terminating main (without the directory) is allowed:", err)
 	}
 	if ags, _ := m.S.ListAgents("shop"); len(ags) != 1 || ags[0].Name != "api" {
 		t.Fatalf("%+v", ags)
 	}
 	if err := m.AgentRemove(context.Background(), "shop", "../x", false, false); err == nil {
-		t.Fatal("ungültiger Name")
+		t.Fatal("invalid name")
 	}
 	joined := strings.Join(f.calls, "\n")
 	if strings.Contains(joined, "worktree remove") {
-		t.Fatal("ohne deleteDir darf nichts gelöscht werden")
+		t.Fatal("without deleteDir nothing may be deleted")
 	}
 }
 
@@ -118,29 +118,29 @@ func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
 		t.Fatalf("erwartet ErrAgentDirty, bekam %v", err)
 	}
 	if ags, _ := m.S.ListAgents("shop"); len(ags) != 2 {
-		t.Fatal("Agent darf bei ungesicherter Arbeit nicht entfernt werden")
+		t.Fatal("the agent must not be removed while work is unsaved")
 	}
 	for _, c := range f.calls {
 		if strings.Contains(c, "worktree remove") || strings.Contains(c, "kill-window") {
-			t.Fatalf("vor der Bestätigung darf nichts passieren: %s", c)
+			t.Fatalf("nothing may happen before the confirmation: %s", c)
 		}
 	}
 	if err := m.AgentRemove(context.Background(), "shop", "api", true, true); err != nil {
 		t.Fatal(err)
 	}
 	if ags, _ := m.S.ListAgents("shop"); len(ags) != 1 {
-		t.Fatal("mit force muss der Agent entfernt sein")
+		t.Fatal("with force the agent must be removed")
 	}
 	if !strings.Contains(strings.Join(f.calls, "\n"), "worktree remove") {
-		t.Fatal("Worktree muss entfernt werden")
+		t.Fatal("worktree must be removed")
 	}
 }
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "nie \"ich habe keinen Zugriff"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
-			t.Fatalf("Hinweistext enthält %q nicht:\n%s", want, g)
+			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
 	}
 }
@@ -173,7 +173,7 @@ func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
 	}
 	all := strings.Join(rec.args[0], " ")
 	if strings.Contains(all, tok) {
-		t.Fatalf("Token in der Befehlszeile: %s", all)
+		t.Fatalf("token on the command line: %s", all)
 	}
 	for _, want := range []string{"umask 077", "chmod 600 ~/.git-credentials", "credential.helper store"} {
 		if !strings.Contains(all, want) {
@@ -184,18 +184,18 @@ func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
 
 func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
 	g := guidance("/out")
-	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Gib das Token nie aus") {
+	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Never print the token") {
 		t.Fatal(g)
 	}
 }
 
 func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
 	home := t.TempDir()
-	if err := MigrateHome(home); err != nil { // nichts da: kein Fehler, nichts angelegt
+	if err := MigrateHome(home); err != nil { // nothing there: no error, nothing created
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(filepath.Join(home, "sandboxes")); err == nil {
-		t.Fatal("ohne alten Ordner darf nichts entstehen")
+		t.Fatal("without the old folder nothing may be created")
 	}
 	if err := os.MkdirAll(filepath.Join(home, "sessions", "shop", "shared", "out"), 0o700); err != nil {
 		t.Fatal(err)
@@ -208,19 +208,19 @@ func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
 		t.Fatal(string(b), err)
 	}
 	if b, err := os.ReadFile(filepath.Join(home, "sessions", "shop", "shared", "out", "x.txt")); err != nil || string(b) != "hi" {
-		t.Fatalf("alter Pfad (Lima-Mounts) muss weiter funktionieren: %v", err)
+		t.Fatalf("old path (Lima mounts) must keep working: %v", err)
 	}
 	if fi, _ := os.Lstat(filepath.Join(home, "sessions")); fi.Mode()&os.ModeSymlink == 0 {
-		t.Fatal("alter Name muss Symlink sein")
+		t.Fatal("old name must be a symlink")
 	}
 	if err := MigrateHome(home); err != nil { // idempotent
 		t.Fatal(err)
 	}
-	// beide echte Ordner: nicht raten
+	// both real folders: do not guess
 	h2 := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(h2, "sessions"), 0o700)
 	_ = os.MkdirAll(filepath.Join(h2, "sandboxes"), 0o700)
 	if err := MigrateHome(h2); err == nil {
-		t.Fatal("beide vorhanden: Fehler erwartet")
+		t.Fatal("both present: error expected")
 	}
 }
