@@ -285,3 +285,4 @@
 "(not loaded)" = "(nicht geladen)";
 "Passphrase of this key" = "Passphrase dieses Schlüssels";
 "This key is not loaded in your ssh-agent. Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Dieser Schlüssel ist nicht in deinem ssh-agent geladen. Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieses Grants (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Ein neuer Grant braucht die Passphrase erneut.";
+"Copy output" = "Ausgabe kopieren";

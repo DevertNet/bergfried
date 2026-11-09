@@ -78,6 +78,7 @@ struct SettingsView: View {
                         }.disabled(model.running["base"] != nil)
                         if let l = model.running["base"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
                     }
+                    JobOutput(key: "base")
                     Text("New sandboxes are cloned from this VM (seconds). Rebuilding only affects new sandboxes.").font(.caption).foregroundStyle(.secondary)
                 }
             }

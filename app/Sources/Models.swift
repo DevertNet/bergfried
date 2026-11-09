@@ -133,7 +133,7 @@ struct KeysResponse: Codable { var keys: [KeyInfo]; var error: String? }
 
 struct Blocklist: Codable, Equatable { var paths: [String]; var names: [String] }
 
-struct Job: Codable { var id: Int64; var kind: String; var state: String; var step: String?; var error: String? }
+struct Job: Codable { var id: Int64; var kind: String; var state: String; var step: String?; var error: String?; var log: [String]? }
 struct Message: Codable { var message: String? }
 
 struct DecideBody: Encodable { var id: Int64; var allow: Bool; var confirmLarge: Bool = false }

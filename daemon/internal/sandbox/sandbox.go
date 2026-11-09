@@ -200,11 +200,14 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
 		}
 	}()
 	progress(ctx, "Creating base VM (downloading image, installing Docker and Claude Code – several minutes)")
-	if _, err := m.L.R.Run(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
+	if _, err := m.L.RunLines(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
 		return err
 	}
 	progress(ctx, "Base VM is starting and being configured (several minutes, up to 45)")
-	if err := m.L.StartWithTimeout(ctx, base, baseStartTimeout); err != nil {
+	stopFollow := m.followProvisionLog(ctx, base)
+	err = m.L.StartWithTimeout(ctx, base, baseStartTimeout)
+	stopFollow()
+	if err != nil {
 		return err
 	}
 	progress(ctx, "Stopping base VM")
@@ -223,6 +226,54 @@ func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
 		}
 	}
 	return nil
+}
+
+// newLines returns the lines of cur that are new compared with prev (both are snapshots of the end of a growing log).
+func newLines(prev, cur []string) []string {
+	if len(prev) == 0 {
+		return cur
+	}
+	last := prev[len(prev)-1]
+	for i := len(cur) - 1; i >= 0; i-- {
+		if cur[i] == last {
+			return cur[i+1:]
+		}
+	}
+	return cur
+}
+
+// followProvisionLog shows what the VM is doing while a base VM starts for the first time (apt, Docker, Claude Code): every few seconds it
+// reads the end of the VM's cloud-init log (once SSH works) and sends new lines to the output callback of the context. stop waits for it.
+func (m *Manager) followProvisionLog(ctx context.Context, vm string) (stop func()) {
+	cctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var prev []string
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-cctx.Done():
+				return
+			case <-t.C:
+			}
+			sctx, c := context.WithTimeout(cctx, 10*time.Second)
+			out, err := m.L.Shell(sctx, vm, "sudo", "tail", "-n", "25", "/var/log/cloud-init-output.log")
+			c()
+			if err != nil {
+				continue // SSH is not up yet
+			}
+			cur := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+			for _, l := range newLines(prev, cur) {
+				if l = strings.TrimSpace(l); l != "" {
+					lima.Output(ctx, "VM: "+l)
+				}
+			}
+			prev = cur
+		}
+	}()
+	return func() { cancel(); <-done }
 }
 
 // BaseFailureDir holds the logs of failed base builds (the VM is deleted afterwards, so its own logs would be lost).
@@ -430,7 +481,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 		}
 	}
 	progress(ctx, "Cloning the VM from the base")
-	if _, err := m.L.R.Run(ctx, "clone", m.BaseName(), vm, "--tty=false",
+	if _, err := m.L.RunLines(ctx, "clone", m.BaseName(), vm, "--tty=false",
 		"--mount-only", in, "--mount-only", out+":w"); err != nil {
 		return err
 	}

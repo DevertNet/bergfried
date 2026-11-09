@@ -131,3 +131,19 @@ func TestBuildBaseFailureKeepsLogs(t *testing.T) {
 		t.Fatalf("log content:\n%s", b)
 	}
 }
+
+func TestNewLines(t *testing.T) {
+	prev := []string{"a", "b", "c"}
+	if got := newLines(prev, []string{"b", "c", "d", "e"}); strings.Join(got, ",") != "d,e" {
+		t.Fatalf("overlap: %v", got)
+	}
+	if got := newLines(prev, []string{"x", "y"}); strings.Join(got, ",") != "x,y" {
+		t.Fatalf("no overlap: %v", got)
+	}
+	if got := newLines(nil, []string{"x"}); strings.Join(got, ",") != "x" {
+		t.Fatalf("first snapshot: %v", got)
+	}
+	if got := newLines(prev, prev); len(got) != 0 {
+		t.Fatalf("unchanged: %v", got)
+	}
+}
