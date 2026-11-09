@@ -37,6 +37,10 @@ struct ContentView: View {
                 }
             }.navigationTitle((model.pane ?? .sandboxes).title)
         }
+        // Before the first index build after an install or update: explain the many macOS folder prompts, then let the daemon start.
+        .alert("Why macOS asks for access to many folders", isPresented: Binding(get: { model.status?.indexWaiting == true }, set: { _ in })) {
+            Button("Continue") { Task { do { try await model.api.post("/v1/index/start", NameBody(name: "x")) } catch { model.setBanner(error.localizedDescription) }; await model.refresh() } }
+        } message: { Text("Bergfried now builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
     }
 }
 
@@ -56,6 +60,7 @@ struct MenuContent: View {
 
     var body: some View {
         if !model.online { Text("Daemon not reachable") }
+        else if model.status?.indexWaiting == true { Text("Open the Bergfried window to start indexing") }
         else if model.requests.isEmpty { Text("No open requests") }
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {

@@ -15,7 +15,6 @@ struct SettingsView: View {
     @Local private var upd: UpdateInfo?
     @Local private var updMsg: String?
     @Local private var confirmUpdate = false
-    @Local private var explainIndex = false
 
     var body: some View {
         Form {
@@ -24,14 +23,11 @@ struct SettingsView: View {
                     HStack { Circle().fill(model.online ? .green : .red).frame(width: 10, height: 10); Text(model.online ? L("running (v%@)", model.status?.version ?? "?") : L("not reachable")) }
                 }
                 if let s = model.status {
-                    LabeledContent("Index") { Text(s.indexReady ? L("ready") : L("being built …")) }
+                    LabeledContent("Index") { Text(s.indexReady ? L("ready") : (s.indexWaiting == true ? L("waiting for your confirmation") : L("being built …"))) }
                     LabeledContent("SSH upstream agent") { Text(s.upstreamAgent ? L("found") : L("missing (SSH grants will not work)")) }
                 }
                 HStack {
-                    Button(daemonInstalled ? "Restart daemon" : "Install and start daemon") {
-                        // First start: macOS will ask for access to many folders because the index scans the home folder. Explain it before.
-                        if !daemonInstalled && !UserDefaults.standard.bool(forKey: "indexExplained") { explainIndex = true } else { Task { await installDaemon() } }
-                    }
+                    Button(daemonInstalled ? "Restart daemon" : "Install and start daemon") { Task { await installDaemon() } }
                         .disabled(model.running["daemon"] != nil)
                     if daemonInstalled { Button("Remove daemon", role: .destructive) { Task { await removeDaemon() } }.disabled(model.running["daemon"] != nil) }
                     if let l = model.running["daemon"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
@@ -143,10 +139,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .alert("Why macOS asks for access to many folders", isPresented: $explainIndex) {
-            Button("Continue") { UserDefaults.standard.set(true, forKey: "indexExplained"); Task { await installDaemon() } }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Right after the start, Bergfried builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
         .confirmationDialog(L("Install version %@?", upd?.latest ?? ""), isPresented: $confirmUpdate) {
             Button("Install and restart", role: .destructive) { Task { await installUpdate() } }
         } message: { Text("Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running.") }
