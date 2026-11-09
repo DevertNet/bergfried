@@ -28,7 +28,7 @@ provision:
     set -eux -o pipefail
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq make chromium
+    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq make chromium gh
     if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | sh
     fi

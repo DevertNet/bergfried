@@ -1,9 +1,11 @@
 # Git and GitHub: one token per sandbox
 
 Agents use plain `git` over HTTPS. Each sandbox has **one fine-grained personal access token**, stored in the VM and used for clone, pull, push, merge and GitHub Actions.
-No URL rewriting, no `gh`, no deploy keys, no remote helper, no special push tool.
+No URL rewriting, no deploy keys, no remote helper, no special push tool.
 
 ## Storage
+`gh` (GitHub CLI, part of the base image) is logged in with the same token when it is stored; `gh` keeps its copy in `~/.config/gh/hosts.yml` (the VM has no keyring), readable only by the VM user like `~/.git-credentials`.
+
 - **VM:** `~/.git-credentials` (0600, line `https://x-access-token:<token>@github.com`) and `git config --global credential.helper store`. Written over **stdin**, never as an argument (`Manager.InstallGitToken`).
 - **Mac:** `~/.bergfried/sandboxes/<name>/github-token` (0600), used only to verify repository access. Deleted with the sandbox.
 - The token value never appears in the audit log or in API responses (test `TestGitHubDecideNeverEchoesToken`).
@@ -19,7 +21,7 @@ The permission names *Contents* and *Pull requests* are not explicitly documente
    - **No token yet:** link, hint, field. The token is verified (`GET /rate_limit`, 401 = invalid) and, if a repo was named, against `GET /repos/{o}/{r}`, then stored and written into the VM.
    - **Token exists, repo missing:** you extend the repository selection of the existing token on GitHub (token `bergfried-<sandbox>` → Edit → Repository access) and click "Check access". The token value stays the same (**unverified** that GitHub allows this without a new value). If the check fails the request stays open.
    - If the token already reaches the repo the daemon answers immediately.
-3. Agents cannot create GitHub repositories (no `gh`, no permission). The guidance tells them to ask you to create the repo yourself.
+3. Agents cannot create GitHub repositories (`gh repo create` fails too: no permission). The guidance tells them to ask you to create the repo yourself.
 
 ## CI
 There are no CI tools in Bergfried. The agent queries runs, jobs and logs itself through the GitHub API (`curl` with the token from `~/.git-credentials`; the example is in its guidance) and can re-run failed jobs thanks to the *Actions* permission.
