@@ -1,4 +1,6 @@
-# Design: macOS sandboxes and a second template (agreed, not started)
+# Design: macOS sandboxes and a second template (postponed)
+
+**Status:** postponed. A macOS restore image alone is **25.6 GB** (measured), so the app is built on CI instead and delivered through release channels: [release-channels.md](release-channels.md). This plan stays here for later.
 
 **Goal:** keep developing Bergfried itself inside a sandbox. The Go parts build and test on Linux, but the SwiftUI app needs a macOS toolchain (`swiftc`, macOS SDK, `codesign`). So Bergfried gets a second VM template with a **macOS guest** next to the current Linux one.
 
@@ -11,7 +13,7 @@
 - Lima ≥ 2.1 runs macOS guests (experimental); the host must be Apple silicon and the same or a newer macOS than the guest; `vmType: vz` only; templates `macos-15|26|27` ship with Lima 2.3 (checked locally).
 - Password login is enabled; password-less `sudo` is disabled (except `/sbin/shutdown -h now`, not configurable).
 - No automatic port forwarding (use `ssh -L` or the vzNAT address), no containerd, the video display cannot be turned off, no custom CA certificates. First-login screens can be suppressed (`osOpts.Darwin.suppressFirstLoginSetup`, Lima ≥ 2.3).
-- **Not found in the docs → untested:** reverse `guestSocket` forwards on macOS guests, `limactl clone` for macOS guests (and its duration), base VM disk size (the restore image alone is ~20 GB). Apple's licence limits the host to **two running macOS VMs**.
+- **Not found in the docs → untested:** reverse `guestSocket` forwards on macOS guests, `limactl clone` for macOS guests (and its duration), base VM disk size (the restore image alone is 25.6 GB). Apple's licence limits the host to **two running macOS VMs**.
 
 ## What has to change (Linux assumptions in Bergfried)
 | Area | Linux today | macOS guest |
@@ -38,7 +40,7 @@
 ## Limitations that will get in the way when developing Bergfried inside sandboxes
 **macOS guests**
 - **Experimental in Lima**; behaviour can change between Lima versions, and a macOS guest cannot be newer than the host (a host update can force a new base VM).
-- **At most two running macOS VMs**, ~20 GB restore image plus the disk of every VM; big downloads and long first builds; a template change means a new base VM.
+- **At most two running macOS VMs**, 25.6 GB restore image plus the disk of every VM; big downloads and long first builds; a template change means a new base VM.
 - **A GUI session is part of macOS:** first-login screens, permission prompts (notifications, accessibility) and Gatekeeper dialogs need someone to click; an agent cannot do that headlessly.
 - No automatic port forwarding, no Docker, no containerd; `sudo` needs the password.
 - Homebrew/Command Line Tools installs are slower and less scriptable than `apt`.

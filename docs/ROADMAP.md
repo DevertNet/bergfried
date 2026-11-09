@@ -14,6 +14,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Updates from GitHub releases (build by CI, install button in the app)
 
 ## Next
+- [ ] Release channels stable/dev: CI builds for branch `dev`, pre-releases, channel picker in the app ([design/release-channels.md](design/release-channels.md))
 - [ ] First end-to-end run against real GitHub ([testing/github.md](testing/github.md)): permission names, private repos, extending a token's repository selection
 - [ ] First published release and a real update run ([testing/updates.md](testing/updates.md))
 - [ ] Look at the app UI with fresh eyes (layout, notification buttons, menu bar, create dialog)
@@ -24,7 +25,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 
 ## Later
 - [ ] VPS host (Debian, SSH link, KVM check): [design/vps-host.md](design/vps-host.md)
-- [ ] macOS sandboxes / second VM template (develop Bergfried inside a sandbox): [design/macos-sandboxes.md](design/macos-sandboxes.md)
+- [ ] macOS sandboxes / second VM template (postponed; CI builds replace it for now): [design/macos-sandboxes.md](design/macos-sandboxes.md)
 - [ ] Agent template proposals: [design/template-proposals.md](design/template-proposals.md)
 - [ ] File browser/editor and "open in VS Code"
 - [ ] Several GitHub owners/accounts per sandbox ([GITHUB.md](GITHUB.md))
