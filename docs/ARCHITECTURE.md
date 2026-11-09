@@ -63,7 +63,7 @@ only while a grant is active (time window, key, target host key).
 5. **SSH:** the broker implements the ssh-agent protocol with destination constraints (`session-bind@openssh.com`). It signs only with an active grant **and** a matching target host key (fingerprint recorded at grant time from `known_hosts`/`ssh-keyscan`).
    A root-owned `Match exec` hook in the VM turns a plain `ssh host` into a request; interactive `ssh` waits for your decision.
 6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`, also used to log in `gh`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
-7. **Agents:** one tmux window per agent (tmux session `bf`), one git worktree `~/work/<agent>` (`main` = `~/work/main`) with a starter notes file `NOTES.md` ("Notizen <agent> / Arbeitsstand:", the agent's own working memory; ignored by the unsaved-work check, not part of any repo), `COMPOSE_PROJECT_NAME=<sandbox>-<agent>`,
+7. **Agents:** one tmux window per agent (tmux session `bf`), one git worktree `~/work/<agent>` (`main` = `~/work/main`), `COMPOSE_PROJECT_NAME=<sandbox>-<agent>`,
    `claude --continue --remote-control '<sandbox>/<agent>'`. The **monitor** polls running VMs (login, Remote Control status and link, disk usage), restarts agents after login,
    answers onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts).
 8. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
