@@ -149,6 +149,15 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+func TestCheckWithoutAnyRelease(t *testing.T) {
+	f := newFx(t, "0.1.0", "v0.2.0", bundleFiles("0.2.0"))
+	f.svc.API = f.srv.URL + "/nothing-here" // 404 like a repository without releases
+	info := f.svc.Check(context.Background())
+	if info.Available || info.Error != "" || info.Checked == 0 {
+		t.Fatalf("a missing release is not an error: %+v", info)
+	}
+}
+
 func TestCheckNotFromBundle(t *testing.T) {
 	f := newFx(t, "0.1.0", "v0.2.0", bundleFiles("0.2.0"))
 	f.svc.BundlePath = func() (string, error) { return "", errors.New("not running from an app bundle") }

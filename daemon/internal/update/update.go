@@ -140,6 +140,9 @@ func AssetName(version string) string {
 	return "Bergfried-" + strings.TrimPrefix(version, "v") + "-macos-arm64.zip"
 }
 
+// errNoRelease: the repository has no (public) release yet.
+var errNoRelease = errors.New("no release published yet")
+
 func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -152,6 +155,9 @@ func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, err
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return nil, errNoRelease
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("GitHub answered %d for %s", resp.StatusCode, url)
 	}
@@ -180,6 +186,12 @@ func (s *Service) Check(ctx context.Context) Info {
 	info := Info{Current: s.Current, Checked: s.now().Unix()}
 	info.Updatable, info.Reason = s.updatable()
 	b, err := s.get(ctx, s.API+"/repos/"+s.Repo+"/releases/latest", maxAPIBytes)
+	if errors.Is(err, errNoRelease) { // nothing to update to; not an error for the user
+		s.mu.Lock()
+		s.last = info
+		s.mu.Unlock()
+		return info
+	}
 	if err != nil {
 		info.Error = err.Error()
 		s.mu.Lock()
