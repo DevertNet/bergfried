@@ -19,11 +19,12 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ## Branches, CI and builds
 - Work on `agent/<topic>` branches; `ci.yml` runs Go tests, `scripts/check-strings.py` (German translations) and a macOS app build on **every** branch and pull request.
 - Merge into **`dev`** (pull request, CI green) to publish a dev pre-release (`dev-release.yml`); merge `dev` into `main` and tag `vX.Y.Z` for a stable release.
+- `scripts/pr.sh open <base> "<title>"` / `scripts/pr.sh merge <n>` (merges only with green CI) and `scripts/release.sh vX.Y.Z [--dry-run]` (tags a green, up-to-date `main`) do the pull-request and release steps with plain curl + the token.
 - `scripts/ci-status.sh [branch]` shows the latest runs and the end of a failed job's log with plain `curl` + the token from `~/.git-credentials` (no `gh` needed, e.g. inside a sandbox).
 - App strings: use `L("…")`/`LT("…")` (English key) and add the German text to `app/Resources/de.lproj/Localizable.strings`; text that is identical in German goes into `app/Resources/same-in-german.txt`; `scripts/check-strings.py` enforces both.
 
 ## Releasing
-`git tag vX.Y.Z && git push origin vX.Y.Z` queues `.github/workflows/release.yml`, which waits for your approval of the environment `release` (Settings → Environments → `release` → Required reviewers; create it first), then runs (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
+`git tag vX.Y.Z && git push origin vX.Y.Z` runs `.github/workflows/release.yml` (no approval gate) (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
 Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`.
 
 ## Conventions

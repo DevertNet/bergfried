@@ -1,4 +1,4 @@
-# Plan: develop Bergfried inside a sandbox (B, C, D built; A and E are yours/next)
+# Plan: develop Bergfried inside a sandbox (built; A is only the token, E is the first run)
 
 **Status (2026-11-09):** steps 4–10 are implemented (CI, dev pre-releases, channel setting and picker, rollback, `scripts/`, `CLAUDE.md` section). The dev channel **replaces the installed app** (decision: no side-by-side instance). Still open: your GitHub rulesets (A), the first end-to-end run (E), optional `swiftc -parse` in the sandbox (11).
 
@@ -22,13 +22,12 @@ flowchart LR
 ## Steps
 **A. Repository and GitHub (you, before any agent gets the repo)**
 1. Repository public (done).
-2. **Important — a token of your own account cannot be told apart from you.** Rulesets and branch protection are identity based; the sandbox token acts as *you*, so "no bypass for the token's account" would lock you out as well, and a bypass for you also bypasses the agent. What does hold with your own token:
-   - **Environment `release` with you as required reviewer** (Settings → Environments; free for public repos — GitHub docs). `release.yml` uses it, so a tag pushed by an agent only *queues* the stable release until you approve it in the GitHub UI. Approving through the API needs the token permission **Deployments: write** (GitHub docs, "Review pending deployments"), which the sandbox token must **not** have. **Create the environment with the reviewer before the next tag** — a missing environment is created without protection.
-   - **No Workflows permission** in the token, so it cannot edit `.github/workflows/` (it could otherwise remove the gate).
-   - **Actions: Read only** for this repository (enough for `scripts/ci-status.sh`; no dispatching or re-running runs).
-   - Optional: a ruleset for tags `v*` and a ruleset for `main` (pull request required) are still worth having against accidents (force pushes, deleting `main`, rewriting tags); they do not stop an agent that acts as you.
-   - Stronger separation needs a **second GitHub identity** (a bot account in an organisation that owns the repository, with write access only) so that rulesets and required reviews apply to it. Not verified: fine-grained tokens only reach repositories owned by the token's resource owner (user or organisation), so this likely means moving the repository into an organisation.
+2. **Decision (2026-11-09): no gates and no rulesets.** The agent may merge pull requests (`scripts/pr.sh`) and publish stable releases (`scripts/release.sh`, then `release.yml`) by itself. Consequences, accepted knowingly:
+   - A stable release is **code that your Mac and every other user can install** (each install still needs a click in the app, and releases are unsigned). A mistake or a prompt-injected agent can therefore ship harmful code; nothing but your attention (release notes, the commit list) stops it.
+   - A token of your own account cannot be told apart from you by rulesets, which is why none are used. An agent can also force-push or delete branches and tags; the guard is only the rules in `CLAUDE.md` and the scripts, which refuse unsafe merges/releases (CI red, dirty or outdated `main`, version not higher).
+   - What still holds: the token has **no Workflows permission**, so the agent cannot change the pipeline, and **no Deployments permission**, so it cannot approve a protected environment if you ever add one (`release.yml` explains how).
 3. Sandbox token for this repository: only this repository, Contents RW, Pull requests RW, Actions **Read**, no Workflows, no Deployments. (The link in the app pre-fills Actions write; lower it when you create the token for this repo.)
+4. Optional later: a ruleset/environment gate for stable releases; see the comment in `release.yml`.
 
 **B. CI and releases (agent can do, you review the workflow files — the token cannot change them)**
 4. `ci.yml`: every branch + PRs; add a **strings check** (every `L("…")` key present in `de.lproj`) and `swiftc -parse` style checks where possible.
@@ -59,7 +58,7 @@ flowchart LR
 - If a **second** Bergfried instance (a dev build next to the stable one) is ever run against the same Lima home, it would clean up "old" base VMs and mix up names. Do not do that without a name prefix per instance (not built; open design question: side-by-side "Bergfried Dev" with its own bundle id, data directory and VM prefix).
 
 **Security**
-- The agent's token can push to `dev` and so publish a dev pre-release (not gated; installing still needs your confirmation in the app). A stable release needs your approval of the `release` environment (step A2). A push to `main` or a `v*` tag cannot be blocked by rulesets while the token is yours, but it cannot ship a stable release without your approval; what lands on `main` still reaches users with the *next* stable tag, so review it. Releases are unsigned.
+- The agent can publish dev pre-releases and stable releases without approval (decision, step A2). Installing still needs a click in the app; releases are unsigned.
 - The token lives in the VM and is readable by the agent (documented trade-off, [../GITHUB.md](../GITHUB.md)); a public repo lowers what a leak exposes.
 
 **Process and cost**
@@ -70,4 +69,4 @@ flowchart LR
 - The agent is not a replacement for review: keep pull requests small, and read changes in `daemon/internal/{broker,access,index,importer,update}` yourself (security-relevant).
 
 ## Order of work
-A (you) → B + D in parallel → C → E. Nothing in E starts before the environment and token settings in A exist.
+A (you) → B + D in parallel → C → E. Nothing in E starts before the token settings in A exist.
