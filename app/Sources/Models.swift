@@ -125,6 +125,8 @@ struct KeyInfo: Codable, Identifiable, Hashable {
     var fingerprint: String
     var comment: String
     var type: String
+    var loaded: Bool?      // in the ssh-agent (no passphrase needed)
+    var encrypted: Bool?   // key file that needs a passphrase
     var id: String { fingerprint }
 }
 struct KeysResponse: Codable { var keys: [KeyInfo]; var error: String? }
@@ -144,6 +146,7 @@ struct SSHDecideBody: Encodable {
     var allAgents: Bool
     var perConnection: Bool
     var trustUnknownHost: Bool
+    var passphrase: String = ""   // only for a key that is not loaded in the agent; never stored
 }
 struct IDBody: Encodable { var id: Int64 }
 struct ChannelBody: Encodable { var channel: String }

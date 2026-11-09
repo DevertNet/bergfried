@@ -137,10 +137,20 @@ struct SSHDecisionSheet: View {
     @Local private var allAgents = false
     @Local private var perConn = false
     @Local private var trust = false
+    @Local private var passphrase = ""
     @Local private var error: String?
 
+    func keyLabel(_ k: KeyInfo) -> String {
+        let name = k.comment.isEmpty ? k.type : k.comment
+        let tag = k.loaded == false ? (k.encrypted == true ? " " + L("(not loaded, passphrase)") : " " + L("(not loaded)")) : ""
+        return "\(name) – \(k.fingerprint.suffix(12))\(tag)"
+    }
+
     var unknownHost: Bool { (r.ssh?.source ?? "") != "known_hosts" }
-    var canAllow: Bool { !key.isEmpty && (!unknownHost || trust) }
+    var selectedKey: KeyInfo? { keys.first { $0.fingerprint == key } }
+    var notLoaded: Bool { selectedKey.map { $0.loaded == false } ?? false }
+    var needsPassphrase: Bool { notLoaded && selectedKey?.encrypted == true }
+    var canAllow: Bool { !key.isEmpty && (!unknownHost || trust) && (!needsPassphrase || !passphrase.isEmpty) }
 
     var body: some View {
         Form {
@@ -158,9 +168,15 @@ struct SSHDecisionSheet: View {
                 Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
             }
             Picker("Key", selection: $key) {
-                ForEach(keys) { Text("\($0.comment.isEmpty ? $0.type : $0.comment) – \($0.fingerprint.suffix(12))").tag($0.fingerprint) }
+                ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
             }
             if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption) }
+            if notLoaded {
+                if needsPassphrase {
+                    SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
+                }
+                Text("This key is not loaded in your ssh-agent. Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.").font(.caption).foregroundStyle(.secondary)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("User").frame(width: 80, alignment: .leading)
                 VStack(alignment: .leading, spacing: 2) {
@@ -176,13 +192,16 @@ struct SSHDecisionSheet: View {
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { passphrase = ""; dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Deny", role: .destructive) {
+                    passphrase = ""
                     Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false)); dismiss() }
                 }
                 Button("Approve") {
+                    let pw = passphrase
+                    passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust, passphrase: pw))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)

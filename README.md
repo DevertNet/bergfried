@@ -45,7 +45,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 |---|---|
 | Browse your files | Names, sizes and dates only; blocklisted places (`~/.ssh`, `~/Library`, `.env`, keys …) never appear |
 | Get a file or folder | Only a read-only **copy**, after your approval |
-| Use SSH | Only during a **grant** (duration, key, host key); the private key never leaves the Mac |
+| Use SSH | Only during a **grant** (duration, key, host key); the private key never leaves the Mac. Keys with a passphrase that are not loaded in your agent work too: you type the passphrase per grant, the key stays in memory until the grant ends |
 | Use GitHub | Through the fine-grained token you made for that sandbox (git over HTTPS, Actions via API) |
 | Anything inside its VM | Yes — install packages (`sudo apt-get install`), run Docker, start servers (reachable on `127.0.0.1` of the Mac). The image has `git`, `gh`, `git-lfs`, `make`, Docker and headless Chromium (screenshots, rendered pages) |
 

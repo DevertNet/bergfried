@@ -54,6 +54,9 @@ type Decision struct {
 	AllAgents        bool
 	PerConn          bool
 	TrustUnknownHost bool
+	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
+	// slice is zeroed by DecideSSH. Never stored, logged or audited.
+	Passphrase []byte
 }
 
 type pending struct {
@@ -68,6 +71,7 @@ type Service struct {
 	Asker   SSHAsker
 	Hosts   *HostConfig
 	Timeout time.Duration
+	SSHDir  string // ~/.ssh: key files that are not loaded in the agent can be granted with their passphrase (see localkeys.go)
 
 	mu      sync.Mutex
 	waiters map[int64]*pending
@@ -189,8 +193,43 @@ func (s *Service) Keys() ([]*pb.KeyInfo, error) {
 	return out, nil
 }
 
+// KeysAll lists the keys of the upstream agent (Loaded) and key pairs from SSHDir that are not loaded in the agent.
+// If the agent cannot be listed, the file keys are still returned together with the error.
+func (s *Service) KeysAll() ([]KeyEntry, error) {
+	var out []KeyEntry
+	seen := map[string]bool{}
+	ks, upErr := s.B.Up.List()
+	for _, k := range ks {
+		fp := ssh.FingerprintSHA256(k)
+		seen[fp] = true
+		out = append(out, KeyEntry{Fingerprint: fp, Comment: k.Comment, Type: k.Type(), Loaded: true})
+	}
+	if s.SSHDir != "" {
+		for _, lk := range scanLocalKeys(s.SSHDir) {
+			if !seen[lk.entry.Fingerprint] {
+				seen[lk.entry.Fingerprint] = true
+				out = append(out, lk.entry)
+			}
+		}
+	}
+	return out, upErr
+}
+
+func (s *Service) localKeyPath(fp string) string {
+	if s.SSHDir == "" {
+		return ""
+	}
+	for _, lk := range scanLocalKeys(s.SSHDir) {
+		if lk.entry.Fingerprint == fp {
+			return lk.path
+		}
+	}
+	return ""
+}
+
 // DecideSSH decides an open SSH request and creates the grant on approval.
 func (s *Service) DecideSSH(d Decision) (string, error) {
+	defer clear(d.Passphrase)
 	r, err := s.B.St.GetRequest(d.ID)
 	if err != nil {
 		return "", err
@@ -237,18 +276,30 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if keyFP == "" {
 		keyFP = p.info.DefaultKey
 	}
-	ks, err := s.B.Up.List()
-	if err != nil {
-		return "", err
-	}
+	ks, upErr := s.B.Up.List()
 	found := false
 	for _, k := range ks {
 		if ssh.FingerprintSHA256(k) == keyFP {
 			found = true
 		}
 	}
+	// A key that is not loaded in the agent can still be granted if its key file is in ~/.ssh: the daemon decrypts it with the passphrase
+	// given now and holds it in memory until the grant ends. A wrong passphrase leaves the request open.
+	var local *localSigner
 	if !found {
-		return "", errors.New("key not in the upstream agent (give --key SHA256:…, see `ssh keys`)")
+		path := s.localKeyPath(keyFP)
+		switch {
+		case path != "":
+			ls, err := loadLocalSigner(path, keyFP, d.Passphrase)
+			if err != nil {
+				return "", err
+			}
+			local = ls
+		case upErr != nil:
+			return "", upErr
+		default:
+			return "", errors.New("key not in the upstream agent and no key file for it in ~/.ssh (give --key SHA256:…, see `ssh keys`)")
+		}
 	}
 	if ok, _ := s.B.St.SetRequestStatus(d.ID, "allowed"); !ok {
 		return "", errors.New("request no longer open")
@@ -264,8 +315,13 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		return "", err
 	}
 	g.ID = gid
+	source := "agent"
+	if local != nil {
+		s.B.setLocal(gid, local)
+		source = "key file, decrypted in memory until the grant ends (not loaded into the agent, passphrase not stored)"
+	}
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Sandbox, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, user, d.Minutes, d.AllAgents, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllAgents, d.PerConn))
 	p.ch <- &g
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }
@@ -288,6 +344,7 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 	if err := s.B.St.RevokeGrant(id); err != nil {
 		return err
 	}
+	s.B.DropLocal(id)
 	s.audit("ssh.grant_revoked", g.Sandbox, g.Agent, fmt.Sprintf("grant=%d host=%s", id, g.Host))
 	s.cleanup(ctx, g.Sandbox)
 	s.mu.Lock()
@@ -306,6 +363,17 @@ func (s *Service) Extend(ctx context.Context, id int64, minutes int) (time.Time,
 	}
 	if minutes < 1 || minutes > MaxMinutes {
 		return time.Time{}, fmt.Errorf("duration must be 1..%d minutes", MaxMinutes)
+	}
+	if ks, err := s.B.Up.List(); err == nil && s.B.localSigner(id) == nil {
+		inAgent := false
+		for _, k := range ks {
+			if ssh.FingerprintSHA256(k) == g.KeyFP {
+				inAgent = true
+			}
+		}
+		if !inAgent {
+			return time.Time{}, errors.New("the decrypted key was removed when the grant ended – a new request with the passphrase is needed")
+		}
 	}
 	base := g.Expires
 	if now := s.B.now(); base.Before(now) {
@@ -335,6 +403,7 @@ func (s *Service) cleanup(ctx context.Context, sandbox string) {
 
 // Sweep detects expired grants and cleans up. Called regularly.
 func (s *Service) Sweep(ctx context.Context) {
+	s.B.SweepLocal()
 	active, err := s.B.St.ListGrants(true, s.B.now())
 	if err != nil {
 		return
