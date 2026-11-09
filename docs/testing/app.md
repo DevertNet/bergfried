@@ -10,7 +10,7 @@ open app/build/Bergfried.app
 2. **Settings → Base VM → "Build now"** (once, a few minutes).
 3. **Sandboxes → "New sandbox"**, then "Agent +", "Terminal → Claude login" (once per VM), start/stop, delete (warning for unpushed commits, "Delete anyway" after confirmation).
 4. **Requests:** allow/deny file and folder requests (large folders need a second confirmation). SSH requests: "Decide …" → duration, key, user, scope; a new host key must be confirmed by fingerprint. Active grants with countdown, extend, revoke.
-5. **Audit log:** filter and CSV export (formulas are neutralised). **Log:** daemon log (every action logs started/done/FAILED), updater log, Lima log per VM; "Copy all".
+5. **Audit log:** filter and CSV export (formulas are neutralised). **Diagnostics:** daemon log (every action logs started/done/FAILED), updater log, Lima log per VM; "Copy all".
 6. **Menu bar:** shield icon with the number of open requests; file requests can be allowed/denied right there.
 7. **Index explanation:** after the daemon starts (first install and after every update) a dialog explains the macOS folder prompts; the index only starts after "Continue".
 8. **Notifications** with action buttons. On first start macOS asks for notification permission — answer it before doing anything else with the app.

@@ -14,5 +14,5 @@ Basic update:
 3. App → Settings → Updates → "Check now" → release notes appear → "Install" → confirm. App and daemon restart; Settings shows 0.0.2; `~/.bergfried/update/Bergfried.app.previous` and the DB backup exist.
 4. Corrupt the zip or `SHA256SUMS` of a test release → the install must be refused with a hash error.
 5. Check that notifications still work afterwards (permissions may be reset by the new ad-hoc signature).
-6. During step 3 the Settings line shows each stage (check, download with MB/percent, checksum, unpack, signature, backup, installing); with a corrupted zip it shows "Update failed: …" and the full error is in the Log pane.
+6. During step 3 the Settings line shows each stage (check, download with MB/percent, checksum, unpack, signature, backup, installing); with a corrupted zip it shows "Update failed: …" and the full error is in the Diagnostics pane.
 7. After the restart the app explains the macOS folder prompts before the index starts (once per version).

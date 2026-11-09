@@ -61,7 +61,7 @@ app/build.sh          # app/build/Bergfried.app
 open app/build/Bergfried.app
 ```
 In the app: **Settings → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. Log in to Claude once per VM, and open the agent from your phone.
-If something fails, the **Log** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
+If something fails, the **Diagnostics** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.

@@ -29,7 +29,7 @@
 "Allow" = "Erlauben";
 "Allow (default)" = "Erlauben (Standard)";
 "Approve" = "Freigeben";
-"Audit log" = "Protokoll";
+"Audit log" = "Audit-Protokoll";
 "Automatic (iTerm if installed)" = "Automatisch (iTerm, falls installiert)";
 "Available" = "Verfügbar";
 "Base" = "Basis";
@@ -273,9 +273,10 @@
 "Bergfried now builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index." = "Bergfried baut jetzt einen Suchindex der Dateinamen in deinem Home-Ordner, damit Agenten Dateien mit list_files/search_files finden. Deshalb fragt macOS nacheinander nach Dokumenten, Schreibtisch, Downloads und weiteren Ordnern – und nach jedem Update erneut, weil die App nicht mit einem Entwicklerzertifikat signiert ist. Indexiert werden nur Namen, Größen und Datumsangaben, nie Inhalte. Den Inhalt einer Datei bekommt ein Agent erst, wenn du die Anfrage in der App freigibst. Gesperrte Orte (etwa ~/.ssh und ~/Library) werden übersprungen. Wenn du einen Ordner ablehnst, fehlt er einfach im Index.";
 "waiting for your confirmation" = "wartet auf deine Bestätigung";
 "Open the Bergfried window to start indexing" = "Bergfried-Fenster öffnen, um die Indexierung zu starten";
-"Log" = "Protokoll";
+"Diagnostics" = "Diagnose";
+"Diagnostics log" = "Diagnose-Protokoll";
 "Daemon (errors of actions)" = "Daemon (Fehler von Aktionen)";
 "Copy all" = "Alles kopieren";
 "Show in Finder" = "Im Finder zeigen";
-"Show log" = "Protokoll zeigen";
+"Show log" = "Diagnose öffnen";
 "(the log is empty or does not exist yet)" = "(das Protokoll ist leer oder existiert noch nicht)";

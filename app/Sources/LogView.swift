@@ -11,7 +11,7 @@ struct LogView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("Log", selection: $source) {
+                Picker("Diagnostics log", selection: $source) {
                     Text("Daemon (errors of actions)").tag("daemon")
                     Text("Updates").tag("update")
                     ForEach(model.sandboxes) { s in Text(L("VM: %@ (Lima)", s.name)).tag("lima:" + s.vm) }
