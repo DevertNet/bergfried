@@ -14,6 +14,7 @@ struct LogView: View {
                 Picker("Diagnostics log", selection: $source) {
                     Text("Daemon (errors of actions)").tag("daemon")
                     Text("Updates").tag("update")
+                    Text("Last base build failure").tag("base")
                     ForEach(model.sandboxes) { s in Text(L("VM: %@ (Lima)", s.name)).tag("lima:" + s.vm) }
                 }.frame(maxWidth: 360)
                 Button("Refresh") { Task { await load() } }

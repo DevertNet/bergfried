@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Runner interface {
@@ -89,6 +90,14 @@ func (c Client) Start(ctx context.Context, name string) error {
 	_, err := c.R.Run(ctx, "start", "--tty=false", name)
 	return err
 }
+
+// StartWithTimeout starts an instance and waits up to d for it to be running (Lima's default is 10 minutes, `limactl start --timeout`,
+// available since Lima 2.0). The first start of a base VM runs the whole provisioning (apt, Docker, Claude Code) and can take longer.
+func (c Client) StartWithTimeout(ctx context.Context, name string, d time.Duration) error {
+	_, err := c.R.Run(ctx, "start", "--tty=false", "--timeout="+d.String(), name)
+	return err
+}
+
 func (c Client) Stop(ctx context.Context, name string) error {
 	_, err := c.R.Run(ctx, "stop", name)
 	return err

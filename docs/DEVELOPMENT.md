@@ -26,7 +26,8 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ## Logs
 - App: menu item **Diagnostics** (daemon log with start and failure of every action, updater log, Lima's host-agent log per VM; "Copy all"). Long errors in the orange banner are cut: "Show log" opens the full text.
 - Files: `~/.bergfried/daemon.log` (stdout/stderr of the daemon; every job logs `started`, `done` or `FAILED: <full error>`), `~/.bergfried/update/update.log` (swap helper), `~/.lima/bergfried-<name>/ha.stderr.log` (Lima host agent; VM boot problems), and in the VM `/var/log/cloud-init-output.log` (provisioning).
-- API: `GET /v1/log?source=daemon|update|lima[&vm=bergfried-<name>]` returns the last 256 KB (app socket only).
+- A failed base-VM build deletes its half-finished VM, but first saves the error, Lima's host-agent and serial logs and the VM's `cloud-init-output.log` to `~/.bergfried/base-build-failed/<timestamp>.log` (Diagnostics pane → "Last base build failure"). Lima waits 10 minutes by default for a first start; Bergfried passes `--timeout=45m` for base builds.
+- API: `GET /v1/log?source=daemon|update|base|lima[&vm=bergfried-<name>]` returns the last 256 KB (app socket only).
 
 ## Releasing
 Stable releases only on the maintainer's explicit request (see above). Flow: PR `dev` → `main` (`scripts/pr.sh merge <n> --user-approved`), then `scripts/release.sh vX.Y.Z --user-approved` (tags `main`; needs a clean, up-to-date checkout of `main` and green CI). The tag runs `.github/workflows/release.yml` (tests, build, zip, `SHA256SUMS`, GitHub release, no approval gate); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). Choose the version by semver (fix → patch, feature → minor); after a stable release the dev base version moves to the next patch.
