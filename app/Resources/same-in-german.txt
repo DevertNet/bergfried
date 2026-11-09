@@ -7,3 +7,5 @@ Revision %lld
 SSH %@/%@ → %@ …
 Sandbox %@ · %@ · %@
 v%lld – %@
+Updates
+VM: %@ (Lima)

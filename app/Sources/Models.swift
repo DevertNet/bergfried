@@ -13,6 +13,8 @@ struct DaemonStatus: Codable, Equatable {
     var updateVersion: String?
 }
 
+struct LogInfo: Codable, Equatable { var path: String; var text: String }
+
 struct UpdateInfo: Codable {
     var current: String
     var channel: String

@@ -7,10 +7,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +41,7 @@ type Server struct {
 	GH            *ghtoken.Service
 	Upd           *update.Service
 
+	Home string      // ~/.bergfried (log files)
 	Gate *index.Gate // holds back the first index build until the app has explained the folder prompts (nil: not gated)
 
 	mu   sync.Mutex
@@ -77,7 +80,13 @@ func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *J
 			j.Step = msg
 			s.mu.Unlock()
 		})
+		fmt.Fprintf(os.Stderr, "%s job %d (%s) started\n", time.Now().Format(time.RFC3339), j.ID, kind)
 		err := f(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s job %d (%s) FAILED: %v\n", time.Now().Format(time.RFC3339), j.ID, kind, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s job %d (%s) done\n", time.Now().Format(time.RFC3339), j.ID, kind)
+		}
 		if sess != "" && s.Mon != nil {
 			s.Mon.Release(sess)
 		}
@@ -195,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
+	mux.HandleFunc("GET /v1/log", s.logTail)
 	mux.HandleFunc("GET /v1/update", s.updateInfo)
 	mux.HandleFunc("POST /v1/update/install", s.updateInstall)
 	mux.HandleFunc("PUT /v1/update/channel", s.updateChannel)
@@ -872,3 +882,75 @@ func (s *Server) putBlocklist(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = store.Request{}
+
+const maxLogBytes = 256 << 10
+
+var limaVMRe = regexp.MustCompile(`^bergfried-[a-z0-9-]{1,40}$`)
+
+// logPath maps a log source to a file: the daemon log, the updater's log or Lima's host-agent log of one of our VMs.
+func (s *Server) logPath(source, vm string) (string, error) {
+	switch source {
+	case "", "daemon":
+		return filepath.Join(s.Home, "daemon.log"), nil
+	case "update":
+		return filepath.Join(s.Home, "update", "update.log"), nil
+	case "lima":
+		if !limaVMRe.MatchString(vm) {
+			return "", fmt.Errorf("invalid VM name")
+		}
+		lh := os.Getenv("LIMA_HOME")
+		if lh == "" {
+			h, _ := os.UserHomeDir()
+			lh = filepath.Join(h, ".lima")
+		}
+		return filepath.Join(lh, vm, "ha.stderr.log"), nil
+	}
+	return "", fmt.Errorf("unknown log source")
+}
+
+// readTail returns at most max bytes from the end of the file (starting at a line boundary).
+func readTail(path string, max int64) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	off := int64(0)
+	if fi.Size() > max {
+		off = fi.Size() - max
+	}
+	buf := make([]byte, fi.Size()-off)
+	if _, err := f.ReadAt(buf, off); err != nil && err != io.EOF {
+		return "", err
+	}
+	txt := string(buf)
+	if off > 0 {
+		if i := strings.IndexByte(txt, '\n'); i >= 0 {
+			txt = txt[i+1:]
+		}
+	}
+	return txt, nil
+}
+
+// logTail returns the end of a log file for the app's "Log" pane (only the app socket, owner-only).
+func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
+	p, err := s.logPath(r.URL.Query().Get("source"), r.URL.Query().Get("vm"))
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	txt, err := readTail(p, maxLogBytes)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, 200, map[string]string{"path": p, "text": ""})
+			return
+		}
+		fail(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"path": p, "text": txt})
+}

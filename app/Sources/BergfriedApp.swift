@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", settings = "Settings"
+    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", log = "Log", settings = "Settings"
     var id: String { rawValue }
     var title: LocalizedStringKey { LocalizedStringKey(rawValue) }
-    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Settings": "gearshape"][rawValue] ?? "circle" }
+    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Log": "doc.text.magnifyingglass", "Settings": "gearshape"][rawValue] ?? "circle" }
 }
 
 struct ContentView: View {
@@ -26,13 +26,20 @@ struct ContentView: View {
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.red.opacity(0.15))
                 }
                 if let b = model.banner {
-                    HStack { Text(b).textSelection(.enabled); Spacer(); Button("Close") { model.banner = nil } }
+                    HStack {
+                        // Long errors (for example from limactl) are cut here; the full text is in the Log pane.
+                        Text(b).lineLimit(4).truncationMode(.tail).textSelection(.enabled)
+                        Spacer()
+                        Button("Show log") { model.pane = .log }
+                        Button("Close") { model.banner = nil }
+                    }
                         .padding(8).background(.orange.opacity(0.2))
                 }
                 switch model.pane ?? .sandboxes {
                 case .sandboxes: SandboxesView()
                 case .requests: RequestsView()
                 case .audit: AuditView()
+                case .log: LogView()
                 case .settings: SettingsView()
                 }
             }.navigationTitle((model.pane ?? .sandboxes).title)
