@@ -14,7 +14,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Updates from GitHub releases (build by CI, install button in the app)
 
 ## Next
-- [ ] Release channels stable/dev: CI builds for branch `dev`, pre-releases, channel picker in the app ([design/release-channels.md](design/release-channels.md))
+- [ ] Develop Bergfried inside a sandbox: release channels stable/dev, CI helpers, rollback, rulesets ([design/develop-in-sandbox.md](design/develop-in-sandbox.md), [design/release-channels.md](design/release-channels.md))
 - [ ] First end-to-end run against real GitHub ([testing/github.md](testing/github.md)): permission names, private repos, extending a token's repository selection
 - [ ] First published release and a real update run ([testing/updates.md](testing/updates.md))
 - [ ] Look at the app UI with fresh eyes (layout, notification buttons, menu bar, create dialog)

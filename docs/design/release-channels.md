@@ -1,5 +1,7 @@
 # Design: release channels (stable and dev) — agreed, not started
 
+Part of the larger plan [develop-in-sandbox.md](develop-in-sandbox.md).
+
 **Why:** developing Bergfried inside a Linux sandbox works for Go, docs and tests, but the app can only be built on macOS. Instead of a 25 GB macOS VM ([macos-sandboxes.md](macos-sandboxes.md), postponed) CI builds the app on a macOS runner, and **GitHub releases carry the builds**. The app can follow one of two channels.
 
 ## Channels
