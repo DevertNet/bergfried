@@ -22,7 +22,7 @@ flowchart LR
 ## Steps
 **A. Repository and GitHub (you, before any agent gets the repo)**
 1. Repository public (done).
-2. **Decision (2026-11-09): no gates and no rulesets.** The agent may merge pull requests (`scripts/pr.sh`) and publish stable releases (`scripts/release.sh`, then `release.yml`) by itself. Consequences, accepted knowingly:
+2. **Decision (2026-11-09): no gates and no rulesets.** The agent may merge pull requests into `dev` (`scripts/pr.sh`) by itself. **Amended 2026-11-09 after the first end-to-end run:** stable releases (PR `dev` → `main`, `scripts/release.sh`, then `release.yml`) are made **only when the maintainer explicitly asks for one**; the scripts refuse without `--user-approved`. This is a rule, not a technical gate (the token can still tag). Consequences, accepted knowingly:
    - A stable release is **code that your Mac and every other user can install** (each install still needs a click in the app, and releases are unsigned). A mistake or a prompt-injected agent can therefore ship harmful code; nothing but your attention (release notes, the commit list) stops it.
    - A token of your own account cannot be told apart from you by rulesets, which is why none are used. An agent can also force-push or delete branches and tags; the guard is only the rules in `CLAUDE.md` and the scripts, which refuse unsafe merges/releases (CI red, dirty or outdated `main`, version not higher).
    - What still holds: the token has **no Workflows permission**, so the agent cannot change the pipeline, and **no Deployments permission**, so it cannot approve a protected environment if you ever add one (`release.yml` explains how).
@@ -39,7 +39,7 @@ flowchart LR
 8. **Rollback:** a documented procedure and a daemon command `bergfriedd update rollback` (restores `Bergfried.app.previous` and the database backup from `~/.bergfried/update/`), because a broken dev build can take down the control plane.
 
 **D. Helpers for the agent**
-9. `scripts/ci-status.sh` — latest run for a branch, failing job and the end of its log through the GitHub API (no `gh` in sandboxes).
+9. `scripts/ci-status.sh` — latest run for a branch, failing job and the end of its log through the GitHub API (written before `gh` was added to the base image; the scripts keep working without it).
 10. `CLAUDE.md` section "Working inside a sandbox": what to run (tests only), never start the real daemon or Lima, use a temporary `BERGFRIED_HOME`, branch `agent/<topic>` → PR into `dev`, how to read CI, what cannot be verified (UI, VMs, macOS-only code).
 11. Optional: install the Swift toolchain in the sandbox for `swiftc -parse` (syntax only; SwiftUI cannot be type-checked on Linux — **untested**).
 

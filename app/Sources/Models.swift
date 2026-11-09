@@ -6,6 +6,7 @@ struct DaemonStatus: Codable, Equatable {
     var baseName: String
     var templateVersion: Int
     var indexReady: Bool
+    var indexWaiting: Bool?
     var upstreamAgent: Bool
     var sandboxes: Int
     var updateAvailable: Bool?

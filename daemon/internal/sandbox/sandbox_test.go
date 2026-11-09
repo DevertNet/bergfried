@@ -138,7 +138,7 @@ func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}

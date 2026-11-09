@@ -90,6 +90,11 @@ func run(cmd string, args []string) error {
 	ts := sandbox.TemplateStore{Dir: filepath.Join(home, "template"), Seed: m.Template, L: m.L}
 	if err := ts.Ensure(); err == nil {
 		m.Tpl = &ts
+		if adopted, aerr := ts.AdoptSeed(); aerr != nil {
+			fmt.Fprintln(os.Stderr, "WARNING: bundled VM template not adopted:", aerr)
+		} else if adopted {
+			_ = st.Audit("daemon", "template.adopt", "", "", fmt.Sprintf("revision=%d", ts.Rev()))
+		}
 	} else if cmd == "base" || cmd == "create" || cmd == "serve" {
 		return fmt.Errorf("Vorlage: %w", err)
 	}
@@ -244,7 +249,11 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	if err != nil {
 		return err
 	}
+	// The first index build makes macOS ask for folder access: the app explains that first (see index.Gate).
+	_, bundleErr := update.RunningBundle()
+	gate := index.NewGate(filepath.Join(home, "index-ack"), api.Version, bundleErr == nil)
 	go func() {
+		<-gate.Wait()
 		t0 := time.Now()
 		if err := ix.Refresh(); err != nil {
 			fmt.Fprintln(os.Stderr, "Index-Aufbau:", err)
@@ -317,7 +326,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

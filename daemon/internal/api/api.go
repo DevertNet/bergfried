@@ -39,6 +39,8 @@ type Server struct {
 	GH            *ghtoken.Service
 	Upd           *update.Service
 
+	Gate *index.Gate // holds back the first index build until the app has explained the folder prompts (nil: not gated)
+
 	mu   sync.Mutex
 	jobs map[int64]*Job
 	next int64
@@ -192,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
 	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
+	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/update", s.updateInfo)
 	mux.HandleFunc("POST /v1/update/install", s.updateInstall)
 	mux.HandleFunc("PUT /v1/update/channel", s.updateChannel)
@@ -252,7 +255,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	}
 	ss, _ := s.M.S.ListSandboxes()
 	st := map[string]any{"version": Version, "base_ready": base, "base_name": s.M.BaseName(),
-		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)}
+		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "index_waiting": s.Gate != nil && s.Gate.Waiting(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)}
 	if s.Upd != nil {
 		if u := s.Upd.Last(); u.Available {
 			st["update_available"], st["update_version"] = true, u.Latest
@@ -419,6 +422,18 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.Upd.Check(r.Context()))
 }
 
+// indexStart: the user has read the explanation in the app; the index build (and with it the macOS folder prompts) may begin.
+func (s *Server) indexStart(w http.ResponseWriter, r *http.Request) {
+	if s.Gate != nil {
+		if err := s.Gate.Open(); err != nil {
+			fail(w, 500, err)
+			return
+		}
+	}
+	_ = s.M.S.Audit("app", "index.start", "", "", Version)
+	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
 // updateInstall downloads, verifies and installs the latest release as a job; the helper then restarts daemon and app.
 func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 	if s.Upd == nil {
@@ -428,6 +443,7 @@ func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, s.jobFor("update.install", "", func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 		defer cancel()
+		ctx = update.WithReport(ctx, func(m string) { sandbox.Progress(ctx, m) })
 		if err := s.Upd.Install(ctx); err != nil {
 			return err
 		}
@@ -573,6 +589,9 @@ func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, e
 	}
 	if warnings == nil {
 		warnings = []string{}
+	}
+	if s.M.Tpl.SeedNewer() {
+		warnings = append(warnings, "The bundled template has changed (for example new tools in the VM image), but you edited your copy, so it was not replaced. \"Reset\" adopts the bundled one and discards your edits.")
 	}
 	return templateJ{YAML: y, Revision: s.M.Rev(), BaseName: s.M.BaseName(), BaseReady: ready, Path: s.M.Tpl.Path(), Warnings: warnings}, nil
 }

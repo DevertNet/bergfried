@@ -413,6 +413,46 @@ func parseSums(b []byte) map[string]string {
 	return out
 }
 
+// ReportFunc receives human-readable progress steps (shown in the app while an update runs).
+type ReportFunc func(msg string)
+
+type reportKey struct{}
+
+// WithReport attaches a progress callback to the context.
+func WithReport(ctx context.Context, f ReportFunc) context.Context {
+	return context.WithValue(ctx, reportKey{}, f)
+}
+
+func report(ctx context.Context, format string, a ...any) {
+	if f, ok := ctx.Value(reportKey{}).(ReportFunc); ok && f != nil {
+		f(fmt.Sprintf(format, a...))
+	}
+}
+
+// progressReader reports "Downloading … x of y MB" at most every 500 ms.
+type progressReader struct {
+	r     io.Reader
+	ctx   context.Context
+	label string
+	total int64
+	n     int64
+	last  time.Time
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.n += int64(n)
+	if time.Since(p.last) > 500*time.Millisecond {
+		p.last = time.Now()
+		if p.total > 0 {
+			report(p.ctx, "%s: %.1f of %.1f MB (%d %%)", p.label, float64(p.n)/1e6, float64(p.total)/1e6, p.n*100/p.total)
+		} else {
+			report(p.ctx, "%s: %.1f MB", p.label, float64(p.n)/1e6)
+		}
+	}
+	return n, err
+}
+
 func (s *Service) download(ctx context.Context, url, dst string, limit int64) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -433,7 +473,11 @@ func (s *Service) download(ctx context.Context, url, dst string, limit int64) (s
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, limit+1))
+	body := io.Reader(resp.Body)
+	if ctx.Value(reportKey{}) != nil {
+		body = &progressReader{r: resp.Body, ctx: ctx, label: "Downloading the update", total: resp.ContentLength}
+	}
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(body, limit+1))
 	if err != nil {
 		return "", err
 	}
@@ -540,6 +584,7 @@ func (s *Service) Stage(ctx context.Context, info Info) (*Staged, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	report(ctx, "Fetching the checksum list (SHA256SUMS) …")
 	sumsRaw, err := s.get(ctx, info.sumsURL, maxSumsBytes)
 	if err != nil {
 		return nil, fmt.Errorf("SHA256SUMS: %w", err)
@@ -553,10 +598,12 @@ func (s *Service) Stage(ctx context.Context, info Info) (*Staged, error) {
 	if err != nil {
 		return nil, err
 	}
+	report(ctx, "Verifying the checksum (SHA-256) …")
 	if got != want {
 		_ = os.Remove(zipPath)
 		return nil, errors.New("SHA-256 of the download does not match SHA256SUMS – refusing to install")
 	}
+	report(ctx, "Unpacking the archive …")
 	unpacked := filepath.Join(dir, "unpacked")
 	if err := Unzip(zipPath, unpacked); err != nil {
 		return nil, err
@@ -565,6 +612,7 @@ func (s *Service) Stage(ctx context.Context, info Info) (*Staged, error) {
 	if err := CheckBundle(app, info.Latest); err != nil {
 		return nil, err
 	}
+	report(ctx, "Checking the app bundle and its signature …")
 	if s.Verify != nil {
 		if err := s.Verify(app); err != nil {
 			return nil, fmt.Errorf("code signature check failed: %w", err)
@@ -677,6 +725,7 @@ func (s *Service) Install(ctx context.Context) error {
 		release()
 		return err
 	}
+	report(ctx, "Checking for the latest release …")
 	info := s.Check(ctx)
 	if info.Error != "" && !info.Available {
 		release()
@@ -687,7 +736,9 @@ func (s *Service) Install(ctx context.Context) error {
 		release()
 		return err
 	}
+	report(ctx, "Update %s downloaded and verified.", info.Latest)
 	if s.Backup != nil {
+		report(ctx, "Backing up the database …")
 		bdir := filepath.Join(s.Home, "update", "backup-"+s.Current)
 		if err := os.MkdirAll(bdir, 0o700); err != nil {
 			release()
@@ -705,6 +756,7 @@ func (s *Service) Install(ctx context.Context) error {
 	}
 	prev := filepath.Join(s.Home, "update", "Bergfried.app.previous")
 	log := filepath.Join(s.Home, "update", "update.log")
+	report(ctx, "Installing: the app and daemon restart now (details: ~/.bergfried/update/update.log) …")
 	if err := s.Launch(script, app, st.App, prev, LaunchLabel, BundleID, log); err != nil {
 		release()
 		return fmt.Errorf("could not start the update helper: %w", err)
