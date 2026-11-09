@@ -39,7 +39,7 @@ flowchart LR
 8. **Rollback:** a documented procedure and a daemon command `bergfriedd update rollback` (restores `Bergfried.app.previous` and the database backup from `~/.bergfried/update/`), because a broken dev build can take down the control plane.
 
 **D. Helpers for the agent**
-9. `scripts/ci-status.sh` — latest run for a branch, failing job and the end of its log through the GitHub API (no `gh` in sandboxes).
+9. `scripts/ci-status.sh` — latest run for a branch, failing job and the end of its log through the GitHub API (written before `gh` was added to the base image; the scripts keep working without it).
 10. `CLAUDE.md` section "Working inside a sandbox": what to run (tests only), never start the real daemon or Lima, use a temporary `BERGFRIED_HOME`, branch `agent/<topic>` → PR into `dev`, how to read CI, what cannot be verified (UI, VMs, macOS-only code).
 11. Optional: install the Swift toolchain in the sandbox for `swiftc -parse` (syntax only; SwiftUI cannot be type-checked on Linux — **untested**).
 

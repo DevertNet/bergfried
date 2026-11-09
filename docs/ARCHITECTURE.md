@@ -53,7 +53,7 @@ only while a grant is active (time window, key, target host key).
 ## Key design points
 
 1. **One sandbox = one project = one Lima VM**, cloned from a base VM `bergfried-base-<hash of vm/bergfried.yaml>`. The template is editable in the app
-   (copy in `~/.bergfried/template/`) and validated by `sandbox.CheckTemplate`: no mounts of your home, no `forwardAgent`, no Docker socket, both Bergfried sockets required.
+   (copy in `~/.bergfried/template/`, taken from the bundled template **once**: an app update does not change the copy; use "Reset template" in Settings to adopt a new bundled template, which names a new base VM by its hash and builds it on the next "Build now" or sandbox creation) and validated by `sandbox.CheckTemplate`: no mounts of your home, no `forwardAgent`, no Docker socket, both Bergfried sockets required.
 2. **Exactly two mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only) and `shared/out` (read-write). Existing folders are *copied* in (`importer`), never mounted.
 3. **Identity of a sandbox = the socket.** For each running sandbox the daemon listens on `~/.lima/<vm>/sock/bergfried.sock` (gRPC `SandboxAPI`) and `ssh-agent.sock`.
    Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The agent *name* is only metadata claimed from inside the VM (same Linux user, not a security boundary).
