@@ -20,7 +20,7 @@ Possible later hardening: signed manifests (ssh-keygen signatures or Secure Encl
 
 ## Gotchas
 - The app is ad-hoc signed, so macOS may reset permissions (notifications) after an update. A Developer ID certificate would keep them.
-- A zip downloaded by the daemon (not a browser) carries no quarantine attribute, so Gatekeeper does not block the ad-hoc signed app. **Untested** on a clean Mac.
+- A zip downloaded in a **browser** carries the quarantine attribute and Gatekeeper blocks the ad-hoc signed, non-notarized app on first launch (confirmed with v0.1.0): remove it with `xattr -dr com.apple.quarantine Bergfried.app` (see the README). A zip downloaded by the daemon itself carries no quarantine attribute, so in-app updates should not be blocked (**untested**). Notarization needs a paid Apple Developer account.
 - Database migrations are forward-only; to roll back restore the backup and the previous bundle manually.
 
 ## Configuration (development)

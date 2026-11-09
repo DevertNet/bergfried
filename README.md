@@ -63,6 +63,13 @@ open app/build/Bergfried.app
 In the app: **Settings → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. Log in to Claude once per VM, and open the agent from your phone.
 Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
+### Or install a release
+Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications`. The app is **not notarized** (ad-hoc signed), so macOS blocks a browser-downloaded copy with "Apple could not verify …". Remove the quarantine flag once (or use System Settings → Privacy & Security → "Open Anyway" right after the first attempt; click **Done**, not "Move to Bin"):
+```bash
+xattr -dr com.apple.quarantine /Applications/Bergfried.app
+```
+Later updates installed from inside the app are not quarantined. Only do this if you trust the repository: releases are unsigned ([docs/SECURITY.md](docs/SECURITY.md)).
+
 ## Status
 Built by and for the author on macOS; **young software, not audited**. Unverified areas are listed in [docs/ROADMAP.md](docs/ROADMAP.md) (next: real-GitHub run, first release). A Debian VPS host is designed but postponed.
 
