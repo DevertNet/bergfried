@@ -24,6 +24,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 
 ## Later
 - [ ] VPS host (Debian, SSH link, KVM check): [design/vps-host.md](design/vps-host.md)
+- [ ] macOS sandboxes / second VM template (develop Bergfried inside a sandbox): [design/macos-sandboxes.md](design/macos-sandboxes.md)
 - [ ] Agent template proposals: [design/template-proposals.md](design/template-proposals.md)
 - [ ] File browser/editor and "open in VS Code"
 - [ ] Several GitHub owners/accounts per sandbox ([GITHUB.md](GITHUB.md))
