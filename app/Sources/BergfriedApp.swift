@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", log = "Log", settings = "Settings"
+    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", log = "Diagnostics", settings = "Settings"
     var id: String { rawValue }
     var title: LocalizedStringKey { LocalizedStringKey(rawValue) }
-    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Log": "doc.text.magnifyingglass", "Settings": "gearshape"][rawValue] ?? "circle" }
+    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Diagnostics": "stethoscope", "Settings": "gearshape"][rawValue] ?? "circle" }
 }
 
 struct ContentView: View {
@@ -27,7 +27,7 @@ struct ContentView: View {
                 }
                 if let b = model.banner {
                     HStack {
-                        // Long errors (for example from limactl) are cut here; the full text is in the Log pane.
+                        // Long errors (for example from limactl) are cut here; the full text is in the Diagnostics pane.
                         Text(b).lineLimit(4).truncationMode(.tail).textSelection(.enabled)
                         Spacer()
                         Button("Show log") { model.pane = .log }

@@ -24,7 +24,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 - App strings: use `L("…")`/`LT("…")` (English key) and add the German text to `app/Resources/de.lproj/Localizable.strings`; text that is identical in German goes into `app/Resources/same-in-german.txt`; `scripts/check-strings.py` enforces both.
 
 ## Logs
-- App: menu item **Log** (daemon log with start and failure of every action, updater log, Lima's host-agent log per VM; "Copy all"). Long errors in the orange banner are cut: "Show log" opens the full text.
+- App: menu item **Diagnostics** (daemon log with start and failure of every action, updater log, Lima's host-agent log per VM; "Copy all"). Long errors in the orange banner are cut: "Show log" opens the full text.
 - Files: `~/.bergfried/daemon.log` (stdout/stderr of the daemon; every job logs `started`, `done` or `FAILED: <full error>`), `~/.bergfried/update/update.log` (swap helper), `~/.lima/bergfried-<name>/ha.stderr.log` (Lima host agent; VM boot problems), and in the VM `/var/log/cloud-init-output.log` (provisioning).
 - API: `GET /v1/log?source=daemon|update|lima[&vm=bergfried-<name>]` returns the last 256 KB (app socket only).
 

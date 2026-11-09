@@ -34,7 +34,7 @@ The app can update itself from GitHub releases. **Releases are not signed**: who
 Releases are not technically gated: a push to `dev` or a tag `vX.Y.Z` publishes one. By decision the agent of the development sandbox publishes dev pre-releases on its own, but makes **stable releases only on the maintainer's explicit request** (rule in `CLAUDE.md`; `scripts/release.sh` and `scripts/pr.sh merge … main` refuse without `--user-approved`; this is a rule, not a barrier). A token of your own account cannot be separated from you by rulesets. Keep the **Deployments** and **Workflows** permissions out of sandbox tokens. See [UPDATES.md](UPDATES.md) and [design/develop-in-sandbox.md](design/develop-in-sandbox.md).
 
 ## Logs
-`~/.bergfried/daemon.log` and the app's Log pane contain error texts, paths and VM names, not tokens or file contents; check before pasting a log somewhere public. The log endpoint (`GET /v1/log`) is on the owner-only app socket and reads fixed files only.
+`~/.bergfried/daemon.log` and the app's Diagnostics pane contain error texts, paths and VM names, not tokens or file contents; check before pasting a log somewhere public. The log endpoint (`GET /v1/log`) is on the owner-only app socket and reads fixed files only.
 
 ## Known gaps
 - A host key shown for an unknown SSH host must be verified by you; an approved grant could be used by the agent to add its own key to `authorized_keys` on the target. Use a restricted user whose `authorized_keys` is root-owned for important servers.

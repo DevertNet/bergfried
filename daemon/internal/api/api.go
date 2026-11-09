@@ -936,7 +936,7 @@ func readTail(path string, max int64) (string, error) {
 	return txt, nil
 }
 
-// logTail returns the end of a log file for the app's "Log" pane (only the app socket, owner-only).
+// logTail returns the end of a log file for the app's Diagnostics pane (only the app socket, owner-only).
 func (s *Server) logTail(w http.ResponseWriter, r *http.Request) {
 	p, err := s.logPath(r.URL.Query().Get("source"), r.URL.Query().Get("vm"))
 	if err != nil {

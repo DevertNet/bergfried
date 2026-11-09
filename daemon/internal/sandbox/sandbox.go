@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/github"
@@ -91,6 +92,9 @@ type Manager struct {
 	DropToken func(sandbox string)
 }
 
+// baseBuildMu serialises base builds (Manager is copied by value in places, so the lock cannot live in it).
+var baseBuildMu sync.Mutex
+
 // Rev: template revision (change counter, display only).
 func (m *Manager) Rev() int {
 	if m.Tpl != nil {
@@ -153,21 +157,40 @@ func (m *Manager) exists(ctx context.Context, vm string) (bool, error) {
 	return false, nil
 }
 
-// BuildBase builds the base VM (without login!) from the template and stops it.
-func (m *Manager) BuildBase(ctx context.Context, rebuild bool) error {
+// BuildBase builds the base VM (without login!) from the template and stops it. A base VM that is not stopped is the leftover of an
+// interrupted or failed build (clones of a running instance are refused by Lima): it is removed and built again. A failed build removes its
+// half-finished VM so that the next try starts clean.
+func (m *Manager) BuildBase(ctx context.Context, rebuild bool) (err error) {
+	baseBuildMu.Lock()
+	defer baseBuildMu.Unlock()
 	base := m.BaseName()
-	ok, err := m.exists(ctx, base)
+	l, err := m.L.List(ctx)
 	if err != nil {
 		return err
 	}
-	if ok {
-		if !rebuild {
+	for _, i := range l {
+		if i.Name != base {
+			continue
+		}
+		if i.Status == "Stopped" && !rebuild {
 			return nil
+		}
+		if i.Status != "Stopped" {
+			progress(ctx, "Base VM was left unfinished (status "+i.Status+") – removing it and building again")
 		}
 		if err := m.L.Delete(ctx, base); err != nil {
 			return err
 		}
 	}
+	defer func() {
+		if err != nil {
+			dctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if derr := m.L.Delete(dctx, base); derr == nil {
+				err = fmt.Errorf("%w (the unfinished base VM %s was removed; see the Diagnostics pane / Lima log of that VM)", err, base)
+			}
+		}
+	}()
 	progress(ctx, "Creating base VM (downloading image, installing Docker and Claude Code – several minutes)")
 	if _, err := m.L.R.Run(ctx, "create", "--name="+base, "--tty=false", m.templatePath()); err != nil {
 		return err

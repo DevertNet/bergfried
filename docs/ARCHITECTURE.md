@@ -27,7 +27,7 @@ flowchart LR
 | Component | Where | What it does |
 |---|---|---|
 | `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
-| `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, agents, requests, SSH grants, audit log, log viewer, settings, updates (stable/dev channel). |
+| `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, agents, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
 | `bergfried-mcp` | inside each VM | MCP server for the agent (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `request_github_token`) plus the `ssh-hook` subcommand. |
 | Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
 | `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
