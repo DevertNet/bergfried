@@ -187,7 +187,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/start", s.simple("sandbox.start", func(ctx context.Context, n string, _ bool) error { return s.M.Start(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
-	mux.HandleFunc("POST /v1/sandboxes/upgrade-tools", s.simple("sandbox.upgrade-tools", func(ctx context.Context, n string, _ bool) error { return s.M.UpgradeTools(ctx, n) }))
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
