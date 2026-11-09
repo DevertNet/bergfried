@@ -81,13 +81,13 @@ func bind(t *testing.T, a agent.ExtendedAgent, host ssh.Signer, sid []byte, forw
 		t.Fatal(err)
 	}
 	m := struct {
-		HostKey, SandboxID, Signature []byte
+		HostKey, SSHSessionID, Signature []byte
 		IsForwarding                  bool
 	}{host.PublicKey().Marshal(), sid, ssh.Marshal(struct {
 		Format string
 		Blob   []byte
 	}{sig.Format, sig.Blob}), forwarding}
-	_, err = a.Extension(sandboxBindExt, ssh.Marshal(m))
+	_, err = a.Extension(sessionBindExt, ssh.Marshal(m))
 	return err
 }
 
@@ -118,7 +118,7 @@ func TestSignOnlyWithGrantAndMatchingHost(t *testing.T) {
 	}
 	sid := []byte("sid-2")
 	if _, err := a.Sign(f.userKey.PublicKey(), authData(sid)); err == nil {
-		t.Fatal("ohne sandbox-bind muss abgelehnt werden (fail closed)")
+		t.Fatal("ohne session-bind muss abgelehnt werden (fail closed)")
 	}
 	if err := bind(t, a, f.host, sid, false, f.host); err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestWrongHostForwardingAndForgedBind(t *testing.T) {
 	}
 	a = f.client("shop")
 	if err := bind(t, a, f.host, sid, false, f.host2); err == nil { // gefälschte Signatur
-		t.Fatal("gefälschtes sandbox-bind muss scheitern")
+		t.Fatal("gefälschtes session-bind muss scheitern")
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, true, f.host) // Weiterleitung
@@ -155,7 +155,7 @@ func TestWrongHostForwardingAndForgedBind(t *testing.T) {
 	}
 	a = f.client("shop")
 	_ = bind(t, a, f.host, sid, false, f.host)
-	if _, err := a.Sign(f.userKey.PublicKey(), authData([]byte("andere-sandbox"))); err == nil {
+	if _, err := a.Sign(f.userKey.PublicKey(), authData([]byte("andere-session"))); err == nil {
 		t.Fatal("Daten einer anderen Verbindung dürfen nicht signiert werden")
 	}
 }
