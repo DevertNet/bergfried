@@ -10,16 +10,16 @@ struct RequestsView: View {
 
     var body: some View {
         List {
-            Section("Offene Anfragen") {
-                if model.requests.isEmpty { Text("Keine offenen Anfragen.").foregroundStyle(.secondary) }
+            Section("Open requests") {
+                if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
                 ForEach(model.requests) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }) }
             }
-            Section("Aktive SSH-Freigaben") {
-                if model.grants.isEmpty { Text("Keine aktiven Freigaben.").foregroundStyle(.secondary) }
+            Section("Active SSH grants") {
+                if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
                 ForEach(model.grants) { g in GrantRow(g: g) }
             }
             Section {
-                Toggle("Erledigte Anfragen anzeigen", isOn: $showHistory)
+                Toggle("Show finished requests", isOn: $showHistory)
                 if showHistory { ForEach(history) { r in HistoryRow(r: r) } }
             }
         }
@@ -27,9 +27,9 @@ struct RequestsView: View {
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
         .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
-        .confirmationDialog("Große Freigabe", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
-            Button("Ja, \(largeFor.map { formatBytes($0.bytes) } ?? "") kopieren") { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
-        } message: { Text("\(largeFor?.files ?? 0) Dateien, \(formatBytes(largeFor?.bytes ?? 0)). Wirklich kopieren?") }
+        .confirmationDialog("Large approval", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
+            Button(L("Yes, copy %@", largeFor.map { formatBytes($0.bytes) } ?? "")) { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
+        } message: { Text(L("%lld files, %@. Really copy?", largeFor?.files ?? 0, formatBytes(largeFor?.bytes ?? 0))) }
     }
 
     func loadHistory() async {
@@ -61,24 +61,24 @@ struct PendingRow: View {
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
-            if r.kind == "ssh" { Text("möchte per SSH auf **\(r.path)** zugreifen") }
+            if r.kind == "ssh" { LT("wants SSH access to **%@**", r.path) }
             else if r.kind == "ghtoken" {
-                if (r.github?.repo ?? "").isEmpty { Text("braucht ein **GitHub-Token** für Git und Actions") }
-                else if r.github?.hasToken == true { Text("braucht Zugriff auf das Repo **\(r.path)** (das Token der Sandbox erreicht es noch nicht)") }
-                else { Text("braucht ein **GitHub-Token** und Zugriff auf **\(r.path)**") }
+                if (r.github?.repo ?? "").isEmpty { LT("needs a **GitHub token** for git and Actions") }
+                else if r.github?.hasToken == true { LT("needs access to the repo **%@** (the sandbox's token does not reach it yet)", r.path) }
+                else { LT("needs a **GitHub token** and access to **%@**", r.path) }
             }
-            else { Text("möchte \(r.kind == "folder" ? "den Ordner" : "die Datei") **~/\(r.path)** (\(r.files) Datei(en), \(formatBytes(r.bytes)))") }
-            Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
+            else { LT(r.kind == "folder" ? "wants the folder **~/%@** (%lld file(s), %@)" : "wants the file **~/%@** (%lld file(s), %@)", r.path, r.files, formatBytes(r.bytes)) }
+            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             HStack {
                 if r.kind == "ghtoken" {
-                    Button("Einrichten …", action: decideGit).buttonStyle(.borderedProminent)
-                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
+                    Button("Set up …", action: decideGit).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive) { Task { await model.deny(r) } }
                 } else if r.kind == "ssh" {
-                    Button("Entscheiden …", action: decideSSH).buttonStyle(.borderedProminent)
-                    Button("Ablehnen", role: .destructive) { Task { await model.deny(r) } }
+                    Button("Decide …", action: decideSSH).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive) { Task { await model.deny(r) } }
                 } else {
-                    Button("Erlauben") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
-                    Button("Ablehnen", role: .destructive) { Task { await model.decideFile(r, allow: false) } }
+                    Button("Allow") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive) { Task { await model.decideFile(r, allow: false) } }
                 }
             }
         }.padding(.vertical, 4)
@@ -94,7 +94,7 @@ struct HistoryRow: View {
             Text("\(r.sandbox)/\(r.agent)")
             Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Text(r.status).foregroundStyle(color)
+            Text(LocalizedStringKey(r.status)).foregroundStyle(color)
             Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
         }.font(.callout)
     }
@@ -107,7 +107,7 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text("Sandbox \(g.sandbox) · \(g.agent.isEmpty ? "alle Agents" : "Agent " + g.agent) · \(g.perConnection ? "jede Verbindung einzeln" : "still im Zeitfenster")").font(.caption).foregroundStyle(.secondary)
+                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.agent.isEmpty ? L("all agents") : L("Agent %@", g.agent), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -115,12 +115,12 @@ struct GrantRow: View {
                 let left = max(0, Date(timeIntervalSince1970: TimeInterval(g.expiresUnix)).timeIntervalSince(ctx.date))
                 Text(String(format: "%d:%02d:%02d", Int(left) / 3600, Int(left) % 3600 / 60, Int(left) % 60)).monospacedDigit().foregroundStyle(left < 300 ? .red : .primary)
             }
-            Menu("Verlängern") {
-                Button("+ 15 Minuten") { Task { await model.extend(g, minutes: 15) } }
-                Button("+ 1 Stunde") { Task { await model.extend(g, minutes: 60) } }
-                Button("+ 4 Stunden") { Task { await model.extend(g, minutes: 240) } }
+            Menu("Extend") {
+                Button("+ 15 minutes") { Task { await model.extend(g, minutes: 15) } }
+                Button("+ 1 hour") { Task { await model.extend(g, minutes: 60) } }
+                Button("+ 4 hours") { Task { await model.extend(g, minutes: 240) } }
             }.fixedSize()
-            Button("Entziehen", role: .destructive) { Task { await model.revoke(g) } }
+            Button("Revoke", role: .destructive) { Task { await model.revoke(g) } }
         }
     }
 }
@@ -144,43 +144,43 @@ struct SSHDecisionSheet: View {
 
     var body: some View {
         Form {
-            Text("SSH-Zugriff für \(r.sandbox)/\(r.agent)").font(.headline)
-            Text("Ziel: **\(r.path)**")
-            Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
+            Text(L("SSH access for %@/%@", r.sandbox, r.agent)).font(.headline)
+            LT("Target: **%@**", r.path)
+            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if unknownHost {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("Host-Key ist neu (nicht in deiner known_hosts)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) { Text($0).font(.caption.monospaced()).textSelection(.enabled) }
-                    Toggle("Ich kenne diesen Host-Key", isOn: $trust)
+                    Toggle("I know this host key", isOn: $trust)
                 }
             }
-            Picker("Dauer", selection: $minutes) {
-                Text("15 Minuten").tag(15); Text("1 Stunde").tag(60); Text("4 Stunden").tag(240); Text("24 Stunden").tag(1440)
+            Picker("Duration", selection: $minutes) {
+                Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
             }
             Picker("Key", selection: $key) {
                 ForEach(keys) { Text("\($0.comment.isEmpty ? $0.type : $0.comment) – \($0.fingerprint.suffix(12))").tag($0.fingerprint) }
             }
             if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption) }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Benutzer").frame(width: 80, alignment: .leading)
+                Text("User").frame(width: 80, alignment: .leading)
                 VStack(alignment: .leading, spacing: 2) {
                     TextField("", text: $user).textFieldStyle(.roundedBorder)
                     if let ru = r.ssh?.requestedUser, !ru.isEmpty {
-                        Text(ru == user ? "Vom Agent angefragt." : "Vom Agent angefragt: \(ru)").font(.caption).foregroundStyle(.secondary)
+                        Text(ru == user ? L("Requested by the agent.") : L("Requested by the agent: %@", ru)).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
-            Toggle("Für alle Agents der Sandbox", isOn: $allAgents)
-            Text("Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Sandbox.").font(.caption).foregroundStyle(.secondary)
-            Toggle("Jede Verbindung einzeln bestätigen (in der App noch nicht verfügbar)", isOn: $perConn).disabled(true)
+            Toggle("For all agents of the sandbox", isOn: $allAgents)
+            Text("Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox.").font(.caption).foregroundStyle(.secondary)
+            Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
             if let error { Text(error).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Ablehnen", role: .destructive) {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Deny", role: .destructive) {
                     Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false)); dismiss() }
                 }
-                Button("Freigeben") {
+                Button("Approve") {
                     Task {
                         let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust))
                         if let e { error = e } else { dismiss() }
@@ -190,7 +190,7 @@ struct SSHDecisionSheet: View {
         }
         .padding(20).frame(width: 580)
         .task {
-            // Vorrang: Wunsch des Agents, dann Standard des Hosts
+            // Precedence: the agent's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
             minutes = [15, 60, 240, 1440].last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 15) }) ?? 15
             if let resp: KeysResponse = try? await model.api.get("/v1/ssh/keys") {
@@ -213,23 +213,23 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("GitHub-Zugriff für \(r.sandbox) / \(r.agent)").font(.headline)
-            if let repo = d?.repo, !repo.isEmpty { Text("Repo: **\(repo)**") }
-            Text("Begründung des Agents (ungeprüft): \(r.reason.isEmpty ? "–" : r.reason)").font(.callout).foregroundStyle(.secondary)
+            Text(L("GitHub access for %@ / %@", r.sandbox, r.agent)).font(.headline)
+            if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
+            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
-                Text("Die Sandbox hat schon ein Token. Es muss nur das Repo bekommen: bei GitHub unter Settings → Developer settings → Fine-grained tokens das Token **bergfried-\(r.sandbox)** öffnen, „Edit“, unter „Repository access“ das Repo hinzufügen und speichern. Der Token-Wert bleibt gleich.").font(.callout)
-                Button("Token-Liste bei GitHub öffnen …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
-                Text("Danach „Zugriff prüfen“ – oder ein neues Token einfügen, falls du lieber eins neu anlegst:").font(.caption).foregroundStyle(.secondary)
+                LT("The sandbox already has a token. It only needs the repo: on GitHub open Settings → Developer settings → Fine-grained tokens, open the token **bergfried-%@**, \"Edit\", add the repo under \"Repository access\" and save. The token value stays the same.", r.sandbox).font(.callout)
+                Button("Open the token list on GitHub …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
+                Text("Then \"Check access\" – or paste a new token if you prefer to create a new one:").font(.caption).foregroundStyle(.secondary)
             } else {
                 GitHubTokenSteps(link: d?.link ?? "", hint: d?.hint ?? "", token: $token)
             }
-            if hasToken { SecureField("Optional: neues Token einfügen", text: $token).textFieldStyle(.roundedBorder) }
+            if hasToken { SecureField("Optional: paste a new token", text: $token).textFieldStyle(.roundedBorder) }
             if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
             HStack {
                 Spacer()
-                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Ablehnen", role: .destructive) { Task { await model.deny(r); dismiss() } }
-                Button(hasToken && token.isEmpty ? "Zugriff prüfen" : "Prüfen und speichern") {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Deny", role: .destructive) { Task { await model.deny(r); dismiss() } }
+                Button(hasToken && token.isEmpty ? "Check access" : "Check and save") {
                     busy = true
                     Task {
                         let e = await model.decideGitHub(id: r.id, token: token)
@@ -243,19 +243,19 @@ struct GitHubTokenSheet: View {
     }
 }
 
-/// Gemeinsame Schritte: Link zum vorausgefüllten GitHub-Formular, Hinweis zur Repo-Auswahl, Feld für das Token.
+/// Shared steps: link to the pre-filled GitHub form, hint about the repository selection, field for the token.
 struct GitHubTokenSteps: View {
     let link: String
     let hint: String
     @Binding var token: String
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("1. Token bei GitHub anlegen (Formular ist vorausgefüllt: Ablauf 1 Jahr, Rechte Contents, Pull requests, Actions):").font(.callout).fixedSize(horizontal: false, vertical: true)
-            Button("Token bei GitHub anlegen …") { if let u = URL(string: link) { NSWorkspace.shared.open(u) } }.disabled(link.isEmpty)
-            Label(hint.isEmpty ? "Unter „Repository access“ bitte „Only select repositories“ wählen und nur die benötigten Repos auswählen." : hint, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            Text("2. „Generate token“ klicken und den Wert hier einfügen (GitHub zeigt ihn nur einmal):").font(.callout).fixedSize(horizontal: false, vertical: true)
+            Text("1. Create the token on GitHub (the form is pre-filled: expiry 1 year, permissions Contents, Pull requests, Actions):").font(.callout).fixedSize(horizontal: false, vertical: true)
+            Button("Create token on GitHub …") { if let u = URL(string: link) { NSWorkspace.shared.open(u) } }.disabled(link.isEmpty)
+            Label("Under \"Repository access\" choose \"Only select repositories\" and select only the repos this sandbox needs.", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            Text("2. Click \"Generate token\" and paste the value here (GitHub shows it only once):").font(.callout).fixedSize(horizontal: false, vertical: true)
             SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
-            Text("Das Token liegt anschließend in der VM; der Agent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("The token is then stored in the VM; the agent can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

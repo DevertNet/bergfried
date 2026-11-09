@@ -26,7 +26,7 @@ final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         Notifier.shared.setup(model: self)
-        // Dock-Badge folgt den offenen Anfragen.
+        // Dock badge follows the open requests.
         $requests.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] reqs in
             guard let self else { return }
             NSApp.dockTile.badgeLabel = reqs.isEmpty ? nil : "\(reqs.count)"
@@ -47,7 +47,7 @@ final class AppModel: ObservableObject {
             let gr: [GrantInfo] = try await api.get("/v1/ssh/grants")
             status = st; sandboxes = ss; requests = rq; grants = gr
             online = true
-            // Beim ersten Laden nicht für Altbestand benachrichtigen.
+            // Do not notify about old items on the first load.
             for r in rq where !notified.contains(r.id) {
                 notified.insert(r.id)
                 if !firstLoad { Notifier.shared.post(r) }
@@ -60,7 +60,7 @@ final class AppModel: ObservableObject {
 
     func setBanner(_ s: String?) { banner = s }
 
-    /// Startet einen Daemon-Job und wartet auf sein Ende. Liefert die Fehlermeldung oder nil.
+    /// Starts a daemon job and waits for its end. Returns the error message or nil.
     @discardableResult
     func runJob<B: Encodable>(_ key: String, _ label: String, _ path: String, _ body: B) async -> String? {
         running[key] = label
@@ -75,7 +75,7 @@ final class AppModel: ObservableObject {
                 await refresh()
             }
             await refresh()
-            return j.state == "failed" ? (j.error ?? "Fehlgeschlagen") : nil
+            return j.state == "failed" ? (j.error ?? L("Failed")) : nil
         } catch {
             return error.localizedDescription
         }
@@ -92,7 +92,7 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Lehnt eine Anfrage beliebiger Art ab (Datei/Ordner, SSH, GitHub-Token).
+    /// Denies a request of any kind (file/folder, SSH, GitHub token).
     func deny(_ r: RequestInfo) async {
         do {
             switch r.kind {
@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
         await refresh()
     }
 
-    /// Token einfügen bzw. „Zugriff erweitert“ bestätigen (token leer). Rückgabe: Fehlermeldung (Anfrage bleibt dann offen).
+    /// Paste a token or confirm "access extended" (token empty). Returns the error message (the request then stays open).
     func decideGitHub(id: Int64, token: String) async -> String? {
         do { try await api.post("/v1/github/decide", GitHubDecideBody(id: id, allow: true, token: token)); await refresh(); return nil }
         catch { return error.localizedDescription }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Installiert/steuert bergfriedd als LaunchAgent. Binaries und Vorlage liegen im App-Bundle.
+/// Installs/controls bergfriedd as a LaunchAgent. Binaries and template live in the app bundle.
 enum DaemonController {
     static let label = "de.einfach123.bergfried"
     static var plistURL: URL { URL(fileURLWithPath: NSHomeDirectory() + "/Library/LaunchAgents/\(label).plist") }
@@ -18,9 +18,9 @@ enum DaemonController {
     }
 
     static func install() throws -> String {
-        guard let res = Bundle.main.resourceURL else { throw APIError(message: "Kein App-Bundle") }
+        guard let res = Bundle.main.resourceURL else { throw APIError(message: L("No app bundle")) }
         let daemon = res.appendingPathComponent("bergfriedd").path
-        guard FileManager.default.isExecutableFile(atPath: daemon) else { throw APIError(message: "bergfriedd fehlt im App-Bundle (build.sh nach `make build` ausführen)") }
+        guard FileManager.default.isExecutableFile(atPath: daemon) else { throw APIError(message: L("bergfriedd is missing in the app bundle (run build.sh after `make build`)")) }
         let home = NSHomeDirectory()
         try FileManager.default.createDirectory(atPath: home + "/.bergfried", withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let plist: [String: Any] = [
@@ -43,25 +43,25 @@ enum DaemonController {
         let (code, out) = run(["bootstrap", domain, plistURL.path])
         if code != 0 { throw APIError(message: "launchctl bootstrap: \(out)") }
         _ = run(["kickstart", "-k", "\(domain)/\(label)"])
-        return "Daemon installiert und gestartet."
+        return L("Daemon installed and started.")
     }
 
     static func uninstall() -> String {
         _ = run(["bootout", "\(domain)/\(label)"])
         try? FileManager.default.removeItem(at: plistURL)
-        return "Daemon entfernt."
+        return L("Daemon removed.")
     }
 
     static var installed: Bool { FileManager.default.fileExists(atPath: plistURL.path) }
 }
 
 enum Terminal {
-    /// Einstellung: "auto" (iTerm, falls installiert), "iterm" oder "terminal".
+    /// Setting: "auto" (iTerm if installed), "iterm" or "terminal".
     static let key = "terminalApp"
     static var iTermInstalled: Bool { FileManager.default.fileExists(atPath: "/Applications/iTerm.app") }
     static var choice: String { UserDefaults.standard.string(forKey: key) ?? "auto" }
 
-    /// Name der App, die tatsächlich benutzt wird.
+    /// Name of the app that is actually used.
     static var appName: String {
         switch choice {
         case "iterm": return iTermInstalled ? "iTerm" : "Terminal"
@@ -77,20 +77,20 @@ enum Terminal {
     static let vmRe = #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#
     static let agentRe = #"^[a-z][a-z0-9-]{0,30}$"#
 
-    /// Öffnet die gewählte Terminal-App mit einer Zeile. Statt AppleScript (braucht Automations-Rechte und
-    /// scheitert still) wird eine temporäre .command-Datei mit `open -a` gestartet; sie löscht sich selbst.
-    /// VM- und Agent-Namen werden streng geprüft. Liefert eine Fehlermeldung oder nil.
+    /// Opens the chosen terminal app with one line. Instead of AppleScript (needs automation rights and
+    /// fails silently) a temporary .command file is started with `open -a`; it deletes itself.
+    /// VM and agent names are checked strictly. Returns an error message or nil.
     @discardableResult
     static func openLine(_ line: String, waitKey: Bool = false) -> String? {
         let dir = NSHomeDirectory() + "/.bergfried/tmp"
         let file = dir + "/cmd-\(UUID().uuidString).command"
         var body = "#!/bin/zsh\nrm -f \"$0\"\n\(line)\n"
-        if waitKey { body += "echo\nread -k 1 -s \"?Beliebige Taste zum Schließen …\"\n" }
+        if waitKey { body += "echo\nread -k 1 -s \"?\(L("Press any key to close …"))\"\n" }
         do {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try body.write(toFile: file, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file)
-        } catch { return "Konnte Startskript nicht anlegen: \(error.localizedDescription)" }
+        } catch { return L("Could not create the start script: %@", error.localizedDescription) }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         p.arguments = ["-a", appName, file]
@@ -100,31 +100,31 @@ enum Terminal {
         if p.terminationStatus != 0 {
             let msg = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             try? FileManager.default.removeItem(atPath: file)
-            return "\(appName) konnte nicht geöffnet werden: \(msg)"
+            return L("%@ could not be opened: %@", appName, msg)
         }
         return nil
     }
 
     private static func checked(_ vm: String) -> Bool { vm.range(of: vmRe, options: .regularExpression) != nil }
 
-    /// Normale Shell in der VM (nicht das Claude-Fenster).
+    /// Plain shell in the VM (not the Claude window).
     static func shell(vm: String) -> String? {
-        guard checked(vm) else { return "Ungültiger VM-Name" }
+        guard checked(vm) else { return L("Invalid VM name") }
         return openLine("\(limactl) shell \(vm)")
     }
 
-    /// tmux der VM, direkt im Fenster dieses Agents.
+    /// tmux of the VM, straight into this agent's window.
     static func attach(vm: String, agent: String) -> String? {
-        guard checked(vm), agent.range(of: agentRe, options: .regularExpression) != nil else { return "Ungültiger Name" }
+        guard checked(vm), agent.range(of: agentRe, options: .regularExpression) != nil else { return L("Invalid name") }
         return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(agent) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
     }
 
     static func login(vm: String) -> String? {
-        guard checked(vm) else { return "Ungültiger VM-Name" }
-        return openLine("\(limactl) shell \(vm) -- bash -lc 'claude auth login; echo; echo \"Fertig. Die Agents starten automatisch neu (Status in der App).\"'", waitKey: true)
+        guard checked(vm) else { return L("Invalid VM name") }
+        return openLine("\(limactl) shell \(vm) -- bash -lc 'claude auth login; echo; echo \"\(L("Done. The agents restart automatically (status in the app)."))\"'", waitKey: true)
     }
 
-    /// SSH-Befehl für externe Werkzeuge (Terminal, VS Code Remote-SSH): nutzt die von Lima gepflegte ssh.config.
+    /// SSH command for external tools (terminal, VS Code Remote-SSH): uses the ssh.config maintained by Lima.
     static func sshCommand(vm: String) -> String? {
         guard checked(vm) else { return nil }
         return "ssh -F ~/.lima/\(vm)/ssh.config lima-\(vm)"

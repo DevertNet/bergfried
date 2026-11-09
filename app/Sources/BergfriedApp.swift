@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sandboxes = "Sandboxes", requests = "Anfragen", audit = "Protokoll", settings = "Einstellungen"
+    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", settings = "Settings"
     var id: String { rawValue }
-    var icon: String { ["Sandboxes": "shield", "Anfragen": "bell", "Protokoll": "list.bullet.rectangle", "Einstellungen": "gearshape"][rawValue] ?? "circle" }
+    var title: LocalizedStringKey { LocalizedStringKey(rawValue) }
+    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Settings": "gearshape"][rawValue] ?? "circle" }
 }
 
 struct ContentView: View {
@@ -14,18 +15,18 @@ struct ContentView: View {
         NavigationSplitView {
             List(Pane.allCases, selection: $model.pane) { p in
                 HStack {
-                    Label(p.rawValue, systemImage: p.icon)
+                    Label(p.title, systemImage: p.icon)
                     if p == .requests && model.pendingCount > 0 { Spacer(); Text("\(model.pendingCount)").font(.caption.bold()).padding(.horizontal, 6).background(.red, in: Capsule()).foregroundStyle(.white) }
                 }.tag(p)
             }.navigationSplitViewColumnWidth(190)
         } detail: {
             VStack(spacing: 0) {
                 if !model.online {
-                    Label("Der Daemon ist nicht erreichbar. Unter „Einstellungen“ kannst du ihn installieren und starten.", systemImage: "exclamationmark.triangle.fill")
+                    Label("The daemon is not reachable. You can install and start it under \"Settings\".", systemImage: "exclamationmark.triangle.fill")
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.red.opacity(0.15))
                 }
                 if let b = model.banner {
-                    HStack { Text(b).textSelection(.enabled); Spacer(); Button("Schließen") { model.banner = nil } }
+                    HStack { Text(b).textSelection(.enabled); Spacer(); Button("Close") { model.banner = nil } }
                         .padding(8).background(.orange.opacity(0.2))
                 }
                 switch model.pane ?? .sandboxes {
@@ -34,7 +35,7 @@ struct ContentView: View {
                 case .audit: AuditView()
                 case .settings: SettingsView()
                 }
-            }.navigationTitle((model.pane ?? .sandboxes).rawValue)
+            }.navigationTitle((model.pane ?? .sandboxes).title)
         }
     }
 }
@@ -54,24 +55,24 @@ struct MenuContent: View {
     @Environment(\.openWindow) var openWindow
 
     var body: some View {
-        if !model.online { Text("Daemon nicht erreichbar") }
-        else if model.requests.isEmpty { Text("Keine offenen Anfragen") }
+        if !model.online { Text("Daemon not reachable") }
+        else if model.requests.isEmpty { Text("No open requests") }
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {
-                Button("SSH \(r.sandbox)/\(r.agent) → \(r.path) …") { open() }
+                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.agent, r.path)) { open() }
             } else if r.kind == "ghtoken" {
                 Button("GitHub \(r.sandbox)/\(r.agent): \(r.path) …") { open() }
             } else {
                 Menu("\(r.sandbox)/\(r.agent): ~/\(r.path)") {
-                    Button("Erlauben") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
-                    Button("Ablehnen") { Task { await model.decideFile(r, allow: false) } }
+                    Button("Allow") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
+                    Button("Deny") { Task { await model.decideFile(r, allow: false) } }
                 }
             }
         }
-        if !model.grants.isEmpty { Divider(); Text("\(model.grants.count) aktive SSH-Freigabe(n)") }
+        if !model.grants.isEmpty { Divider(); Text(L("%lld active SSH grant(s)", model.grants.count)) }
         Divider()
-        Button("Fenster öffnen") { open() }
-        Button("Beenden") { NSApp.terminate(nil) }
+        Button("Open window") { open() }
+        Button("Quit") { NSApp.terminate(nil) }
     }
 
     func open() { model.pane = .requests; openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
@@ -93,7 +94,7 @@ struct BergfriedApp: App {
                     let bl: Blocklist = try await api.get("/v1/blocklist")
                     print("selftest ok: version=\(st.version) base=\(st.baseReady) index=\(st.indexReady) sandboxes=\(ss.count) requests=\(rq.count) audit=\(au.count) blocklist=\(bl.paths.count)")
                     exit(0)
-                } catch { print("selftest FEHLER: \(error.localizedDescription)"); exit(1) }
+                } catch { print("selftest ERROR: \(error.localizedDescription)"); exit(1) }
             }
         }
     }

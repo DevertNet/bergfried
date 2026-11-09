@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Ersatz für @State: In SDKs ohne Xcode (nur Command Line Tools) ist @State ein Makro,
-// dessen Plugin (SwiftUIMacros) fehlt. Gleiches Verhalten, gebaut auf @StateObject.
+// Replacement for @State: in SDKs without Xcode (Command Line Tools only) @State is a macro
+// whose plugin (SwiftUIMacros) is missing. Same behaviour, built on @StateObject.
 final class LocalBox<V>: ObservableObject {
     @Published var value: V
     init(_ v: V) { value = v }

@@ -1,9 +1,11 @@
 #!/bin/bash
-# Baut app/build/Bergfried.app ohne Xcode/SwiftPM (nur Command Line Tools).
-# Vorher im Repo-Root: make build (erzeugt bin/bergfriedd und bin/bergfried-mcp).
+# Builds app/build/Bergfried.app without Xcode/SwiftPM (Command Line Tools only).
+# Run `make build` in the repo root first (creates bin/bergfriedd and bin/bergfried-mcp).
+# VERSION=1.2.3 app/build.sh stamps the version into Info.plist (default: 0.0.0-dev).
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=$(cd .. && pwd)
+VERSION=${VERSION:-0.0.0-dev}
 APP=build/Bergfried.app
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -swift-version 5 -parse-as-library -target arm64-apple-macos15.0 \
@@ -13,20 +15,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
  <key>CFBundleIdentifier</key><string>de.einfach123.bergfried</string>
+ <key>CFBundleDevelopmentRegion</key><string>en</string>
+ <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
  <key>CFBundleIconFile</key><string>AppIcon</string>
  <key>CFBundleName</key><string>Bergfried</string>
  <key>CFBundleExecutable</key><string>Bergfried</string>
  <key>CFBundlePackageType</key><string>APPL</string>
- <key>CFBundleShortVersionString</key><string>0.4.0</string>
- <key>CFBundleVersion</key><string>1</string>
+ <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+ <key>CFBundleVersion</key><string>${VERSION}</string>
  <key>LSMinimumSystemVersion</key><string>15.0</string>
  <key>NSHighResolutionCapable</key><true/>
  <key>NSAppleEventsUsageDescription</key><string>Bergfried opens Terminal windows for sandboxes.</string>
 </dict></plist>
 PLIST
 cp icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R Resources/*.lproj "$APP/Contents/Resources/"   # localisations (en, de)
 for f in bin/bergfriedd bin/bergfried-mcp vm/bergfried.yaml; do
-  [ -f "$ROOT/$f" ] && cp "$ROOT/$f" "$APP/Contents/Resources/" || echo "WARNUNG: $f fehlt (make build?)"
+  [ -f "$ROOT/$f" ] && cp "$ROOT/$f" "$APP/Contents/Resources/" || echo "WARNING: $f is missing (run make build?)"
 done
 codesign --force --deep -s - "$APP"
 echo "OK: $APP"

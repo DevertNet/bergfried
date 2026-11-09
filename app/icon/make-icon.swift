@@ -1,4 +1,4 @@
-// Zeichnet das Bergfried-App-Icon (Turm vor Bergen im Morgenlicht) und schreibt ein .iconset.
+// Draws the Bergfried app icon (tower in front of mountains at dawn) and writes an .iconset.
 // Aufruf: swiftc -o /tmp/mkicon icon/make-icon.swift && /tmp/mkicon icon/AppIcon.iconset && iconutil -c icns icon/AppIcon.iconset
 import CoreGraphics
 import Foundation
@@ -51,13 +51,13 @@ func draw(size s: Int) -> CGImage {
         ctx.fillEllipse(in: CGRect(x: x, y: y, width: d, height: d))
     }
 
-    // Ferne und nahe Berge
+    // Distant and near mountains
     poly([(0, 0.30), (0.12, 0.46), (0.22, 0.38), (0.38, 0.58), (0.52, 0.42), (0.66, 0.54), (0.80, 0.40), (0.92, 0.50), (1, 0.42), (1, 0), (0, 0)], rgb(0.30, 0.25, 0.52))
     poly([(0, 0.22), (0.14, 0.34), (0.28, 0.24), (0.46, 0.36), (0.62, 0.26), (0.78, 0.38), (0.90, 0.28), (1, 0.34), (1, 0), (0, 0)], rgb(0.14, 0.15, 0.32))
 
     // Turm (Bergfried)
     let bx: CGFloat = 0.385, bw: CGFloat = 0.23, top: CGFloat = 0.66
-    // Körper
+    // Body
     ctx.saveGState()
     ctx.addRect(CGRect(x: bx, y: 0.12, width: bw, height: top - 0.12)); ctx.clip()
     grad([rgb(0.95, 0.88, 0.76), rgb(0.70, 0.64, 0.60)], CGPoint(x: bx, y: 0.4), CGPoint(x: bx + bw, y: 0.4))
@@ -69,7 +69,7 @@ func draw(size s: Int) -> CGImage {
     for i in 0..<9 { let y = 0.16 + CGFloat(i) * 0.055; ctx.move(to: CGPoint(x: bx, y: y)); ctx.addLine(to: CGPoint(x: bx + bw, y: y)) }
     ctx.strokePath()
     ctx.restoreGState()
-    // Brüstung
+    // Parapet
     let px = bx - 0.03, pw = bw + 0.06
     ctx.saveGState(); ctx.addRect(CGRect(x: px, y: top - 0.012, width: pw, height: 0.062)); ctx.clip()
     grad([rgb(0.98, 0.92, 0.80), rgb(0.72, 0.66, 0.62)], CGPoint(x: px, y: 0.7), CGPoint(x: px + pw, y: 0.7))
@@ -83,7 +83,7 @@ func draw(size s: Int) -> CGImage {
         grad([rgb(0.98, 0.92, 0.80), rgb(0.72, 0.66, 0.62)], CGPoint(x: x, y: 0.7), CGPoint(x: x + mw, y: 0.7))
         ctx.restoreGState()
     }
-    // Fenster mit warmem Licht
+    // Window with warm light
     func arch(_ cx: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: CGColor) {
         ctx.setFillColor(c)
         ctx.beginPath()
@@ -100,7 +100,7 @@ func draw(size s: Int) -> CGImage {
     ctx.move(to: CGPoint(x: 0.5, y: top + 0.107)); ctx.addLine(to: CGPoint(x: 0.5, y: 0.83)); ctx.strokePath()
     poly([(0.503, 0.83), (0.575, 0.805), (0.503, 0.78)], rgb(0.92, 0.28, 0.30))
 
-    // Vordergrund-Hügel
+    // Foreground hills
     poly([(0, 0.10), (0.20, 0.15), (0.40, 0.11), (0.60, 0.115), (0.80, 0.15), (1, 0.10), (1, 0), (0, 0)], rgb(0.08, 0.09, 0.20))
     // Glanz oben
     grad([rgb(1, 1, 1, 0.20), rgb(1, 1, 1, 0.0)], CGPoint(x: 0.5, y: 0.96), CGPoint(x: 0.5, y: 0.62))

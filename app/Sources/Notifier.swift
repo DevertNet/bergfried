@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 import AppKit
 
-/// Mitteilungen mit Aktions-Buttons. Der Text der Agents wird nur als Anzeige verwendet.
+/// Notifications with action buttons. The agents' text is used for display only.
 final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = Notifier()
     private weak var model: AppModel?
@@ -13,10 +13,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         guard enabled else { return }
         let c = UNUserNotificationCenter.current()
         c.delegate = self
-        let allow = UNNotificationAction(identifier: "allow", title: "Erlauben", options: [])
-        let deny = UNNotificationAction(identifier: "deny", title: "Ablehnen", options: [.destructive])
-        let sshAllow = UNNotificationAction(identifier: "ssh-allow", title: "Erlauben (Standard)", options: [])
-        let open = UNNotificationAction(identifier: "open", title: "Öffnen …", options: [.foreground])
+        let allow = UNNotificationAction(identifier: "allow", title: L("Allow"), options: [])
+        let deny = UNNotificationAction(identifier: "deny", title: L("Deny"), options: [.destructive])
+        let sshAllow = UNNotificationAction(identifier: "ssh-allow", title: L("Allow (default)"), options: [])
+        let open = UNNotificationAction(identifier: "open", title: L("Open …"), options: [.foreground])
         c.setNotificationCategories([
             UNNotificationCategory(identifier: "FILE", actions: [allow, deny], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "OPEN", actions: [open, deny], intentIdentifiers: [], options: []),
@@ -33,40 +33,40 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         }
     }
 
-    /// Letztes Ergebnis der Berechtigungsanfrage (für die Diagnose in den Einstellungen).
-    var lastAuth: String = "noch nicht angefragt"
+    /// Last result of the permission request (for the diagnosis in Settings).
+    var lastAuth: String = L("not requested yet")
 
-    /// Aktueller Stand laut macOS.
+    /// Current state according to macOS.
     func status() async -> String {
-        guard enabled else { return "kein App-Bundle" }
+        guard enabled else { return L("no app bundle") }
         let s = await UNUserNotificationCenter.current().notificationSettings()
         let name: String
         switch s.authorizationStatus {
-        case .notDetermined: name = "noch nicht entschieden"
-        case .denied: name = "abgelehnt"
-        case .authorized: name = "erlaubt"
-        case .provisional: name = "vorläufig erlaubt"
-        case .ephemeral: name = "temporär erlaubt"
-        @unknown default: name = "unbekannt"
+        case .notDetermined: name = L("not decided yet")
+        case .denied: name = L("denied")
+        case .authorized: name = L("allowed")
+        case .provisional: name = L("provisionally allowed")
+        case .ephemeral: name = L("temporarily allowed")
+        @unknown default: name = L("unknown")
         }
-        return "\(name) (Banner: \(s.alertSetting == .enabled ? "an" : "aus"), Ton: \(s.soundSetting == .enabled ? "an" : "aus"))"
+        return L("%@ (banner: %@, sound: %@)", name, s.alertSetting == .enabled ? L("on") : L("off"), s.soundSetting == .enabled ? L("on") : L("off"))
     }
 
     func postTest() {
         guard enabled else { return }
         let c = UNMutableNotificationContent()
-        c.title = "Bergfried – Testmitteilung"
-        c.body = "Wenn du das siehst, funktionieren Mitteilungen."
+        c.title = L("Bergfried – test notification")
+        c.body = L("If you can see this, notifications work.")
         c.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(UUID().uuidString)", content: c, trigger: nil)) { err in
-            if let err { NSLog("Bergfried Testmitteilung Fehler: %@", err.localizedDescription) }
+            if let err { NSLog("Bergfried test notification error: %@", err.localizedDescription) }
         }
     }
 
     private func clip(_ s: String, _ n: Int) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
 
     func post(_ r: RequestInfo) {
-        // Ausweichen, falls macOS keine Mitteilungen zeigt: Dock-Icon springt (Zähler-Badge setzt das AppModel).
+        // Fallback in case macOS shows no notifications: the dock icon bounces (the counter badge is set by the AppModel).
         DispatchQueue.main.async { NSApp.requestUserAttention(.criticalRequest) }
         guard enabled else { return }
         let c = UNMutableNotificationContent()
@@ -74,16 +74,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         c.sound = .default
         switch r.kind {
         case "ssh":
-            c.title = "SSH-Anfrage: \(r.sandbox)/\(r.agent)"
-            c.body = "Zugriff auf \(r.path)\n\(clip(r.reason, 140))"
+            c.title = L("SSH request: %@/%@", r.sandbox, r.agent)
+            c.body = L("Access to %@", r.path) + "\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
         case "ghtoken":
-            c.title = "GitHub-Zugriff: \(r.sandbox)/\(r.agent)"
+            c.title = L("GitHub access: %@/%@", r.sandbox, r.agent)
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
         default:
-            c.title = "Datei-Anfrage: \(r.sandbox)/\(r.agent)"
+            c.title = L("File request: %@/%@", r.sandbox, r.agent)
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
             c.categoryIdentifier = r.large ? "OPEN" : "FILE"
         }

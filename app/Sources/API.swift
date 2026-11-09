@@ -5,7 +5,7 @@ struct APIError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// Minimaler HTTP/1.1-Client über einen Unix-Socket (BSD-Sockets, keine Abhängigkeiten).
+/// Minimal HTTP/1.1 client over a unix socket (BSD sockets, no dependencies).
 final class UnixHTTP: @unchecked Sendable {
     let path: String
     init(path: String) { self.path = path }
@@ -30,7 +30,7 @@ final class UnixHTTP: @unchecked Sendable {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
-        guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else { throw APIError(message: "Socket-Pfad zu lang") }
+        guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else { throw APIError(message: L("Socket path too long")) }
         withUnsafeMutableBytes(of: &addr.sun_path) { raw in
             raw.copyBytes(from: bytes)
             raw[bytes.count] = 0
@@ -38,7 +38,7 @@ final class UnixHTTP: @unchecked Sendable {
         let rc = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard rc == 0 else { throw APIError(message: "Daemon nicht erreichbar (\(String(cString: strerror(errno))))") }
+        guard rc == 0 else { throw APIError(message: L("Daemon not reachable (%@)", String(cString: strerror(errno)))) }
         var head = "\(method) \(target) HTTP/1.1\r\nHost: bergfried\r\nAccept: application/json\r\nConnection: close\r\n"
         if let body { head += "Content-Type: application/json\r\nContent-Length: \(body.count)\r\n" }
         head += "\r\n"
@@ -56,7 +56,7 @@ final class UnixHTTP: @unchecked Sendable {
         var chunk = [UInt8](repeating: 0, count: 1 << 16)
         while true {
             let n = recv(fd, &chunk, chunk.count, 0)
-            if n < 0 { throw APIError(message: "Zeitüberschreitung beim Lesen") }
+            if n < 0 { throw APIError(message: L("Timeout while reading")) }
             if n == 0 { break }
             buf.append(chunk, count: n)
         }
@@ -64,12 +64,12 @@ final class UnixHTTP: @unchecked Sendable {
     }
 
     static func parse(_ data: Data) throws -> (Int, Data) {
-        guard let sep = data.range(of: Data("\r\n\r\n".utf8)) else { throw APIError(message: "Ungültige Antwort des Daemons") }
+        guard let sep = data.range(of: Data("\r\n\r\n".utf8)) else { throw APIError(message: L("Invalid response from the daemon")) }
         let head = String(decoding: data[..<sep.lowerBound], as: UTF8.self)
         var body = Data(data[sep.upperBound...])
         let lines = head.components(separatedBy: "\r\n")
         let parts = (lines.first ?? "").split(separator: " ")
-        guard parts.count >= 2, let code = Int(parts[1]) else { throw APIError(message: "Ungültige Statuszeile") }
+        guard parts.count >= 2, let code = Int(parts[1]) else { throw APIError(message: L("Invalid status line")) }
         let chunked = lines.dropFirst().contains { $0.lowercased().hasPrefix("transfer-encoding:") && $0.lowercased().contains("chunked") }
         if chunked { body = try dechunk(body) }
         return (code, body)
@@ -81,7 +81,7 @@ final class UnixHTTP: @unchecked Sendable {
         while i < d.endIndex {
             guard let eol = d[i...].range(of: Data("\r\n".utf8)) else { break }
             let sizeStr = String(decoding: d[i..<eol.lowerBound], as: UTF8.self).split(separator: ";").first.map(String.init) ?? "0"
-            guard let size = Int(sizeStr.trimmingCharacters(in: .whitespaces), radix: 16) else { throw APIError(message: "Ungültige Chunk-Größe") }
+            guard let size = Int(sizeStr.trimmingCharacters(in: .whitespaces), radix: 16) else { throw APIError(message: L("Invalid chunk size")) }
             if size == 0 { break }
             let start = eol.upperBound
             guard let end = d.index(start, offsetBy: size, limitedBy: d.endIndex) else { throw APIError(message: "Chunk abgeschnitten") }
@@ -107,7 +107,7 @@ final class API: @unchecked Sendable {
         let (code, data) = try await http.request(method, target, body: body)
         if code >= 400 {
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw APIError(message: msg ?? "Fehler \(code)")
+            throw APIError(message: msg ?? L("Error %lld", code))
         }
         return data
     }
