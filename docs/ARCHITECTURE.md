@@ -1,0 +1,84 @@
+# Architecture
+
+Bergfried runs Claude Code agents inside isolated Linux VMs (**sandboxes**) on your Mac. An agent sees nothing of your machine unless you approve it,
+one request at a time. You control everything from a native macOS app, and you can talk to the agents from your phone through Claude Code Remote Control.
+
+```mermaid
+flowchart LR
+  phone["Phone / claude.ai/code<br/>(Remote Control)"]
+  subgraph vm["Sandbox = Lima VM (Linux)"]
+    agent["Claude Code agent<br/>tmux window + git worktree"]
+    mcp["bergfried-mcp<br/>(MCP server)"]
+    agent --- mcp
+  end
+  subgraph mac["Your Mac"]
+    daemon["bergfriedd<br/>daemon"]
+    app["Bergfried.app<br/>approvals · status"]
+    data["Your files<br/>ssh-agent keys"]
+    daemon <-->|"HTTP/JSON<br/>app.sock"| app
+    daemon -.->|"only after approval"| data
+  end
+  phone <-->|"Anthropic cloud"| agent
+  mcp <-->|"gRPC over a per-sandbox<br/>unix socket (identity = socket)"| daemon
+```
+
+## Components
+
+| Component | Where | What it does |
+|---|---|---|
+| `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
+| `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, agents, requests, SSH grants, audit log, settings, updates. |
+| `bergfried-mcp` | inside each VM | MCP server for the agent (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `request_github_token`) plus the `ssh-hook` subcommand. |
+| Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
+| `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
+
+## How a request flows
+
+```mermaid
+sequenceDiagram
+  participant A as Agent (VM)
+  participant D as bergfriedd (Mac)
+  participant U as You (app)
+  A->>D: request_file("Documents/report.pdf", reason)
+  D->>D: blocklist check, resolve path (no symlinks)
+  D->>U: notification + request card
+  U->>D: Allow / Deny
+  D-->>A: read-only copy in shared/in (or "denied")
+  D->>D: audit log entry
+```
+
+SSH works the same way, but the daemon never hands out a key: it speaks the ssh-agent protocol to the VM and signs **upstream with your real agent**,
+only while a grant is active (time window, key, target host key).
+
+## Key design points
+
+1. **One sandbox = one project = one Lima VM**, cloned from a base VM `bergfried-base-<hash of vm/bergfried.yaml>`. The template is editable in the app
+   (copy in `~/.bergfried/template/`) and validated by `sandbox.CheckTemplate`: no mounts of your home, no `forwardAgent`, no Docker socket, both Bergfried sockets required.
+2. **Exactly two mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only) and `shared/out` (read-write). Existing folders are *copied* in (`importer`), never mounted.
+3. **Identity of a sandbox = the socket.** For each running sandbox the daemon listens on `~/.lima/<vm>/sock/bergfried.sock` (gRPC `SandboxAPI`) and `ssh-agent.sock`.
+   Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The agent *name* is only metadata claimed from inside the VM (same Linux user, not a security boundary).
+4. **Files:** the index covers your home **minus the blocklist** (`~/.ssh`, `~/Library`, `~/.config`, `.env*`, keys, …). Requests for blocked paths are refused without asking. Approved files are copied to `shared/in/<sandbox>/…`.
+5. **SSH:** the broker implements the ssh-agent protocol with destination constraints (`session-bind@openssh.com`). It signs only with an active grant **and** a matching target host key (fingerprint recorded at grant time from `known_hosts`/`ssh-keyscan`).
+   A root-owned `Match exec` hook in the VM turns a plain `ssh host` into a request; interactive `ssh` waits for your decision.
+6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
+7. **Agents:** one tmux window per agent (tmux session `bf`), one git worktree `~/work/<agent>` (`main` = `~/work/main`), `COMPOSE_PROJECT_NAME=<sandbox>-<agent>`,
+   `claude --continue --remote-control '<sandbox>/<agent>'`. The **monitor** polls running VMs (login, Remote Control status and link, disk usage), restarts agents after login,
+   answers onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts).
+8. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
+
+## Data on your Mac
+
+`~/.bergfried` (0700): `bergfried.db`, `blocklist.json`, `hosts.json`, `template/`, `sandboxes/<name>/{shared/{in,out},github-token}`, `admin.sock`, `app.sock`, `daemon.log`.
+Naming: VMs are `bergfried-<sandbox>` (≤ 24 characters, `base` reserved), base VMs `bergfried-base-<hash>`.
+
+## Code layout
+
+```
+daemon/cmd/bergfriedd        CLI + serve
+daemon/internal/             access, api (+monitor), broker, ghtoken, github, importer, index, lima, notify, rpc, sandbox, store, update
+mcp/cmd/bergfried-mcp        MCP server + ssh-hook (runs in the VM)
+proto/                       protobuf definitions; generated code in proto/gen (checked in)
+app/                         SwiftUI app sources, build.sh, icon
+vm/bergfried.yaml            default Lima template
+tools/fakegithub             test double for GitHub
+```

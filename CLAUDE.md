@@ -1,58 +1,46 @@
-# Arbeitsregeln für Agents in diesem Repo
+# Working rules for agents in this repo
 
-Projekt **Bergfried**: Claude-Code-Agents isoliert in Lima-VMs (Mac, später Debian-VPS), Freigaben für Dateien/SSH nur nach Bestätigung.
-Der Nutzer schreibt Deutsch – Antworten, Doku und Commit-Nachrichten auf Deutsch, knapp und konkret.
+Project **Bergfried**: Claude Code agents isolated in Lima VMs (Mac; Debian VPS later), with approvals for files/SSH/GitHub.
+The repository is **English** (docs, code comments, commit messages, app strings via localisation). **Talk to the user in the language they write in** (usually German).
 
-**Zuerst lesen:** [`docs/HANDOVER.md`](docs/HANDOVER.md) (Stand, Entscheidungen, Fallstricke), dann [`docs/ROADMAP.md`](docs/ROADMAP.md);
-Ursprungsauftrag: [`docs/SPEC.md`](docs/SPEC.md); nächster Schritt: [`docs/M5-PLAN.md`](docs/M5-PLAN.md).
+**Read first:** [`README.md`](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (conventions, decisions, pitfalls), [`docs/ROADMAP.md`](docs/ROADMAP.md) (what is next), [`docs/SECURITY.md`](docs/SECURITY.md).
 
-## Begriffe
-Eine isolierte VM mit ihren Agents heißt **Sandbox** – überall (App, API `/v1/sandboxes`, Code, DB, Ordner `~/.bergfried/sandboxes`). Früher hieß sie „Session“; nur ältere Doku (`docs/SPEC.md`) und Dinge anderer Programme (tmux-Session `bf`, Claude-/Remote-Control-Session) behalten das Wort.
+## Terminology
+An isolated VM with its agents is a **sandbox** — everywhere (app, API `/v1/sandboxes`, code, DB, folder `~/.bergfried/sandboxes`). It was called "session" earlier;
+the word remains only for other programs' things (tmux session `bf`, Claude/Remote Control sessions, OpenSSH's `session-bind@openssh.com` — never rename that).
 
-## Vorgehen
-- **Plan-first:** vor größeren Teilen kurz den Plan (Dateien, Befehle, Tests) zeigen und nachfragen, wenn etwas unklar ist.
-- Kleine, testbare Schritte; zu jedem Meilenstein eine kurze Anleitung zum manuellen Test in `docs/mN-test.md`.
-- **Nichts raten bei externen Tools** (Lima, OpenSSH, Claude Code, macOS): in der Doku/`--help`/Log nachsehen und Ergebnis festhalten.
-- Sicherheitsrelevante Stellen (Broker, Sperrliste, Socket-Rechte, Importer, Vorlagenprüfung) **immer mit Tests** absichern.
-- Ehrlich berichten, was **nicht** geprüft ist (z. B. Oberfläche nie gesehen) – Details in `HANDOVER.md`.
+## How to work
+- **Plan first** for larger changes: show the plan (files, commands, tests) briefly and ask if something is unclear.
+- Small, testable steps; manual test guides live in `docs/testing/`.
+- **Do not guess about external tools** (Lima, OpenSSH, Claude Code, macOS, GitHub): check docs/`--help`/logs and record the result.
+- Security-relevant code (broker, blocklist, socket permissions, importer, template check, updater) **always with tests**.
+- Report honestly what is **not** verified (for example UI never seen).
 
-## Bauen und testen (alles Go läuft in Docker, lokal ist kein Go nötig)
+## Build and test (all Go runs in Docker; no local Go needed)
 ```bash
 make test          # go test ./... in golang:1.26
 make vet && make fmt
 make build         # bin/bergfriedd (darwin/arm64), bin/bergfried-mcp (linux/arm64)
-make proto         # Protobuf/gRPC neu erzeugen (Docker); generierter Code liegt in proto/gen und ist eingecheckt
-app/build.sh       # app/build/Bergfried.app (swiftc; kein Xcode, kein SwiftPM!)
+make proto         # regenerate protobuf/gRPC; generated code is checked in (proto/gen)
+app/build.sh       # app/build/Bergfried.app (swiftc; no Xcode, no SwiftPM)
 ```
-Daemon lokal starten (Standard für die App; die App kann ihn auch als LaunchAgent installieren):
+Run the daemon by hand (the app can also install it as a LaunchAgent):
 ```bash
 export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ./bin/bergfriedd serve --no-dialog
 ```
 
-## Testen mit echten VMs und SSH
-- Test-Sandboxes mit eindeutigem Namen anlegen und **danach löschen** (`bergfriedd delete <name> --force` oder App/API). **Vorhandene Sandboxes des
-  Nutzers nie verändern oder löschen** (nur lesen).
-- SSH-Tests **nie mit den echten Keys des Nutzers:** eigener Schlüssel (`ssh-keygen`), eigener `ssh-agent` (Socket kurz halten, z. B.
-  `/private/tmp/bft/agent.sock`, Unix-Limit ~104 Zeichen), Test-sshd in Docker (`lscr.io/linuxserver/openssh-server`, Port 2222, `PUBLIC_KEY`),
-  `known_hosts`-Testdatei mit Eintrag `[host.lima.internal]:2222`, Daemon mit `--upstream-agent <Testsocket> --known-hosts <Testdatei>` starten.
-  Ziel aus der VM: `host.lima.internal:2222`. Danach alles wieder abbauen und den Daemon normal neu starten.
-- Interaktives `ssh` in der VM simulieren: `script -qec "ssh …" /dev/null` (stderr ist dann ein TTY).
-- Aufrufe des MCP-Servers ohne Claude: JSON-RPC über stdio (siehe `docs/m2-test.md`), Identität = Socket.
+## Testing with real VMs and SSH
+- Create test sandboxes with unique names and **delete them afterwards** (`bergfriedd delete <name> --force`). **Never change or delete the user's existing sandboxes** (read only).
+- **Never test SSH with the user's real keys**: own key, own `ssh-agent` (short socket path), test sshd in Docker — see `docs/DEVELOPMENT.md`.
+- **Never use the user's real GitHub token or repos for tests**; use `tools/fakegithub` (`docs/testing/github.md`).
 
-## Git und GitHub in diesem Repo
-- Arbeit auf Branches `agent/<thema>`, nicht direkt auf `main`; Merge/Push nach `main` macht der Nutzer (Branch pushen ist in Ordnung).
-- Test gegen GitHub ohne echtes GitHub: `tools/fakegithub` (`make fakegithub`, Anleitung `docs/git-test.md`). **Nie das echte Token oder Repos des Nutzers für Tests benutzen.**
+## Git
+- Work on branches `agent/<topic>`; merge to `main` as the user asks. No secrets in commits; nothing from `~/.bergfried`.
+- Short English commit subjects; update docs in the same commit when behaviour changes.
 
-## Stolpersteine (Kurzfassung – Details in HANDOVER.md)
-- zsh: `/usr/bin/log` statt `log`; BSD-`sed -i ''`. gofmt richtet Structs neu aus (String-Ersetzungen vorher prüfen).
-- INSERTs mit expliziter Spaltenliste; neue Spalten per `ALTER TABLE` (Migration in `store.migrate`).
-- `limactl`: stdout/stderr trennen; Host-Key-Pin nach `firstBoot` löschen; Vorlagen-Dateiname ohne führenden Punkt.
-- App: kein `@State` (Makro ohne Plugin) → `@Local`; **App nicht beenden/neu starten, während eine macOS-Berechtigungsabfrage offen ist.**
-- Keine Secrets ins Repo; nichts committen, was `~/.bergfried`-Inhalte, Tokens oder Keys enthält.
-
-## Konventionen
-- Go: ein Modul (`github.com/DevertNet/bergfried`), `daemon/internal/*` (Daemon), `mcp/cmd/bergfried-mcp`, `proto/gen/…` (generiert, nicht von Hand ändern).
-- Namen: neue VMs `bergfried-<sandbox>` (≤ 24 Zeichen, `base` reserviert), Basis-VM `bergfried-base-<Hash>`, tmux-Session `bf`.
-- Daten des Daemons: `~/.bergfried` (0700): DB, `blocklist.json`, `hosts.json`, `template/`, `sandboxes/<name>/shared/{in,out}`, `admin.sock`, `app.sock`.
-- Commits: kurze deutsche Betreffzeile; Doku (`docs/`) im selben Commit aktualisieren, wenn sich Verhalten ändert.
+## Pitfalls (short; details in docs/DEVELOPMENT.md)
+- zsh: `/usr/bin/log` instead of `log`; BSD `sed -i ''`. gofmt realigns structs (check before scripted replacements).
+- `INSERT` with explicit column lists; new columns via `ALTER TABLE` (migration in `store.migrate`).
+- `limactl`: separate stdout/stderr; delete the pinned host key after `firstBoot`; template file names without a leading dot.
+- App: no `@State` (macro without plugin) → `@Local`; **do not quit/restart the app while a macOS permission prompt is open.**
