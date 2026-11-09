@@ -16,6 +16,10 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ./bin/bergfriedd serve --no-dialog
 ```
 
+## Releasing
+`git tag vX.Y.Z && git push origin vX.Y.Z` runs `.github/workflows/release.yml` (tests, build, zip, `SHA256SUMS`, GitHub release); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). `.github/workflows/ci.yml` runs `go vet`, `go test` and the app build on every push to `main` and on pull requests.
+Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`.
+
 ## Conventions
 - Go: one module `github.com/DevertNet/bergfried`; `daemon/internal/*`, `mcp/cmd/bergfried-mcp`, `proto/gen/…` (generated, do not edit).
 - Plan first for larger changes; small testable steps; security-relevant code (broker, blocklist, socket permissions, importer, template check, updater) always gets tests.

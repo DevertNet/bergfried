@@ -12,15 +12,15 @@ struct RequestsView: View {
         List {
             Section("Open requests") {
                 if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
-                ForEach(model.requests) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }) }
+                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }) }
             }
             Section("Active SSH grants") {
                 if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
-                ForEach(model.grants) { g in GrantRow(g: g) }
+                ForEach(model.grants, id: \.listID) { g in GrantRow(g: g) }
             }
             Section {
                 Toggle("Show finished requests", isOn: $showHistory)
-                if showHistory { ForEach(history) { r in HistoryRow(r: r) } }
+                if showHistory { ForEach(history, id: \.historyID) { r in HistoryRow(r: r) } }
             }
         }
         .onChange(of: showHistory) { _, on in if on { Task { await loadHistory() } } }

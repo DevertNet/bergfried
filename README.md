@@ -2,7 +2,9 @@
 
 **Run Claude Code agents in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
 
-![Bergfried app](docs/img/app.png)
+![Bergfried app: sandboxes with their agents](docs/img/app.png)
+
+<sub>Screenshots show made-up demo data ([tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
 Bergfried gives every project its own Linux VM (a **sandbox**) with a Claude Code agent inside. Control the agent from your phone with Claude Code Remote Control; the agent
 sees nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
@@ -11,6 +13,9 @@ sees nothing of your Mac until you say so: files, SSH access and GitHub access a
 1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Agents run in tmux windows with their own git worktrees.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
 3. **The agent asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged.
+
+![Open requests and an active SSH grant](docs/img/requests.png)
+
 4. **SSH keys never leave the Mac.** Bergfried signs *upstream with your real ssh-agent*, only during a grant you created (time window, key, target host key).
 5. **Git uses a token you create per sandbox** (fine-grained, selected repos only), so plain `git push`/`pull` just works.
 

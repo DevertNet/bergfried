@@ -87,6 +87,9 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var ssh: SSHInfo?
     var github: GitHubDetail?
     var pending: Bool { status == "pending" }
+    // Request and grant ids come from different tables and can be equal: give the list rows distinct identities.
+    var listID: String { "request-\(id)" }
+    var historyID: String { "history-\(id)" }
 }
 
 struct GrantInfo: Codable, Identifiable, Hashable {
@@ -101,6 +104,7 @@ struct GrantInfo: Codable, Identifiable, Hashable {
     var revoked: Bool
     var active: Bool
     var hostKeyFingerprints: [String]
+    var listID: String { "grant-\(id)" }
 }
 
 struct AuditEntry: Codable, Identifiable, Hashable {
