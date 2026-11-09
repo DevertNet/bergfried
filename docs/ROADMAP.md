@@ -22,6 +22,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [ ] Port overview per sandbox ("open shop on localhost:8080") — Lima already forwards guest ports to `127.0.0.1`
 - [ ] Resource limits and idle auto-stop, `caffeinate` option
 - [ ] Update Claude Code in all VMs from the app
+- [ ] Scheduled tasks (recurring agent jobs per sandbox, e.g. cron-like prompts; design open: where the schedule lives, what happens while the VM is stopped, approvals for unattended runs)
 
 ## Later
 - [ ] VPS host (Debian, SSH link, KVM check): [design/vps-host.md](design/vps-host.md)
