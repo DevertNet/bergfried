@@ -28,10 +28,12 @@ provision:
     set -eux -o pipefail
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq make chromium gh
+    apt-get install -y --no-install-recommends tmux git curl ca-certificates jq make chromium gh git-lfs
     if ! command -v docker >/dev/null 2>&1; then
       curl -fsSL https://get.docker.com | sh
     fi
+    # Git LFS filters for every user (git lfs install --system writes /etc/gitconfig).
+    git lfs install --system --skip-repo
     # Docker for the VM user only, no socket forwarding to the host.
     usermod -aG docker "{{.User}}"
     # SSH only through the broker, without ControlMaster (connections do not outlive a grant).

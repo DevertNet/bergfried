@@ -187,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/start", s.simple("sandbox.start", func(ctx context.Context, n string, _ bool) error { return s.M.Start(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
+	mux.HandleFunc("POST /v1/sandboxes/upgrade-tools", s.simple("sandbox.upgrade-tools", func(ctx context.Context, n string, _ bool) error { return s.M.UpgradeTools(ctx, n) }))
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
@@ -574,6 +575,9 @@ func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, e
 	}
 	if warnings == nil {
 		warnings = []string{}
+	}
+	if s.M.Tpl.SeedNewer() {
+		warnings = append(warnings, "The bundled template has changed (for example new tools in the VM image), but you edited your copy, so it was not replaced. \"Reset\" adopts the bundled one and discards your edits.")
 	}
 	return templateJ{YAML: y, Revision: s.M.Rev(), BaseName: s.M.BaseName(), BaseReady: ready, Path: s.M.Tpl.Path(), Warnings: warnings}, nil
 }

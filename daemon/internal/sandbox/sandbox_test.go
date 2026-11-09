@@ -138,7 +138,7 @@ func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
@@ -222,5 +222,16 @@ func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(h2, "sandboxes"), 0o700)
 	if err := MigrateHome(h2); err == nil {
 		t.Fatal("both present: error expected")
+	}
+}
+
+func TestUpgradeToolsScriptInstallsTools(t *testing.T) {
+	for _, want := range []string{"make", "chromium", "gh", "git-lfs", "git lfs install --system", "gh auth login"} {
+		if !strings.Contains(upgradeToolsScript, want) {
+			t.Errorf("upgrade script lacks %q", want)
+		}
+	}
+	if strings.Contains(upgradeToolsScript, "echo ") {
+		t.Error("the script must not echo anything (token)")
 	}
 }
