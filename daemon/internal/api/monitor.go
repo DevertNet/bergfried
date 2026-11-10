@@ -18,8 +18,8 @@ import (
 // probeScript runs in the VM and reports logins, disk usage and, per agent window, its processes
 // and (for Claude) the Remote Control status. need_claude/need_opencode are filled in by check.
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
-echo "inst_claude=$(command -v claude >/dev/null 2>&1 && echo true || echo false)"
-echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && echo true || echo false)"
+echo "inst_claude=$([ -x "$HOME/.local/bin/claude" ] && echo true || echo false)"
+echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
 if [ %[2]d = 1 ]; then
   OC="$HOME/.opencode/bin/opencode"

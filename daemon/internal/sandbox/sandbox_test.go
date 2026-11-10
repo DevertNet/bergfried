@@ -56,14 +56,26 @@ func TestParseRuntime(t *testing.T) {
 func TestOpenCodeInstallScript(t *testing.T) {
 	s := openCodeInstallScript()
 	for _, want := range []string{
-		"tar -xzf /tmp/opencode.tgz",
-		`install -m755 "$tmp/package/bin/opencode"`,
-		`mkdir -p "$HOME/.opencode/bin"`,
-		"opencode/bin:$PATH",
+		"set -Eeuo pipefail",
+		`FAILED at line $LINENO`,
+		"/tmp/opencode-install.log",
+		"sudo chown -R",
+		"https://opencode.ai/v2/install",
+		`bash "$SCRIPT"`,
+		"opencode in PATH",
+		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+		`"$OC" --version`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("%q missing in\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "--version 2.2.6") {
+		t.Fatal("the installer must use the latest version")
+	}
+	c := openCodeCheckScript()
+	if !strings.Contains(c, `[ "$major" -ge 2 ]`) || !strings.Contains(c, "echo yes") {
+		t.Fatalf("bad check script:\n%s", c)
 	}
 }
 

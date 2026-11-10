@@ -53,9 +53,9 @@ provision:
       curl -fsSL https://claude.ai/install.sh | bash
     fi
     grep -q '.local/bin' ~/.profile || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
-    # OpenCode (pinned; Bergfried installs the same version on demand in older VMs).
+    # OpenCode (latest; older VMs get it on demand when the first OpenCode agent is added).
     if ! command -v opencode >/dev/null 2>&1; then
-      curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.6 --no-modify-path
+      curl -fsSL https://opencode.ai/v2/install | bash
     fi
     grep -q '.opencode/bin' ~/.profile || echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> ~/.profile
 # Daemon socket: /run/user/<uid>/bergfried.sock listens in the VM, connections go to the

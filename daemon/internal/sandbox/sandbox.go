@@ -436,25 +436,40 @@ printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd)
 	return err
 }
 
-// InstallOpenCode installs the pinned OpenCode CLI in the VM (no root, no apt). The package is
-// downloaded and verified on the Mac, copied into the VM and unpacked there; the VM needs no
-// network access, curl, jq or OpenSSL. Idempotent.
+// InstallOpenCode installs the latest OpenCode in the VM with the official installer.
+// Leftovers of earlier attempts are removed first; the installer runs from a script file (not as
+// a shell argument) and writes a log so a failure is visible in the app.
 func (m *Manager) InstallOpenCode(ctx context.Context, vm string) error {
 	out, err := m.L.ShellStdin(ctx, vm, strings.NewReader(openCodeCheckScript()), "bash", "-s")
 	if err == nil && strings.TrimSpace(string(out)) == "yes" {
 		return nil
 	}
-	progress(ctx, "Installing OpenCode (pinned version, downloaded on the Mac)")
-	tgz, err := downloadOpenCode(ctx, OpenCodeVersion)
+	progress(ctx, "Installing OpenCode in the VM (latest version)")
+	f, err := os.CreateTemp("", "opencode-install-*.sh")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tgz)
-	if _, err := m.L.R.Run(ctx, "cp", tgz, vm+":/tmp/opencode.tgz"); err != nil {
-		return fmt.Errorf("OpenCode: upload to the VM: %w", err)
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err := f.WriteString(openCodeInstallScript()); err != nil {
+		f.Close()
+		return err
 	}
-	_, err = m.L.ShellStdin(ctx, vm, strings.NewReader(openCodeInstallScript()), "bash", "-s")
-	return err
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if _, err := m.L.R.Run(ctx, "cp", name, vm+":/tmp/opencode-install.sh"); err != nil {
+		return fmt.Errorf("OpenCode: upload the install script: %w", err)
+	}
+	_, err = m.L.Shell(ctx, vm, "bash", "/tmp/opencode-install.sh")
+	if err == nil {
+		return nil
+	}
+	tail, _ := m.L.Shell(ctx, vm, "bash", "-c", "tail -n 200 /tmp/opencode-install.log 2>/dev/null || true")
+	if t := strings.TrimSpace(string(tail)); t != "" {
+		return fmt.Errorf("OpenCode installation failed: %w\n%s", err, t)
+	}
+	return fmt.Errorf("OpenCode installation failed: %w", err)
 }
 
 // InstallGitToken stores the sandbox's GitHub token in the VM: ~/.git-credentials (0600, via stdin, never as an argument)

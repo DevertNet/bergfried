@@ -1,126 +1,68 @@
 package sandbox
 
-import (
-	"context"
-	"crypto/sha512"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"runtime"
-	"strings"
-	"time"
-)
-
-// openCodeRegistry is a variable so tests can point it at a local server.
-var openCodeRegistry = "https://registry.npmjs.org"
-
-// openCodeHTTP is separate from http.DefaultClient to bound the 100+ MB download.
-var openCodeHTTP = &http.Client{Timeout: 15 * time.Minute}
-
-type npmDist struct {
-	Dist struct {
-		Tarball   string `json:"tarball"`
-		Integrity string `json:"integrity"`
-	} `json:"dist"`
-}
-
-func openCodeArch() (string, error) {
-	switch runtime.GOARCH {
-	case "arm64":
-		return "arm64", nil
-	case "amd64":
-		return "x64", nil
-	}
-	return "", fmt.Errorf("OpenCode: unsupported daemon architecture %s", runtime.GOARCH)
-}
-
-// downloadOpenCode fetches the pinned package on the Mac (not in the VM), verifies its
-// SHA-512 integrity from the npm metadata and returns the path of the .tgz.
-func downloadOpenCode(ctx context.Context, version string) (string, error) {
-	arch, err := openCodeArch()
-	if err != nil {
-		return "", err
-	}
-	pkg := "cli-linux-" + arch
-	metaURL := fmt.Sprintf("%s/@opencode%%2f%s/%s", openCodeRegistry, pkg, version)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := openCodeHTTP.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("OpenCode: npm metadata: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenCode: npm metadata for %s %s: HTTP %d", pkg, version, resp.StatusCode)
-	}
-	var meta npmDist
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&meta); err != nil {
-		return "", fmt.Errorf("OpenCode: npm metadata: %w", err)
-	}
-	if meta.Dist.Tarball == "" {
-		return "", fmt.Errorf("OpenCode: npm metadata has no tarball URL")
-	}
-	req, err = http.NewRequestWithContext(ctx, http.MethodGet, meta.Dist.Tarball, nil)
-	if err != nil {
-		return "", err
-	}
-	tresp, err := openCodeHTTP.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("OpenCode: download: %w", err)
-	}
-	defer tresp.Body.Close()
-	if tresp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenCode: download %s: HTTP %d", meta.Dist.Tarball, tresp.StatusCode)
-	}
-	f, err := os.CreateTemp("", "opencode-*.tgz")
-	if err != nil {
-		return "", err
-	}
-	name := f.Name()
-	h := sha512.New()
-	if _, err := io.Copy(io.MultiWriter(f, h), tresp.Body); err != nil {
-		f.Close()
-		os.Remove(name)
-		return "", fmt.Errorf("OpenCode: download: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(name)
-		return "", err
-	}
-	if want := meta.Dist.Integrity; strings.HasPrefix(want, "sha512-") {
-		got := "sha512-" + base64.StdEncoding.EncodeToString(h.Sum(nil))
-		if got != want {
-			os.Remove(name)
-			return "", fmt.Errorf("OpenCode: checksum mismatch for %s %s", pkg, version)
-		}
-	}
-	return name, nil
-}
-
-// openCodeCheckScript reports whether a usable v2 binary is already installed.
+// openCodeCheckScript reports whether a usable OpenCode v2+ binary is already installed.
+// An old broken symlink or a file left by an earlier attempt must not count.
 func openCodeCheckScript() string {
 	return `OC="$HOME/.opencode/bin/opencode"
-if [ -x "$OC" ] && "$OC" --version 2>/dev/null | grep -qE '(^| )v?2[.]'; then echo yes; fi`
+if [ -x "$OC" ]; then
+  v=$("$OC" --version 2>/dev/null | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1 || true)
+  major=${v%%.*}
+  if [ -n "$major" ] && [ "$major" -ge 2 ]; then echo yes; fi
+fi`
 }
 
-// openCodeInstallScript unpacks the uploaded tarball and installs the binary. It runs in the
-// VM and needs only tar/install (no network).
+// openCodeInstallScript installs the latest OpenCode with the official installer *in the VM*.
+// It first removes leftovers of earlier attempts (broken symlinks, files, root-owned dirs),
+// logs every step to /tmp/opencode-install.log and prints a clear failure line.
 func openCodeInstallScript() string {
-	return `set -e
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-tar -xzf /tmp/opencode.tgz -C "$tmp" || { echo "OpenCode: could not extract the download" >&2; exit 1; }
+	return `set -Eeuo pipefail
+LOG=/tmp/opencode-install.log
+: > "$LOG"
+exec > >(tee -a "$LOG") 2>&1
+trap 'echo "FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
+
+echo "== OpenCode installation $(date -Is) =="
+echo "user=$(id -un) home=$HOME arch=$(uname -m)"
+echo "opencode in PATH: $(command -v opencode || echo none)"
+df -h /tmp "$HOME" || true
+for c in curl tar jq sha1sum openssl sudo; do printf '%s: ' "$c"; command -v "$c" || echo missing; done
+
+OC="$HOME/.opencode/bin/opencode"
+echo "-- leftovers --"
+ls -ld "$HOME/.opencode" "$HOME/.opencode/bin" 2>/dev/null || true
+ls -l "$OC" 2>/dev/null || true
+
+# Repair directories left behind by a previous sudo/attempt, otherwise the installer cannot write.
+for d in "$HOME/.opencode" "$HOME/.config/opencode" "$HOME/.local/share/opencode" "$HOME/.cache/opencode" "$HOME/.local/state/opencode"; do
+  if [ -e "$d" ] && [ "$(stat -c %u "$d" 2>/dev/null || echo 0)" != "$(id -u)" ]; then
+    echo "repairing ownership of $d"
+    sudo chown -R "$(id -u):$(id -g)" "$d"
+  fi
+done
+if [ -e "$HOME/.opencode" ] && [ ! -d "$HOME/.opencode" ]; then rm -f "$HOME/.opencode"; fi
+if [ -e "$HOME/.opencode/bin" ] && [ ! -d "$HOME/.opencode/bin" ]; then rm -f "$HOME/.opencode/bin"; fi
 mkdir -p "$HOME/.opencode/bin"
-install -m755 "$tmp/package/bin/opencode" "$HOME/.opencode/bin/opencode.new" || { echo "OpenCode: binary not found in the package" >&2; exit 1; }
-mv -f "$HOME/.opencode/bin/opencode.new" "$HOME/.opencode/bin/opencode"
-rm -f /tmp/opencode.tgz
+if [ -d "$OC" ] && [ ! -L "$OC" ]; then rm -rf "$OC"; fi
+rm -f "$OC" "$OC.new"
+rm -rf /tmp/opencode_install_* /tmp/opencode.tgz
+
+# Use the normal installer, but download it first so download and execution are separate.
+SCRIPT=/tmp/opencode-install.sh.download
+echo "-- downloading the installer --"
+curl -fsSL --connect-timeout 20 https://opencode.ai/v2/install -o "$SCRIPT"
+echo "installer bytes=$(wc -c < "$SCRIPT")"
+echo "-- running the installer --"
+# Clean PATH: an old opencode in /usr/local/bin or ~/.local/bin must not trigger the
+# installer's version check (that check was a likely reason for the silent early exit).
+PATH=/usr/bin:/bin:/usr/sbin:/sbin bash "$SCRIPT"
+
+[ -x "$OC" ] || { echo "OpenCode: binary missing after installation" >&2; exit 1; }
+echo "-- installed version --"
+"$OC" --version
+
 for f in "$HOME/.profile" "$HOME/.bashrc"; do
   if [ -f "$f" ] && ! grep -qF '.opencode/bin' "$f"; then echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> "$f"; fi
 done
-[ -f "$HOME/.profile" ] || echo 'export PATH="$HOME/.opencode/bin:$PATH"' > "$HOME/.profile"`
+[ -f "$HOME/.profile" ] || echo 'export PATH="$HOME/.opencode/bin:$PATH"' > "$HOME/.profile"
+echo "OK"`
 }

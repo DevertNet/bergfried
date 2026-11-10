@@ -71,7 +71,7 @@ only while a grant is active (time window, key, target host key).
    The **monitor** polls running VMs (login per runtime, Remote Control status and link for Claude, OpenCode busy state, disk usage), restarts only the agents of a runtime after its login,
    answers Claude onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts). OpenCode is connected to the desktop app
    through a one-time local link (`opencode pair`, no internet): the OpenCode server listens on a stable per-sandbox port on `0.0.0.0` and Lima forwards it to `127.0.0.1` on the Mac.
-   OpenCode is installed on demand in older VMs (pinned version, user-local, no root/apt).
+   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`.
 8. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
 
 ## Data on your Mac
