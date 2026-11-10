@@ -57,11 +57,18 @@ type Decision struct {
 	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
 	// slice is zeroed by DecideSSH. Never stored, logged or audited.
 	Passphrase []byte
+	// Note is an optional message from the user that is returned to the agent with the decision.
+	Note string
 }
 
 type pending struct {
-	ch   chan *store.SSHGrant // nil = abgelehnt
+	ch   chan pendingResult
 	info SSHInfo
+}
+
+type pendingResult struct {
+	grant *store.SSHGrant // nil = declined
+	note  string
 }
 
 type Service struct {
@@ -138,7 +145,7 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 		return nil, err
 	}
 	req.ID = id
-	p := &pending{ch: make(chan *store.SSHGrant, 1), info: info}
+	p := &pending{ch: make(chan pendingResult, 1), info: info}
 	s.mu.Lock()
 	s.waiters[id] = p
 	s.mu.Unlock()
@@ -150,16 +157,24 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 	timer := time.NewTimer(s.Timeout)
 	defer timer.Stop()
 	select {
-	case g := <-p.ch:
-		if g == nil {
-			return deny(pb.Verdict_VERDICT_DENIED, "The user declined.")
+	case r := <-p.ch:
+		if r.grant == nil {
+			msg := "The user declined."
+			if r.note != "" {
+				msg += " Note from the user: " + r.note
+			}
+			return deny(pb.Verdict_VERDICT_DENIED, msg)
 		}
+		g := r.grant
 		s.mu.Lock()
 		s.open[g.ID] = g.Sandbox
 		s.mu.Unlock()
 		s.apply(ctx, g.Sandbox)
-		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User,
-			Message: fmt.Sprintf("Approved until %s. Connect with: ssh %s@%s", g.Expires.Format("15:04"), g.User, host)}, nil
+		msg := fmt.Sprintf("Approved until %s. Connect with: ssh %s@%s", g.Expires.Format("15:04"), g.User, host)
+		if r.note != "" {
+			msg += " Note from the user: " + r.note
+		}
+		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, Message: msg}, nil
 	case <-timer.C:
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
 			s.audit("ssh.request_expired", sandbox, agent, fmt.Sprintf("id=%d", id))
@@ -171,6 +186,17 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 		}
 		return nil, ctx.Err()
 	}
+}
+
+// cleanNote limits the user's note and removes control characters (newlines stay).
+func cleanNote(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 && r != '\n' || r == 127 {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	return trunc(s, 500)
 }
 
 func trunc(s string, n int) string {
@@ -248,7 +274,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 			return "", errors.New("request no longer open")
 		}
 		s.audit("ssh.request_denied", r.Sandbox, r.Agent, fmt.Sprintf("id=%d", d.ID))
-		p.ch <- nil
+		p.ch <- pendingResult{note: cleanNote(d.Note)}
 		return "denied", nil
 	}
 	if d.Minutes < 1 || d.Minutes > MaxMinutes {
@@ -322,7 +348,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	}
 	s.Hosts.Remember(r.Path, keyFP, user)
 	s.audit("ssh.grant_created", r.Sandbox, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllAgents, d.PerConn))
-	p.ch <- &g
+	p.ch <- pendingResult{grant: &g, note: cleanNote(d.Note)}
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }
 

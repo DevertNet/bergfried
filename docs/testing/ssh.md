@@ -22,6 +22,7 @@ In the agent: "I need SSH access to `server.example.com` to check X" → tool `r
 - Another host with the same grant → refused (`ssh.sign_denied`, reason in the log).
 - After expiry or `revoke`: new connections fail, running `ssh` processes in the VM are terminated.
 - A plain `ssh host` in the VM terminal creates a request through the `Match exec` hook; interactive `ssh` waits for your decision, scripts get a message and no wait (`BERGFRIED_SSH_WAIT=1|0` forces/prevents waiting).
+- A note in "Note for the agent (optional)" is returned with the decision (allow and deny): the agent sees `Note from the user: …` in the `request_ssh` result, and the interactive `ssh` hook prints it too. The note is limited to 500 characters.
 
 ## Notes
 - **Server side:** during a grant an agent could add its own key to the target's `authorized_keys`. For important servers use a restricted user whose `authorized_keys` is root-owned (`AuthorizedKeysFile /etc/ssh/authorized_keys/%u`).

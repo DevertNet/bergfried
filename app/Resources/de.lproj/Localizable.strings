@@ -312,3 +312,17 @@
 "Done" = "Fertig";
 
 "OpenCode is not running – please restart" = "OpenCode läuft nicht – bitte neu starten";
+
+"Dismiss" = "Ausblenden";
+
+"Key" = "Schlüssel";
+"New host key" = "Neuer Host-Schlüssel";
+"Request" = "Anfrage";
+"Access" = "Zugriff";
+"Options" = "Optionen";
+"Note for the agent (optional)" = "Hinweis für den Agenten (optional)";
+"Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant." = "Nur ankreuzen, wenn der Fingerabdruck mit dem übereinstimmt, was der Server-Besitzer dir genannt hat. Bergfried merkt ihn sich nach der Freigabe für diesen Host.";
+"Key not loaded in your ssh-agent" = "Schlüssel nicht in deinem ssh-agent geladen";
+"Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieser Freigabe (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Eine neue Freigabe braucht die Passphrase erneut.";
+"Shown to the agent with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters." = "Wird dem Agenten mit der Antwort angezeigt – nützlich bei einer Ablehnung, z. B. „nimm stattdessen den Staging-Host“ oder „frag morgen noch einmal“. Max. 500 Zeichen.";
+"Deny and approve both send the note to the agent." = "Ablehnen und Freigeben senden den Hinweis beide an den Agenten.";

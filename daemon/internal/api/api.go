@@ -764,13 +764,14 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
 		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
+		Note             string `json:"note"`       // optional message for the agent
 	}
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllAgents: q.AllAgents, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase)})
+		AllAgents: q.AllAgents, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
 	if err != nil {
 		fail(w, 409, err)
 		return
