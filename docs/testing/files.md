@@ -5,7 +5,7 @@ make build
 export BERGFRIED_TEMPLATE=vm/bergfried.yaml
 ./bin/bergfriedd serve               # terminal 1: daemon (index, sockets, approval dialog)
 ./bin/bergfriedd create shop         # terminal 2: installs bergfried-mcp in the VM
-./bin/bergfriedd login shop && ./bin/bergfriedd worktree add shop main && ./bin/bergfriedd worktree start shop main
+./bin/bergfriedd login shop && ./bin/bergfriedd worktree start shop main
 ```
 In Claude: "List my files in Documents and fetch <file>".
 

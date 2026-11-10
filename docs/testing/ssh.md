@@ -5,7 +5,7 @@ make build
 ./bin/bergfriedd base build          # template with the second reverse socket and ssh_config.d
 ./bin/bergfriedd serve               # uses your SSH_AUTH_SOCK as upstream (--upstream-agent <socket>)
 ./bin/bergfriedd create shop
-./bin/bergfriedd login shop && ./bin/bergfriedd worktree add shop main && ./bin/bergfriedd worktree start shop main
+./bin/bergfriedd login shop && ./bin/bergfriedd worktree start shop main
 ```
 **Use a test key, ssh-agent and server, never your real ones** (see [DEVELOPMENT.md](../DEVELOPMENT.md)).
 
