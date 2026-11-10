@@ -227,7 +227,6 @@
 "bergfriedd is missing in the app bundle (run build.sh after `make build`)" = "bergfriedd fehlt im App-Bundle (build.sh nach `make build` ausführen)";
 "blocked" = "gesperrt";
 "built" = "gebaut";
-"checking …" = "wird geprüft …";
 "denied" = "abgelehnt";
 "e.g. shop" = "z. B. shop";
 "every connection individually" = "jede Verbindung einzeln";
@@ -326,3 +325,23 @@
 "Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieser Freigabe (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Eine neue Freigabe braucht die Passphrase erneut.";
 "Shown to the agent with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters." = "Wird dem Agenten mit der Antwort angezeigt – nützlich bei einer Ablehnung, z. B. „nimm stattdessen den Staging-Host“ oder „frag morgen noch einmal“. Max. 500 Zeichen.";
 "Deny and approve both send the note to the agent." = "Ablehnen und Freigeben senden den Hinweis beide an den Agenten.";
+
+"Runtimes" = "Laufzeiten";
+"Runtime" = "Laufzeit";
+"Status" = "Status";
+"Worktree" = "Worktree";
+"Actions" = "Aktionen";
+"Sign in" = "Anmelden";
+"No agents yet" = "Noch keine Agents";
+"Agents" = "Agents";
+"Not checked – start the sandbox" = "Nicht geprüft – Sandbox starten";
+"not installed" = "nicht installiert";
+"installed · no agent of this runtime" = "installiert · kein Agent dieser Laufzeit";
+"installed · signed in" = "installiert · angemeldet";
+"installed · not signed in" = "installiert · nicht angemeldet";
+"installed · status unknown" = "installiert · Status unbekannt";
+"installs with the first OpenCode agent" = "wird mit dem ersten OpenCode-Agenten installiert";
+
+"checking …" = "wird geprüft …";
+
+"Disk %@" = "Platte %@";

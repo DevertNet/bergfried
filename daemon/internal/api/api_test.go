@@ -262,7 +262,7 @@ func TestSandboxesReportAgentRuntimes(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("%d %s", code, body)
 	}
-	for _, want := range []string{`"runtime":"claude"`, `"runtime":"opencode"`, `"opencode_port":42123`, `"opencode_logged_in"`} {
+	for _, want := range []string{`"runtime":"claude"`, `"runtime":"opencode"`, `"opencode_port":42123`, `"opencode_logged_in"`, `"claude_installed"`, `"opencode_installed"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("%s missing in %s", want, body)
 		}

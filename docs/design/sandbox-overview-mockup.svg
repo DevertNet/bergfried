@@ -56,9 +56,6 @@
     <text x="1056" y="163" font-family="Inter" font-size="11.5" font-weight="600" fill="#6B5200" text-anchor="middle">Build now</text>
     <text x="1128" y="164" font-family="Inter" font-size="15" fill="#8A6D1A" text-anchor="middle">×</text>
 
-    <!-- running section -->
-    <text x="278" y="220" font-family="Inter" font-size="11" font-weight="700" fill="#8E8E93" letter-spacing="0.6">RUNNING</text>
-    <text x="352" y="220" font-family="Inter" font-size="11" fill="#8E8E93">1</text>
 
     <!-- card 1 -->
     <rect x="278" y="232" width="932" height="336" rx="12" fill="#FFFFFF" stroke="#E2E2E7"/>
@@ -138,10 +135,8 @@
 
     <text x="294" y="554" font-family="Inter" font-size="10" fill="#A1A1A6">2 agents · same VM · separate worktrees</text>
 
-    <!-- stopped section -->
-    <text x="278" y="600" font-family="Inter" font-size="11" font-weight="700" fill="#8E8E93" letter-spacing="0.6">STOPPED</text>
-    <text x="352" y="600" font-family="Inter" font-size="11" fill="#8E8E93">1</text>
 
+    <g transform="translate(0 -28)">
     <!-- card 2 -->
     <rect x="278" y="612" width="932" height="212" rx="12" fill="#FFFFFF" stroke="#E2E2E7"/>
     <circle cx="304" cy="638" r="5" fill="#C7C7CC"/>
@@ -176,6 +171,7 @@
     <text x="1176" y="782" font-family="Inter" font-size="13" fill="#6E6E73">⋯</text>
 
     <text x="294" y="806" font-family="Inter" font-size="10" fill="#A1A1A6">Start the sandbox to sign in to OpenCode and connect the desktop app.</text>
+    </g>
   </g>
 
   <text x="640" y="884" font-family="Inter" font-size="11" fill="#8E8E93" text-anchor="middle">Mockup – Vorschlag für die Sandbox-Übersicht (noch nicht umgesetzt)</text>
