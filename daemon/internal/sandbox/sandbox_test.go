@@ -302,3 +302,18 @@ func TestWindowScriptUsesAgentAndSession(t *testing.T) {
 		}
 	}
 }
+
+func TestWorktreeScriptIsIdempotent(t *testing.T) {
+	s := worktreeScript("octest")
+	for _, want := range []string{
+		`a="octest"`,
+		`d="$HOME/work/$a"`,
+		`if [ ! -d "$d" ]; then`,
+		`git -C ~/work/main worktree add "$d" -b "agent/$a"`,
+		`git -C ~/work/main worktree add "$d" "agent/$a"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+}

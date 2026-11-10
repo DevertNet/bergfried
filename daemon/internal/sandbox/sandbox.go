@@ -694,6 +694,21 @@ func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, agent string, r
 	return err
 }
 
+// worktreeScript creates the agent's directory/worktree. It is idempotent so a retry after a
+// failed window start (e.g. a transient tmux error) does not fail on the existing worktree.
+func worktreeScript(agent string) string {
+	return fmt.Sprintf(`set -e
+a=%[1]q
+d="$HOME/work/$a"
+if [ -d ~/work/main/.git ] && [ "$a" != main ]; then
+  if [ ! -d "$d" ]; then
+    git -C ~/work/main worktree add "$d" -b "agent/$a" || git -C ~/work/main worktree add "$d" "agent/$a"
+  fi
+else
+  mkdir -p "$d"
+fi`, agent)
+}
+
 // AgentAdd creates an agent with the given runtime. Existing agents keep theirs, so Claude and
 // OpenCode can run side by side in the same sandbox.
 func (m *Manager) AgentAdd(ctx context.Context, sandbox, agent string, runtime Runtime) error {
@@ -713,8 +728,7 @@ func (m *Manager) AgentAdd(ctx context.Context, sandbox, agent string, runtime R
 			return err
 		}
 	}
-	setup := fmt.Sprintf(`set -e
-if [ -d ~/work/main/.git ] && [ %[1]q != main ]; then git -C ~/work/main worktree add ~/work/%[1]s -b agent/%[1]s; else mkdir -p ~/work/%[1]s; fi`, agent)
+	setup := worktreeScript(agent)
 	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", setup); err != nil {
 		return err
 	}
