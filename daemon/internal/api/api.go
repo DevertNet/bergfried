@@ -129,41 +129,39 @@ func decode(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
-type agentJ struct {
+type worktreeJ struct {
 	Name     string `json:"name"`
-	Worktree string `json:"worktree"`
-	Runtime  string `json:"runtime"`
 	Window   bool   `json:"window"`
 	Running  bool   `json:"running"`
 	RC       bool   `json:"rc"`
 	RCURL    string `json:"rc_url"`
-	RCAction string `json:"rc_action"` // "", "activating", "failed", "waiting", "working" (OpenCode)
+	RCAction string `json:"rc_action"` // "", "activating", "failed", "waiting"
 }
 
 type sandboxJ struct {
-	Name              string   `json:"name"`
-	VM                string   `json:"vm"`
-	Status            string   `json:"status"`
-	Repo              string   `json:"repo"`
-	TemplateVersion   int      `json:"template_version"`
-	Created           int64    `json:"created_unix"`
-	CPUs              int      `json:"cpus"`
-	Memory            int64    `json:"memory"`
-	Disk              int64    `json:"disk"`
-	Agents            []agentJ `json:"agents"`
-	ClaudeLoggedIn    *bool    `json:"claude_logged_in"`
-	OpenCodeLoggedIn  *bool    `json:"opencode_logged_in"`
-	ClaudeInstalled   *bool    `json:"claude_installed"`
-	OpenCodeInstalled *bool    `json:"opencode_installed"`
-	OpenCodeRunning   *bool    `json:"opencode_running"`
-	OpenCodePort      int      `json:"opencode_port"`
-	HostDiskUsed      int64    `json:"host_disk_used"`
-	GuestDiskUsed     int64    `json:"guest_disk_used"`
-	GuestDiskSize     int64    `json:"guest_disk_size"`
-	ProbeError        string   `json:"probe_error,omitempty"`
-	ActiveGrants      int      `json:"active_grants"`
-	Pending           int      `json:"pending_requests"`
-	HasToken          bool     `json:"has_github_token"`
+	Name              string      `json:"name"`
+	VM                string      `json:"vm"`
+	Status            string      `json:"status"`
+	Repo              string      `json:"repo"`
+	TemplateVersion   int         `json:"template_version"`
+	Created           int64       `json:"created_unix"`
+	CPUs              int         `json:"cpus"`
+	Memory            int64       `json:"memory"`
+	Disk              int64       `json:"disk"`
+	Worktrees         []worktreeJ `json:"worktrees"`
+	ClaudeLoggedIn    *bool       `json:"claude_logged_in"`
+	OpenCodeLoggedIn  *bool       `json:"opencode_logged_in"`
+	ClaudeInstalled   *bool       `json:"claude_installed"`
+	OpenCodeInstalled *bool       `json:"opencode_installed"`
+	OpenCodeRunning   *bool       `json:"opencode_running"`
+	OpenCodePort      int         `json:"opencode_port"`
+	HostDiskUsed      int64       `json:"host_disk_used"`
+	GuestDiskUsed     int64       `json:"guest_disk_used"`
+	GuestDiskSize     int64       `json:"guest_disk_size"`
+	ProbeError        string      `json:"probe_error,omitempty"`
+	ActiveGrants      int         `json:"active_grants"`
+	Pending           int         `json:"pending_requests"`
+	HasToken          bool        `json:"has_github_token"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -174,24 +172,24 @@ type sshInfoJ struct {
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
-	ID      int64           `json:"id"`
-	Sandbox string          `json:"sandbox"`
-	Agent   string          `json:"agent"`
-	Kind    string          `json:"kind"`
-	Path    string          `json:"path"`
-	Reason  string          `json:"reason"`
-	Status  string          `json:"status"`
-	Created int64           `json:"created_unix"`
-	Bytes   int64           `json:"bytes"`
-	Files   int64           `json:"files"`
-	Large   bool            `json:"large"`
-	SSH     *sshInfoJ       `json:"ssh,omitempty"`
-	GitHub  *ghtoken.Detail `json:"github,omitempty"`
+	ID       int64           `json:"id"`
+	Sandbox  string          `json:"sandbox"`
+	Worktree string          `json:"worktree"`
+	Kind     string          `json:"kind"`
+	Path     string          `json:"path"`
+	Reason   string          `json:"reason"`
+	Status   string          `json:"status"`
+	Created  int64           `json:"created_unix"`
+	Bytes    int64           `json:"bytes"`
+	Files    int64           `json:"files"`
+	Large    bool            `json:"large"`
+	SSH      *sshInfoJ       `json:"ssh,omitempty"`
+	GitHub   *ghtoken.Detail `json:"github,omitempty"`
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
 	Sandbox    string   `json:"sandbox"`
-	Agent      string   `json:"agent"`
+	Worktree   string   `json:"worktree"`
 	Host       string   `json:"host"`
 	Key        string   `json:"key_fingerprint"`
 	User       string   `json:"user"`
@@ -202,12 +200,12 @@ type grantJ struct {
 	HostKeyFPs []string `json:"host_key_fingerprints"`
 }
 type auditJ struct {
-	TS      int64  `json:"ts_unix"`
-	Actor   string `json:"actor"`
-	Event   string `json:"event"`
-	Sandbox string `json:"sandbox"`
-	Agent   string `json:"agent"`
-	Detail  string `json:"detail"`
+	TS       int64  `json:"ts_unix"`
+	Actor    string `json:"actor"`
+	Event    string `json:"event"`
+	Sandbox  string `json:"sandbox"`
+	Worktree string `json:"worktree"`
+	Detail   string `json:"detail"`
 }
 
 func (s *Server) Handler() http.Handler {
@@ -219,10 +217,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/sandboxes/pair", s.pair)
-	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
-	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
-	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
-	mux.HandleFunc("POST /v1/agents/rc-ok", s.agentRCOK)
+	mux.HandleFunc("POST /v1/worktrees/add", s.worktreeAdd)
+	mux.HandleFunc("POST /v1/worktrees/start", s.worktreeStart)
+	mux.HandleFunc("POST /v1/worktrees/stop", s.worktreeStop)
+	mux.HandleFunc("POST /v1/worktrees/restart", s.worktreeRestart)
+	mux.HandleFunc("POST /v1/worktrees/remove", s.worktreeRemove)
+	mux.HandleFunc("POST /v1/worktrees/rc-ok", s.worktreeRCOK)
+	mux.HandleFunc("POST /v1/opencode/start", s.simple("opencode.start", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStart(ctx, n) }))
+	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/log", s.logTail)
@@ -314,7 +316,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	pend, _ := s.M.S.ListRequests(true, 500)
 	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", Agents: []agentJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", Worktrees: []worktreeJ{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
@@ -334,12 +336,10 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		if s.GH != nil {
 			j.HasToken = s.GH.Tokens.Has(x.Name)
 		}
-		ags, _ := s.M.S.ListAgents(x.Name)
-		for _, a := range ags {
-			as := ps.Agents[a.Name]
-			rt, _ := sandbox.ParseRuntime(a.Runtime)
-			aj := agentJ{Name: a.Name, Worktree: a.Worktree, Runtime: string(rt), Window: as.Window, Running: as.Running, RC: as.RC, RCURL: as.URL, RCAction: as.Action}
-			j.Agents = append(j.Agents, aj)
+		wts, _ := s.M.S.ListWorktrees(x.Name)
+		for _, w := range wts {
+			ws := ps.Worktrees[w.Name]
+			j.Worktrees = append(j.Worktrees, worktreeJ{Name: w.Name, Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action})
 		}
 		for _, g := range grants {
 			if g.Sandbox == x.Name {
@@ -357,14 +357,13 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 }
 
 type nameReq struct {
-	Name    string `json:"name"`
-	Repo    string `json:"repo"`
-	Force   bool   `json:"force"`
-	Import  string `json:"import_path"`
-	Token   string `json:"github_token"`
-	Sandbox string `json:"sandbox"`
-	Agent   string `json:"agent"`
-	Runtime string `json:"runtime"` // agent CLI: "claude" (default) or "opencode"
+	Name     string `json:"name"`
+	Repo     string `json:"repo"`
+	Force    bool   `json:"force"`
+	Import   string `json:"import_path"`
+	Token    string `json:"github_token"`
+	Sandbox  string `json:"sandbox"`
+	Worktree string `json:"worktree"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -377,12 +376,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	rt, err := sandbox.ParseRuntime(q.Runtime)
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 202, s.jobFor("sandbox.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token, rt) }))
+	writeJSON(w, 202, s.jobFor("sandbox.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token) }))
 }
 
 // pair prepares the local OpenCode server and returns a one-time link for the desktop app.
@@ -419,38 +413,52 @@ func (s *Server) simple(kind string, f func(context.Context, string, bool) error
 	}
 }
 
-func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
+func (s *Server) worktreeAdd(w http.ResponseWriter, r *http.Request) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
 		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
-	rt, err := sandbox.ParseRuntime(q.Runtime)
-	if err != nil {
-		fail(w, 400, err)
-		return
-	}
-	writeJSON(w, 202, s.jobFor("agent.add", q.Sandbox, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Sandbox, q.Agent, rt) }))
+	writeJSON(w, 202, s.jobFor("worktree.add", q.Sandbox, func(ctx context.Context) error { return s.M.WorktreeAdd(ctx, q.Sandbox, q.Worktree) }))
 }
 
-func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {
+func (s *Server) worktreeStart(w http.ResponseWriter, r *http.Request) {
+	s.worktreeAction(w, r, "worktree.claude_start", func(ctx context.Context, sandbox, worktree string) error {
+		return s.M.WorktreeStartClaude(ctx, sandbox, worktree)
+	})
+}
+
+func (s *Server) worktreeStop(w http.ResponseWriter, r *http.Request) {
+	s.worktreeAction(w, r, "worktree.claude_stop", func(ctx context.Context, sandbox, worktree string) error {
+		return s.M.WorktreeStopClaude(ctx, sandbox, worktree)
+	})
+}
+
+func (s *Server) worktreeRestart(w http.ResponseWriter, r *http.Request) {
+	s.worktreeAction(w, r, "worktree.restart", func(ctx context.Context, sandbox, worktree string) error {
+		return s.M.WorktreeRestartClaude(ctx, sandbox, worktree)
+	})
+}
+
+// worktreeAction runs a Claude action and resets the monitor's automatic RC state.
+func (s *Server) worktreeAction(w http.ResponseWriter, r *http.Request, kind string, f func(context.Context, string, string) error) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
 		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.restart", q.Sandbox, func(ctx context.Context) error {
-		err := s.M.RestartAgent(ctx, q.Sandbox, q.Agent)
+	writeJSON(w, 202, s.jobFor(kind, q.Sandbox, func(ctx context.Context) error {
+		err := f(ctx, q.Sandbox, q.Worktree)
 		if s.Mon != nil {
-			s.Mon.ResetAgent(q.Sandbox, q.Agent)
+			s.Mon.ResetWorktree(q.Sandbox, q.Worktree)
 			s.Mon.Poke(q.Sandbox)
 		}
 		return err
@@ -548,29 +556,29 @@ func (s *Server) githubLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"url": ghtoken.Link(name), "hint": ghtoken.Hint})
 }
 
-// agentRCOK: the user confirms that Remote Control is running (resets "cannot be activated").
-func (s *Server) agentRCOK(w http.ResponseWriter, r *http.Request) {
+// worktreeRCOK: the user confirms that Remote Control is running (resets "cannot be activated").
+func (s *Server) worktreeRCOK(w http.ResponseWriter, r *http.Request) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil || s.Mon == nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil || s.Mon == nil {
 		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
-	if err := s.Mon.MarkRC(q.Sandbox, q.Agent); err != nil {
+	if err := s.Mon.MarkRC(q.Sandbox, q.Worktree); err != nil {
 		fail(w, 409, err)
 		return
 	}
-	_ = s.M.S.Audit("app", "agent.rc_confirmed", q.Sandbox, q.Agent, "confirmed active by the user")
+	_ = s.M.S.Audit("app", "worktree.rc_confirmed", q.Sandbox, q.Worktree, "confirmed active by the user")
 	writeJSON(w, 200, map[string]string{"message": "ok"})
 }
 
-func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
+func (s *Server) worktreeRemove(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Sandbox   string `json:"sandbox"`
-		Agent     string `json:"agent"`
+		Worktree  string `json:"worktree"`
 		DeleteDir bool   `json:"delete_dir"`
 		Force     bool   `json:"force"`
 	}
@@ -578,14 +586,14 @@ func (s *Server) agentRemove(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Agent) != nil {
+	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
 		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.remove", q.Sandbox, func(ctx context.Context) error {
-		err := s.M.AgentRemove(ctx, q.Sandbox, q.Agent, q.DeleteDir, q.Force)
+	writeJSON(w, 202, s.jobFor("worktree.remove", q.Sandbox, func(ctx context.Context) error {
+		err := s.M.WorktreeRemove(ctx, q.Sandbox, q.Worktree, q.DeleteDir, q.Force)
 		if err == nil && s.Mon != nil {
-			s.Mon.ResetAgent(q.Sandbox, q.Agent)
+			s.Mon.ResetWorktree(q.Sandbox, q.Worktree)
 		}
 		return err
 	}))
@@ -721,7 +729,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []requestJ{}
 	for _, q := range rs {
-		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Agent: q.Agent, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
+		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Worktree: q.Worktree, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
 			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
 		switch q.Kind {
 		case "ghtoken":
@@ -766,7 +774,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		Minutes          int    `json:"minutes"`
 		Key              string `json:"key_fingerprint"`
 		User             string `json:"user"`
-		AllAgents        bool   `json:"all_agents"`
+		AllWorktrees     bool   `json:"all_worktrees"`
 		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
 		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
@@ -777,7 +785,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllAgents: q.AllAgents, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
+		AllWorktrees: q.AllWorktrees, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
 	if err != nil {
 		fail(w, 409, err)
 		return
@@ -794,7 +802,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	out := []grantJ{}
 	now := time.Now()
 	for _, g := range gs {
-		out = append(out, grantJ{g.ID, g.Sandbox, g.Agent, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
+		out = append(out, grantJ{g.ID, g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
 			!g.Revoked && g.Expires.After(now), g.HostKeys})
 	}
 	writeJSON(w, 200, out)
@@ -863,7 +871,7 @@ func (s *Server) auditEntries(r *http.Request, def int) ([]auditJ, error) {
 	}
 	out := []auditJ{}
 	for _, e := range es {
-		out = append(out, auditJ{e.TS.Unix(), e.Actor, e.Event, e.Sandbox, e.Agent, e.Detail})
+		out = append(out, auditJ{e.TS.Unix(), e.Actor, e.Event, e.Sandbox, e.Worktree, e.Detail})
 	}
 	return out, nil
 }
@@ -893,9 +901,9 @@ func (s *Server) auditCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "sandbox", "agent", "details"})
+	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "sandbox", "worktree", "details"})
 	for _, e := range out {
-		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Sandbox), csvSafe(e.Agent), csvSafe(e.Detail)})
+		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Sandbox), csvSafe(e.Worktree), csvSafe(e.Detail)})
 	}
 	cw.Flush()
 }

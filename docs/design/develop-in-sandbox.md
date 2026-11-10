@@ -7,7 +7,7 @@
 ## How the loop works
 ```mermaid
 flowchart LR
-  A["Agent in Linux sandbox<br/>edits, make test, make build"] -->|"push agent/topic"| C1["CI: Go tests + macOS app build"]
+  A["Agent in Linux sandbox<br/>edits, make test, make build"] -->|"push worktree/topic"| C1["CI: Go tests + macOS app build"]
   A -->|"PR into dev (CI green)"| D["branch dev"]
   D -->|"push"| R["dev-release.yml<br/>pre-release X.Y.Z-dev.N"]
   R -->|"Settings → Updates → channel dev"| M["Your Mac installs it"]
@@ -40,7 +40,7 @@ flowchart LR
 
 **D. Helpers for the agent**
 9. `scripts/ci-status.sh` — latest run for a branch, failing job and the end of its log through the GitHub API (written before `gh` was added to the base image; the scripts keep working without it).
-10. `CLAUDE.md` section "Working inside a sandbox": what to run (tests only), never start the real daemon or Lima, use a temporary `BERGFRIED_HOME`, branch `agent/<topic>` → PR into `dev`, how to read CI, what cannot be verified (UI, VMs, macOS-only code).
+10. `CLAUDE.md` section "Working inside a sandbox": what to run (tests only), never start the real daemon or Lima, use a temporary `BERGFRIED_HOME`, branch `worktree/<topic>` → PR into `dev`, how to read CI, what cannot be verified (UI, VMs, macOS-only code).
 11. Optional: install the Swift toolchain in the sandbox for `swiftc -parse` (syntax only; SwiftUI cannot be type-checked on Linux — **untested**).
 
 **E. First run**
@@ -53,7 +53,7 @@ flowchart LR
 - **No signing or notarisation**; builds stay ad-hoc signed (the Gatekeeper warning for browser downloads remains).
 
 **Risks of installing dev builds on the Mac that runs your sandboxes**
-- A broken daemon or app update can take down approvals for all running agents; database migrations are forward-only (rollback needs the backup). → step 8, and keep a stable install you trust.
+- A broken daemon or app update can take down approvals for all running assistants; database migrations are forward-only (rollback needs the backup). → step 8, and keep a stable install you trust.
 - Updating restarts daemon and app: requests waiting at that moment are dropped; the old `bergfried-mcp` inside running VMs may not match a new daemon until the sandbox restarts (gRPC compatibility must be kept or the sandbox restarted).
 - If a **second** Bergfried instance (a dev build next to the stable one) is ever run against the same Lima home, it would clean up "old" base VMs and mix up names. Do not do that without a name prefix per instance (not built; open design question: side-by-side "Bergfried Dev" with its own bundle id, data directory and VM prefix).
 

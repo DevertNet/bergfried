@@ -75,11 +75,11 @@ enum Terminal {
     }
 
     static let vmRe = #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#
-    static let agentRe = #"^[a-z][a-z0-9-]{0,30}$"#
+    static let worktreeRe = #"^[a-z][a-z0-9-]{0,30}$"#
 
     /// Opens the chosen terminal app with one line. Instead of AppleScript (needs automation rights and
     /// fails silently) a temporary .command file is started with `open -a`; it deletes itself.
-    /// VM and agent names are checked strictly. Returns an error message or nil.
+    /// VM and worktree names are checked strictly. Returns an error message or nil.
     @discardableResult
     static func openLine(_ line: String, waitKey: Bool = false) -> String? {
         let dir = NSHomeDirectory() + "/.bergfried/tmp"
@@ -113,16 +113,16 @@ enum Terminal {
         return openLine("\(limactl) shell \(vm)")
     }
 
-    /// tmux of the VM, straight into this agent's window.
-    static func attach(vm: String, agent: String) -> String? {
-        guard checked(vm), agent.range(of: agentRe, options: .regularExpression) != nil else { return L("Invalid name") }
-        return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(agent) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
+    /// tmux of the VM, straight into this worktree's Claude window.
+    static func attach(vm: String, worktree: String) -> String? {
+        guard checked(vm), worktree.range(of: worktreeRe, options: .regularExpression) != nil else { return L("Invalid name") }
+        return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(worktree) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
     }
 
     static func login(vm: String, runtime: String = "claude") -> String? {
         guard checked(vm) else { return L("Invalid VM name") }
         let cmd = runtime == "opencode" ? "opencode auth login" : "claude auth login"
-        return openLine("\(limactl) shell \(vm) -- bash -lc '\(cmd); echo; echo \"\(L("Done. The agents of this runtime restart automatically (status in the app)."))\"'", waitKey: true)
+        return openLine("\(limactl) shell \(vm) -- bash -lc '\(cmd); echo; echo \"\(L("Done. The status in the app updates automatically."))\"'", waitKey: true)
     }
 
     /// SSH command for external tools (terminal, VS Code Remote-SSH): uses the ssh.config maintained by Lima.

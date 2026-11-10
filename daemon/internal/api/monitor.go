@@ -13,21 +13,21 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
-// probeScript runs in the VM and reports logins, disk usage and, per agent window, its processes
-// and (for Claude) the Remote Control status. need_claude/need_opencode are filled in by check.
+// probeScript runs in the VM and reports logins, disk usage and, per tmux window, the Claude
+// process and its Remote Control status. The OpenCode service is sandbox-wide: only its
+// installed/running state is reported here.
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 echo "inst_claude=$([ -x "$HOME/.local/bin/claude" ] && echo true || echo false)"
 echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
 echo "oc_service=$(pgrep -x opencode >/dev/null 2>&1 && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
 OC="$HOME/.opencode/bin/opencode"
-if [ %[2]d = 1 ] || [ -x "$OC" ]; then
-  if [ -x "$OC" ]; then
-    echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
-  else echo "login_opencode=false"; fi
-fi
+if [ -x "$OC" ]; then
+  echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
+else echo "login_opencode=false"; fi
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
 if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
@@ -38,28 +38,25 @@ if tmux has-session -t bf 2>/dev/null; then
     th=0; echo "$p" | grep -qE 'Choose the text style|Press Enter to continue' && th=1
     tty=$(tmux display-message -p -t "bf:$w" '#{pane_tty}' 2>/dev/null)
     cpid=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="claude"{print $1; exit}')
-    opid=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="opencode"{print $1; exit}')
     idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && [ "$dlg" = 0 ] && idle=1
     ask=0; echo "$p" | grep -q 'Enable Remote Control' && ask=1
     url=$(echo "$p" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_]+' | tail -1)
-    echo "win=$w rc=$rc theme=$th idle=$idle ask=$ask dlg=$dlg cpid=$cpid opid=$opid url=$url"
+    echo "win=$w rc=$rc theme=$th idle=$idle ask=$ask dlg=$dlg cpid=$cpid url=$url"
   done
-fi
-if [ %[2]d = 1 ] && [ -x "$HOME/.opencode/bin/opencode" ] && pgrep -x opencode >/dev/null 2>&1; then
-  "$HOME/.opencode/bin/opencode" api GET /api/session 2>/dev/null | jq -r '.data[]? | "oc dir=\(.location.directory) busy=\(.time.busy // 0) idle=\(.time.idle // 0) updated=\(.time.updated // 0) id=\(.id)"' 2>/dev/null || true
 fi`
 
-type AgentState struct {
-	Window, RC, Theme bool
-	Idle, Ask         bool
-	Running           bool   // process of the agent's runtime runs in the window
-	PID               int    // PID of that process (0 = none)
-	ClaudePID         int    // parsed from the probe, before the runtime is known
-	OpenCodePID       int    // parsed from the probe, before the runtime is known
-	Runtime           string // "claude" or "opencode"
-	Dialog            bool   // RC dialog ("Disconnect this session") is open
-	URL               string
-	Action            string // "", "activating", "failed", "waiting", "working" – display state
+// WorktreeState is the Claude state of one worktree.
+type WorktreeState struct {
+	Window  bool
+	RC      bool
+	Theme   bool
+	Idle    bool
+	Ask     bool
+	Running bool // Claude runs in the window
+	PID     int
+	Dialog  bool // RC dialog ("Disconnect this session") is open
+	URL     string
+	Action  string // "", "activating", "failed", "waiting" – display state
 }
 
 type rcAction int
@@ -78,10 +75,10 @@ const (
 	rcRetryAfter  = 20 * time.Second
 )
 
-// decideRC decides how an agent without active Remote Control is brought back on track.
+// decideRC decides how a Claude without active Remote Control is brought back on track.
 // Order: answer an open prompt, restart if Claude is not running (shell only),
 // type /remote-control if the input field is empty; give up after rcMaxAttempts.
-func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
+func decideRC(a WorktreeState, attempts int, sinceLast time.Duration) rcAction {
 	if a.Ask {
 		return rcAnswerYes
 	}
@@ -101,30 +98,16 @@ func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 }
 
 type SandboxState struct {
-	ClaudeLoggedIn       *bool // nil = not checked (no Claude agent in this sandbox)
-	OpenCodeLoggedIn     *bool // nil = not checked (no OpenCode agent in this sandbox)
-	ClaudeInstalled      bool
-	OpenCodeInstalled    bool
-	OpenCodeRunning      bool
-	GuestUsed, GuestSize int64
-	Agents               map[string]AgentState
-	OpenCode             map[string]openCodeSession // by directory
-	Checked              time.Time
-	Err                  string
-}
-
-// openCodeSession is one session from the local OpenCode server, used for the busy indicator.
-type openCodeSession struct {
-	Dir                 string
-	Busy, Idle, Updated int64
-}
-
-// LoggedIn reports the login state of a runtime (nil when not used).
-func (s SandboxState) LoggedIn(runtime sandbox.Runtime) *bool {
-	if runtime == sandbox.RuntimeOpenCode {
-		return s.OpenCodeLoggedIn
-	}
-	return s.ClaudeLoggedIn
+	ClaudeLoggedIn    *bool // nil = not checked
+	OpenCodeLoggedIn  *bool // nil = not checked
+	ClaudeInstalled   bool
+	OpenCodeInstalled bool
+	OpenCodeRunning   bool
+	GuestUsed         int64
+	GuestSize         int64
+	Worktrees         map[string]WorktreeState
+	Checked           time.Time
+	Err               string
 }
 
 type Monitor struct {
@@ -134,29 +117,28 @@ type Monitor struct {
 	state     map[string]*SandboxState
 	inflight  map[string]bool
 	hold      map[string]int       // sandboxes with a running job: do not poll
-	failures  map[string]int       // aufeinanderfolgende Abfragefehler
-	norc      map[string]int       // checks without RC per agent
-	attempts  map[string]int       // Aktivierungsversuche je Agent
-	last      map[string]time.Time // letzter Versuch je Agent
-	actions   map[string]string    // Anzeige-Stand je Agent
-	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
-	repairAt  map[string]time.Time // last runtime-mismatch repair per agent
-	repairs   map[string]int       // runtime-mismatch repairs per agent (stop after 3)
-	sticky    map[string]stickyRC  // active RC seen once per agent, bound to the claude PID
-	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
+	failures  map[string]int       // consecutive probe errors
+	norc      map[string]int       // checks without RC per worktree
+	attempts  map[string]int       // activation attempts per worktree
+	last      map[string]time.Time // last attempt per worktree
+	actions   map[string]string    // display state per worktree
+	installed map[string]bool      // helpers in this VM refreshed since daemon start
+	sticky    map[string]stickyRC  // active RC seen once per worktree, bound to the Claude PID
+	pids      map[string]int       // last seen Claude PID per worktree
 }
 
 // stickyRC: the banner "Remote Control active" is at the start of the output and scrolls out of view during longer work.
-// So RC counts as active as long as the same claude process runs in which it was seen once.
+// So RC counts as active as long as the same Claude process runs in which it was seen once.
 type stickyRC struct {
 	pid int
 	url string
 }
 
-// applySticky evaluates the remembered state (caller holds mo.mu). Returns the agent state, supplemented if needed.
-func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
+// applySticky evaluates the remembered state (caller holds mo.mu). Returns the worktree state,
+// supplemented if needed.
+func (mo *Monitor) applySticky(key string, a WorktreeState) WorktreeState {
 	if a.PID > 0 {
-		// New claude process (restart, manual or automatic): reset counters and "failed".
+		// New Claude process (restart, manual or automatic): reset counters and "failed".
 		if old, ok := mo.pids[key]; ok && old != a.PID {
 			delete(mo.norc, key)
 			delete(mo.attempts, key)
@@ -177,26 +159,23 @@ func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
 			}
 			return a
 		}
-		delete(mo.sticky, key) // claude exited or was restarted
+		delete(mo.sticky, key) // Claude exited or was restarted
 	}
 	return a
 }
 
-// MarkRC confirms manually that Remote Control runs in this agent (escape hatch if detection does not see it).
-func (mo *Monitor) MarkRC(name, agent string) error {
-	key := name + "/" + agent
+// MarkRC confirms manually that Remote Control runs in this worktree (escape hatch if detection does not see it).
+func (mo *Monitor) MarkRC(name, worktree string) error {
+	key := name + "/" + worktree
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
 	st := mo.state[name]
 	if st == nil {
 		return fmt.Errorf("sandbox has not been polled yet")
 	}
-	a, ok := st.Agents[agent]
+	a, ok := st.Worktrees[worktree]
 	if !ok || !a.Running || a.PID == 0 {
-		return fmt.Errorf("the agent is not running right now")
-	}
-	if a.Runtime == string(sandbox.RuntimeOpenCode) {
-		return fmt.Errorf("Remote Control is only available for Claude agents")
+		return fmt.Errorf("Claude is not running in this worktree right now")
 	}
 	mo.sticky[key] = stickyRC{pid: a.PID, url: a.URL}
 	delete(mo.norc, key)
@@ -204,13 +183,13 @@ func (mo *Monitor) MarkRC(name, agent string) error {
 	delete(mo.last, key)
 	delete(mo.actions, key)
 	a.RC = true
-	st.Agents[agent] = a
+	st.Worktrees[worktree] = a
 	return nil
 }
 
 func NewMonitor(m *sandbox.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repairAt: map[string]time.Time{}, repairs: map[string]int{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
@@ -227,16 +206,14 @@ func (mo *Monitor) Poke2(name string) {
 	}
 }
 
-// ResetAgent resets an agent's automatic RC activation (e.g. after a manual restart).
-func (mo *Monitor) ResetAgent(sandbox, agent string) {
-	k := sandbox + "/" + agent
+// ResetWorktree resets a worktree's automatic RC activation (e.g. after a manual restart).
+func (mo *Monitor) ResetWorktree(sandbox, worktree string) {
+	k := sandbox + "/" + worktree
 	mo.mu.Lock()
 	delete(mo.norc, k)
 	delete(mo.attempts, k)
 	delete(mo.last, k)
 	delete(mo.actions, k)
-	delete(mo.repairAt, k)
-	delete(mo.repairs, k)
 	mo.mu.Unlock()
 }
 
@@ -248,20 +225,16 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 		return SandboxState{}, false
 	}
 	cp := *s
-	cp.Agents = map[string]AgentState{}
-	for k, v := range s.Agents {
-		if v.Runtime == string(sandbox.RuntimeOpenCode) {
-			if act := mo.actions[name+"/"+k]; act != "" {
-				v.Action = act
-			}
-		} else if !v.RC {
+	cp.Worktrees = map[string]WorktreeState{}
+	for k, v := range s.Worktrees {
+		if !v.RC {
 			v.Action = mo.actions[name+"/"+k]
-			// A running Claude agent that is neither idle nor active is probably waiting for input.
+			// A running Claude that is neither idle nor active is probably waiting for input.
 			if v.Action == "" && v.Running && !v.Idle && mo.norc[name+"/"+k] >= 8 {
 				v.Action = "waiting"
 			}
 		}
-		cp.Agents[k] = v
+		cp.Worktrees[k] = v
 	}
 	return cp, true
 }
@@ -276,22 +249,11 @@ func (mo *Monitor) Poke(name string) {
 }
 
 func (s *SandboxState) stable() bool {
-	needClaude, needOpenCode := false, false
-	for _, a := range s.Agents {
-		if a.Runtime == string(sandbox.RuntimeOpenCode) {
-			needOpenCode = true
-		} else {
-			needClaude = true
-		}
-	}
-	if needClaude && (s.ClaudeLoggedIn == nil || !*s.ClaudeLoggedIn) {
+	if s.ClaudeLoggedIn == nil || !*s.ClaudeLoggedIn {
 		return false
 	}
-	if needOpenCode && (s.OpenCodeLoggedIn == nil || !*s.OpenCodeLoggedIn) {
-		return false
-	}
-	for _, a := range s.Agents {
-		if a.Runtime == string(sandbox.RuntimeClaude) && !a.RC {
+	for _, a := range s.Worktrees {
+		if !a.RC {
 			return false
 		}
 	}
@@ -299,7 +261,7 @@ func (s *SandboxState) stable() bool {
 }
 
 func parseProbe(out string) SandboxState {
-	st := SandboxState{Agents: map[string]AgentState{}, OpenCode: map[string]openCodeSession{}}
+	st := SandboxState{Worktrees: map[string]WorktreeState{}}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
@@ -321,28 +283,8 @@ func parseProbe(out string) SandboxState {
 				st.GuestUsed, _ = strconv.ParseInt(f[0], 10, 64)
 				st.GuestSize, _ = strconv.ParseInt(f[1], 10, 64)
 			}
-		case strings.HasPrefix(line, "oc "):
-			oc := openCodeSession{}
-			for _, kv := range strings.Fields(strings.TrimPrefix(line, "oc ")) {
-				k, v, _ := strings.Cut(kv, "=")
-				switch k {
-				case "dir":
-					oc.Dir = v
-				case "busy":
-					oc.Busy, _ = strconv.ParseInt(v, 10, 64)
-				case "idle":
-					oc.Idle, _ = strconv.ParseInt(v, 10, 64)
-				case "updated":
-					oc.Updated, _ = strconv.ParseInt(v, 10, 64)
-				}
-			}
-			if oc.Dir != "" {
-				if old, ok := st.OpenCode[oc.Dir]; !ok || oc.Updated > old.Updated {
-					st.OpenCode[oc.Dir] = oc
-				}
-			}
 		case strings.HasPrefix(line, "win="):
-			a := AgentState{Window: true}
+			a := WorktreeState{Window: true}
 			name := ""
 			for _, kv := range strings.Fields(line) {
 				k, v, _ := strings.Cut(kv, "=")
@@ -354,9 +296,7 @@ func parseProbe(out string) SandboxState {
 				case "theme":
 					a.Theme = v == "1"
 				case "cpid":
-					a.ClaudePID, _ = strconv.Atoi(v)
-				case "opid":
-					a.OpenCodePID, _ = strconv.Atoi(v)
+					a.PID, _ = strconv.Atoi(v)
 				case "dlg":
 					a.Dialog = v == "1"
 				case "idle":
@@ -368,7 +308,7 @@ func parseProbe(out string) SandboxState {
 				}
 			}
 			if name != "" {
-				st.Agents[name] = a
+				st.Worktrees[name] = a
 			}
 		}
 	}
@@ -378,20 +318,12 @@ func parseProbe(out string) SandboxState {
 func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	registered, _ := mo.M.S.ListAgents(name)
-	hasClaude, hasOpenCode := false, false
-	runtimes := map[string]sandbox.Runtime{}
-	for _, a := range registered {
-		rt, _ := sandbox.ParseRuntime(a.Runtime)
-		runtimes[a.Name] = rt
-		if rt == sandbox.RuntimeOpenCode {
-			hasOpenCode = true
-		} else {
-			hasClaude = true
-		}
+	registered, _ := mo.M.S.ListWorktrees(name)
+	byName := map[string]store.Worktree{}
+	for _, w := range registered {
+		byName[w.Name] = w
 	}
-	// Before the first agent exists we still need the Claude login state to decide about seeding "main".
-	script := fmt.Sprintf(probeScript, boolInt(hasClaude || len(registered) == 0), boolInt(hasOpenCode))
+	script := fmt.Sprintf(probeScript, 1)
 	out, err := mo.M.L.Shell(cctx, vm, "bash", "-c", script)
 	mo.mu.Lock()
 	prev := mo.state[name]
@@ -399,7 +331,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		// While booting the poll necessarily fails: report only after several failures.
 		mo.failures[name]++
 		if prev == nil {
-			prev = &SandboxState{Agents: map[string]AgentState{}, OpenCode: map[string]openCodeSession{}}
+			prev = &SandboxState{Worktrees: map[string]WorktreeState{}}
 			mo.state[name] = prev
 		}
 		prev.Checked = time.Now()
@@ -410,100 +342,22 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		return
 	}
 	mo.failures[name] = 0
+	st := parseProbe(string(out))
+	st.Checked = time.Now()
+	// Only registered worktrees count (no tmux default window "bash"/"shell").
+	for w := range st.Worktrees {
+		if _, ok := byName[w]; !ok {
+			delete(st.Worktrees, w)
+		}
+	}
+	for w, a := range st.Worktrees {
+		a.Running = a.PID > 0
+		a = mo.applySticky(name+"/"+w, a)
+		st.Worktrees[w] = a
+	}
 	needInstall := !mo.installed[name]
 	if needInstall {
 		mo.installed[name] = true
-	}
-	if needInstall {
-		// Running VMs get the current version once per daemon start (MCP server, ssh hook, hint text).
-		go func() {
-			ictx, icancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer icancel()
-			if err := mo.M.InstallHelpers(ictx, vm, name, hasOpenCode); err != nil {
-				fmt.Fprintln(os.Stderr, "updating VM", name, ":", err)
-				mo.mu.Lock()
-				delete(mo.installed, name)
-				mo.mu.Unlock()
-				return
-			}
-			_ = mo.M.S.Audit("daemon", "vm.refresh", name, "", "MCP, ssh-Hook, Hinweistext")
-		}()
-	}
-	st := parseProbe(string(out))
-	st.Checked = time.Now()
-	// Only registered agents count (no tmux default window "bash"/"shell"); missing windows count as "no window".
-	for w := range st.Agents {
-		if _, ok := runtimes[w]; !ok {
-			delete(st.Agents, w)
-		}
-	}
-	// The probe reports both processes; pick the one that belongs to the agent's runtime.
-	for w, a := range st.Agents {
-		rt := runtimes[w]
-		a.Runtime = string(rt)
-		if rt == sandbox.RuntimeOpenCode {
-			a.Running, a.PID = a.OpenCodePID > 0, a.OpenCodePID
-			// Remote Control and its screen markers are Claude-only.
-			a.RC, a.Theme, a.Ask, a.Dialog, a.Idle, a.URL = false, false, false, false, false, ""
-		} else {
-			a.Running, a.PID = a.ClaudePID > 0, a.ClaudePID
-			a = mo.applySticky(name+"/"+w, a)
-		}
-		st.Agents[w] = a
-	}
-	// A window left over from an earlier attempt can run the other runtime. Restart it once
-	// with the stored runtime; otherwise the sidebar shows an OpenCode agent that runs Claude
-	// (or the reverse) nobody can sensibly act on.
-	var repairs []string
-	for w, a := range st.Agents {
-		key := name + "/" + w
-		rt := runtimes[w]
-		wrong := (rt == sandbox.RuntimeClaude && a.OpenCodePID > 0) || (rt == sandbox.RuntimeOpenCode && a.ClaudePID > 0)
-		if !wrong {
-			delete(mo.repairAt, key)
-			delete(mo.repairs, key)
-			if mo.actions[key] == "conflict" {
-				delete(mo.actions, key)
-			}
-			continue
-		}
-		if mo.repairs[key] >= 3 {
-			if mo.actions[key] != "conflict" {
-				mo.actions[key] = "conflict"
-				_ = mo.M.S.Audit("daemon", "agent.runtime_conflict", name, w, "window keeps switching runtimes; another daemon or manual start?")
-			}
-			continue
-		}
-		if last, ok := mo.repairAt[key]; ok && time.Since(last) < 30*time.Second {
-			continue
-		}
-		mo.repairs[key]++
-		mo.repairAt[key] = time.Now()
-		repairs = append(repairs, w)
-	}
-	// OpenCode activity: the local server knows busy/idle per session directory.
-	for dir, oc := range st.OpenCode {
-		for w := range st.Agents {
-			if !strings.HasSuffix(dir, "/work/"+w) {
-				continue
-			}
-			a := st.Agents[w]
-			if a.Runtime == string(sandbox.RuntimeOpenCode) && oc.Busy > oc.Idle {
-				a.Action = "working"
-				st.Agents[w] = a
-			}
-		}
-	}
-	// Older sandboxes without an agent get the first agent "main" once (Claude, as before).
-	if !mo.M.S.Seeded(name) {
-		if len(registered) == 0 && (st.ClaudeLoggedIn != nil || st.OpenCodeLoggedIn != nil) {
-			if err := mo.M.AgentAdd(cctx, name, "main", sandbox.RuntimeClaude); err != nil {
-				fmt.Fprintln(os.Stderr, "Erster Agent:", err)
-			} else {
-				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "sandbox had no agent")
-			}
-		}
-		_ = mo.M.S.SetSeeded(name)
 	}
 	var wasClaude, wasOpenCode *bool
 	if prev != nil {
@@ -512,44 +366,75 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.state[name] = &st
 	mo.mu.Unlock()
 
-	for _, w := range repairs {
-		if err := mo.M.RestartAgent(cctx, name, w); err != nil {
-			fmt.Fprintln(os.Stderr, "repair wrong runtime:", err)
-		} else {
-			_ = mo.M.S.Audit("daemon", "agent.runtime_repaired", name, w, "window ran the other runtime")
+	// Worktrees where Claude is not wanted must not have a window: this also terminates the
+	// old OpenCode TUI windows of migrated sandboxes.
+	for w, a := range st.Worktrees {
+		if a.Window && !byName[w].Claude {
+			if err := mo.M.WorktreeStopClaude(cctx, name, w); err != nil {
+				fmt.Fprintln(os.Stderr, "stop stale window", w, ":", err)
+			}
 		}
 	}
-	if len(repairs) > 0 {
+
+	if needInstall {
+		// Running VMs get the current version once per daemon start (MCP server, ssh hook, hint text).
+		go func() {
+			ictx, icancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer icancel()
+			if err := mo.M.InstallHelpers(ictx, vm, name, st.OpenCodeInstalled); err != nil {
+				fmt.Fprintln(os.Stderr, "updating VM", name, ":", err)
+				mo.mu.Lock()
+				delete(mo.installed, name)
+				mo.mu.Unlock()
+				return
+			}
+			_ = mo.M.S.Audit("daemon", "vm.refresh", name, "", "MCP, ssh hook, hint text")
+		}()
+	}
+
+	// Older sandboxes without a worktree entry get "main" once (Claude is not started automatically).
+	if !mo.M.S.Seeded(name) {
+		if len(registered) == 0 && (st.ClaudeLoggedIn != nil || st.OpenCodeLoggedIn != nil) {
+			if err := mo.M.S.AddWorktree(store.Worktree{Sandbox: name, Name: "main", Path: "~/work/main", ComposeProject: name + "-main", Created: time.Now()}); err != nil {
+				fmt.Fprintln(os.Stderr, "first worktree:", err)
+			} else {
+				_ = mo.M.S.Audit("daemon", "worktree.auto_main", name, "main", "sandbox had no worktree")
+			}
+		}
+		_ = mo.M.S.SetSeeded(name)
+	}
+
+	// A Claude login that has just completed: restart the Claude worktrees so they pick it up.
+	if loginJustCompleted(st.ClaudeLoggedIn, wasClaude) {
+		n := 0
+		for _, w := range registered {
+			if !w.Claude {
+				continue
+			}
+			if _, running := st.Worktrees[w.Name]; !running {
+				continue
+			}
+			if err := mo.M.WorktreeRestartClaude(cctx, name, w.Name); err != nil {
+				fmt.Fprintln(os.Stderr, "restart after Claude login:", err)
+			} else {
+				n++
+			}
+		}
+		_ = mo.M.S.Audit("daemon", "worktree.restart_after_login", name, "", fmt.Sprintf("runtime=claude worktrees=%d", n))
+		mo.Poke(name)
+		return
+	}
+	// A new OpenCode login does not need any worktree restart: the service reloads its credentials.
+	if loginJustCompleted(st.OpenCodeLoggedIn, wasOpenCode) {
+		mo.M.ReloadOpenCode(cctx, vm)
+		_ = mo.M.S.Audit("daemon", "opencode.reload_after_login", name, "", "")
 		mo.Poke(name)
 		return
 	}
 
-	// A login that has just completed: restart only the agents of that runtime.
-	restarted := false
-	if loginJustCompleted(st.ClaudeLoggedIn, wasClaude) {
-		if n, err := mo.M.RestartRuntimeAgents(cctx, name, sandbox.RuntimeClaude); err != nil {
-			fmt.Fprintln(os.Stderr, "restart after Claude login:", err)
-		} else {
-			_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("runtime=claude agents=%d", n))
-			restarted = true
-		}
-	}
-	if loginJustCompleted(st.OpenCodeLoggedIn, wasOpenCode) {
-		mo.M.ReloadOpenCode(cctx, vm)
-		if n, err := mo.M.RestartRuntimeAgents(cctx, name, sandbox.RuntimeOpenCode); err != nil {
-			fmt.Fprintln(os.Stderr, "restart after OpenCode login:", err)
-		} else {
-			_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("runtime=opencode agents=%d", n))
-			restarted = true
-		}
-	}
-	if restarted {
-		mo.Poke(name)
-		return
-	}
-	for w, a := range st.Agents {
-		if a.Runtime != string(sandbox.RuntimeClaude) {
-			continue // Remote Control automation is Claude-only
+	for w, a := range st.Worktrees {
+		if !byName[w].Claude {
+			continue // Claude is not enabled for this worktree
 		}
 		key := name + "/" + w
 		// Open RC dialog (e.g. from an earlier /remote-control): close with Escape – never Enter (the preselection could be "Disconnect").
@@ -585,7 +470,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		case rcSlash:
 			err = mo.M.TypeLine(cctx, vm, w, "/remote-control")
 		case rcRestart:
-			err = mo.M.RestartAgent(cctx, name, w)
+			err = mo.M.WorktreeRestartClaude(cctx, name, w)
 		case rcGiveUp:
 			mo.mu.Lock()
 			mo.actions[key] = "failed"
@@ -603,7 +488,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			if err != nil {
 				detail += ": " + err.Error()
 			}
-			_ = mo.M.S.Audit("daemon", "agent.rc_enable", name, w, detail)
+			_ = mo.M.S.Audit("daemon", "worktree.rc_enable", name, w, detail)
 		}
 	}
 }

@@ -60,7 +60,7 @@ struct PendingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: icon)
-                Text("\(r.sandbox) / \(r.agent)").font(.headline)
+                Text("\(r.sandbox) / \(r.worktree)").font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -71,7 +71,7 @@ struct PendingRow: View {
                 else { LT("needs a **GitHub token** and access to **%@**", r.path) }
             }
             else { LT(r.kind == "folder" ? "wants the folder **~/%@** (%lld file(s), %@)" : "wants the file **~/%@** (%lld file(s), %@)", r.path, r.files, formatBytes(r.bytes)) }
-            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
+            Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             HStack {
                 if r.kind == "ghtoken" {
                     Button("Set up …", action: decideGit).buttonStyle(.borderedProminent)
@@ -94,7 +94,7 @@ struct HistoryRow: View {
     var body: some View {
         HStack {
             Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
-            Text("\(r.sandbox)/\(r.agent)")
+            Text("\(r.sandbox)/\(r.worktree)")
             Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(LocalizedStringKey(r.status)).foregroundStyle(color)
@@ -110,7 +110,7 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.agent.isEmpty ? L("all agents") : L("Agent %@", g.agent), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
+                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.worktree.isEmpty ? L("all worktrees") : L("Worktree %@", g.worktree), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -137,7 +137,7 @@ struct SSHDecisionSheet: View {
     @Local private var key = ""
     @Local private var minutes = 15
     @Local private var user = ""
-    @Local private var allAgents = false
+    @Local private var allWorktrees = false
     @Local private var perConn = false
     @Local private var trust = false
     @Local private var passphrase = ""
@@ -167,7 +167,7 @@ struct SSHDecisionSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L("SSH access for %@/%@", r.sandbox, r.agent)).font(.title3.bold())
+                    Text(L("SSH access for %@/%@", r.sandbox, r.worktree)).font(.title3.bold())
                     LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -181,7 +181,7 @@ struct SSHDecisionSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     section("Request") {
-                        Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
+                        Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
                             .font(.callout).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
@@ -210,7 +210,7 @@ struct SSHDecisionSheet: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
                                 if let ru = r.ssh?.requestedUser, !ru.isEmpty {
-                                    Text(ru == user ? L("Requested by the agent.") : L("Requested by the agent: %@", ru))
+                                    Text(ru == user ? L("Requested by the assistant.") : L("Requested by the assistant: %@", ru))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -243,18 +243,18 @@ struct SSHDecisionSheet: View {
                     }
 
                     section("Options") {
-                        Toggle("For all agents of the sandbox", isOn: $allAgents)
-                        Text("Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox.")
+                        Toggle("For all worktrees of the sandbox", isOn: $allWorktrees)
+                        Text("Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
                     }
 
-                    section("Note for the agent (optional)") {
+                    section("Note for the assistant (optional)") {
                         TextEditor(text: $note)
                             .font(.callout)
                             .frame(minHeight: 62, maxHeight: 90)
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                        Text("Shown to the agent with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
+                        Text("Shown to the assistant with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }.padding(.trailing, 6)
@@ -266,21 +266,21 @@ struct SSHDecisionSheet: View {
             }
             Divider().padding(.vertical, 12)
             HStack(spacing: 10) {
-                Text("Deny and approve both send the note to the agent.")
+                Text("Deny and approve both send the note to the assistant.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { passphrase = ""; dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Deny", role: .destructive) {
                     passphrase = ""
                     let n = note
-                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
+                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allWorktrees: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
                 }
                 Button("Approve") {
                     let pw = passphrase
                     passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
                     let n = note
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allWorktrees: allWorktrees, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
@@ -288,7 +288,7 @@ struct SSHDecisionSheet: View {
         }
         .padding(20).frame(width: 680, height: 720)
         .task {
-            // Precedence: the agent's wish, then the host default
+            // Precedence: the request's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
             minutes = [15, 60, 240, 1440].last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 15) }) ?? 15
             if let resp: KeysResponse = try? await model.api.get("/v1/ssh/keys") {
@@ -308,13 +308,13 @@ struct DenyRequestSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L("Deny request")).font(.title3.bold())
-            Text("\(r.sandbox) / \(r.agent)").font(.callout).foregroundStyle(.secondary)
-            Text("Optional note for the agent: why denied, what to do instead.").font(.callout)
+            Text("\(r.sandbox) / \(r.worktree)").font(.callout).foregroundStyle(.secondary)
+            Text("Optional note for the assistant: why denied, what to do instead.").font(.callout)
             TextEditor(text: $note)
                 .font(.callout)
                 .frame(height: 80)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-            Text("The agent sees this note with the denial.").font(.caption).foregroundStyle(.secondary)
+            Text("The assistant sees this note with the denial.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -337,9 +337,9 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("GitHub access for %@ / %@", r.sandbox, r.agent)).font(.headline)
+            Text(L("GitHub access for %@ / %@", r.sandbox, r.worktree)).font(.headline)
             if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
-            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
+            Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
                 LT("The sandbox already has a token. It only needs the repo: on GitHub open Settings → Developer settings → Fine-grained tokens, open the token **bergfried-%@**, \"Edit\", add the repo under \"Repository access\" and save. The token value stays the same.", r.sandbox).font(.callout)
                 Button("Open the token list on GitHub …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
@@ -349,7 +349,7 @@ struct GitHubTokenSheet: View {
             }
             if hasToken { SecureField("Optional: paste a new token", text: $token).textFieldStyle(.roundedBorder) }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Note for the agent if you deny (optional)").font(.caption).foregroundStyle(.secondary)
+                Text("Note for the assistant if you deny (optional)").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $denyNote).font(.callout).frame(height: 54)
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
             }
@@ -384,7 +384,7 @@ struct GitHubTokenSteps: View {
             Label("Under \"Repository access\" choose \"Only select repositories\" and select only the repos this sandbox needs.", systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             Text("2. Click \"Generate token\" and paste the value here (GitHub shows it only once):").font(.callout).fixedSize(horizontal: false, vertical: true)
             SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
-            Text("The token is then stored in the VM; the agent can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

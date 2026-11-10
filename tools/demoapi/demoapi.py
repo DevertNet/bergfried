@@ -17,28 +17,31 @@ KEY = "SHA256:Qm9yZGVhdXhEZW1vS2V5RmluZ2VycHJpbnQwMDAwMDA"
 FP = "SHA256:ZGVtbyBob3N0IGtleSBmaW5nZXJwcmludCAwMDAwMDAwMA"
 
 
-def agent(name, rc=True, window=True):
-    return {"name": name, "worktree": "~/work/" + name, "window": window, "rc": rc,
-            "rc_url": "https://claude.ai/code/session_demo" if rc else "", "rc_action": ""}
+def worktree(name, running=True, rc=True, window=True, action=""):
+    return {"name": name, "window": window, "running": running, "rc": rc,
+            "rc_url": "https://claude.ai/code/session_demo" if rc else "", "rc_action": action}
 
 
-def sandbox(name, status, agents, grants=0, pending=0, token=True, logged_in=True):
+def sandbox(name, status, worktrees, grants=0, pending=0, token=True, logged_in=True, oc=False):
     return {"name": name, "vm": "bergfried-" + name, "status": status, "repo": "", "template_version": 3,
-            "created_unix": now - 86400 * 3, "cpus": 4, "memory": 6 * GB, "disk": 60 * GB, "agents": agents,
+            "created_unix": now - 86400 * 3, "cpus": 4, "memory": 6 * GB, "disk": 60 * GB, "worktrees": worktrees,
             "active_grants": grants, "pending_requests": pending, "claude_logged_in": logged_in if status == "Running" else None,
+            "opencode_logged_in": logged_in if status == "Running" else None,
+            "claude_installed": status == "Running", "opencode_installed": status == "Running",
+            "opencode_running": oc, "opencode_port": 42123,
             "host_disk_used": int(7.4 * GB), "guest_disk_used": int(5.1 * GB), "guest_disk_size": 58 * GB,
             "has_github_token": token}
 
 
 SANDBOXES = [
-    sandbox("webshop", "Running", [agent("main"), agent("checkout"), agent("docs")], grants=1, pending=2),
-    sandbox("blog", "Running", [agent("main")]),
-    sandbox("data-pipeline", "Stopped", [agent("main", rc=False, window=False)], token=False),
+    sandbox("webshop", "Running", [worktree("main"), worktree("checkout"), worktree("docs", running=False, rc=False, window=False)], grants=1, pending=2, oc=True),
+    sandbox("blog", "Running", [worktree("main")]),
+    sandbox("data-pipeline", "Stopped", [worktree("main", running=False, rc=False, window=False)], token=False),
 ]
 
 
-def req(i, sb, ag, kind, path, reason, **kw):
-    r = {"id": i, "sandbox": sb, "agent": ag, "kind": kind, "path": path, "reason": reason, "status": "pending",
+def req(i, sb, wt, kind, path, reason, **kw):
+    r = {"id": i, "sandbox": sb, "worktree": wt, "kind": kind, "path": path, "reason": reason, "status": "pending",
          "created_unix": now - 40 * i, "bytes": 0, "files": 0, "large": False}
     r.update(kw)
     return r
@@ -52,13 +55,13 @@ REQUESTS = [
     req(1, "webshop", "docs", "ghtoken", "acme/shop-docs", "git clone failed with 'Repository not found'.",
         github={"repo": "acme/shop-docs", "has_token": True, "link": "https://github.com/settings/personal-access-tokens/new", "hint": ""}),
 ]
-GRANTS = [{"id": 1, "sandbox": "webshop", "agent": "main", "host": "build.example.com", "key_fingerprint": KEY, "user": "deploy",
+GRANTS = [{"id": 1, "sandbox": "webshop", "worktree": "main", "host": "build.example.com", "key_fingerprint": KEY, "user": "deploy",
            "expires_unix": now + 22 * 60, "per_connection": False, "revoked": False, "active": True, "host_key_fingerprints": [FP]}]
-AUDIT = [{"ts_unix": now - 60 * i, "actor": a, "event": e, "sandbox": "webshop", "agent": g, "detail": d} for i, (a, e, g, d) in enumerate([
-    ("agent", "request.created", "main", "id=3 file Documents/Invoices/2024-Q3.pdf"),
+AUDIT = [{"ts_unix": now - 60 * i, "actor": a, "event": e, "sandbox": "webshop", "worktree": g, "detail": d} for i, (a, e, g, d) in enumerate([
+    ("worktree", "request.created", "main", "id=3 file Documents/Invoices/2024-Q3.pdf"),
     ("app", "ssh.grant_created", "main", "grant=1 host=build.example.com minutes=30"),
     ("broker", "ssh.sign", "main", "grant=1 host=build.example.com"),
-    ("daemon", "agent.rc_enable", "docs", "/remote-control")])]
+    ("daemon", "worktree.rc_enable", "docs", "/remote-control")])]
 
 ROUTES = {
     "/v1/status": {"version": "1.0.0", "base_ready": True, "base_name": "bergfried-base-demo", "template_version": 3,

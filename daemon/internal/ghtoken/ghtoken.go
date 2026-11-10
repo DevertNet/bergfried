@@ -133,8 +133,8 @@ func NewService(st *store.Store, tokens Store, install func(context.Context, str
 		Client: func(t string) *github.Client { return github.New(github.StaticToken(t)) }}
 }
 
-func (s *Service) audit(event, sandbox, agent, detail string) {
-	if err := s.S.Audit("daemon", event, sandbox, agent, detail); err != nil {
+func (s *Service) audit(event, sandbox, worktree, detail string) {
+	if err := s.S.Audit("daemon", event, sandbox, worktree, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
@@ -207,7 +207,7 @@ func cleanNote(s string) string {
 
 // Request: the agent needs a token (repo empty) or access to repo. Blocks until decided.
 // Returns (done, message). A repo the token already reaches is confirmed without asking.
-func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason string) (bool, string, error) {
+func (s *Service) Request(ctx context.Context, sandbox, worktree, repo, reason string) (bool, string, error) {
 	var gr github.Repo
 	if repo != "" {
 		r, err := github.ParseRemote("https://github.com/" + strings.TrimPrefix(repo, "https://github.com/"))
@@ -232,7 +232,7 @@ func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason stri
 	if path == "" {
 		path = "GitHub-Token"
 	}
-	id, err := s.S.AddRequest(store.Request{Sandbox: sandbox, Agent: agent, Kind: "ghtoken", Path: path, Reason: reason, Status: "pending", Extra: string(extra)})
+	id, err := s.S.AddRequest(store.Request{Sandbox: sandbox, Worktree: worktree, Kind: "ghtoken", Path: path, Reason: reason, Status: "pending", Extra: string(extra)})
 	if err != nil {
 		return false, "", err
 	}
@@ -241,7 +241,7 @@ func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason stri
 	s.waiters[id] = ch
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
-	s.audit("ghtoken.requested", sandbox, agent, fmt.Sprintf("id=%d %s", id, path))
+	s.audit("ghtoken.requested", sandbox, worktree, fmt.Sprintf("id=%d %s", id, path))
 	timer := time.NewTimer(s.Timeout)
 	defer timer.Stop()
 	select {
@@ -256,7 +256,7 @@ func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason stri
 		return false, msg, nil
 	case <-timer.C:
 		if ok, _ := s.S.SetRequestStatus(id, "expired"); ok {
-			s.audit("ghtoken.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ghtoken.expired", sandbox, worktree, fmt.Sprintf("id=%d", id))
 		}
 		return false, "No answer, request expired.", nil
 	case <-ctx.Done():
@@ -279,7 +279,7 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token, note 
 	ch, ok := s.waiters[id]
 	s.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("request %d is no longer waiting (agent gave up)", id)
+		return fmt.Errorf("request %d is no longer waiting (the requester gave up)", id)
 	}
 	note = strings.TrimSpace(cleanNote(note))
 	status := "denied"
@@ -309,7 +309,7 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token, note 
 	if ok, _ := s.S.SetRequestStatus(id, status); !ok {
 		return errors.New("request no longer open")
 	}
-	s.audit("ghtoken."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d", id))
+	s.audit("ghtoken."+status, r.Sandbox, r.Worktree, fmt.Sprintf("id=%d", id))
 	ch <- result{ok: allow, note: note}
 	return nil
 }

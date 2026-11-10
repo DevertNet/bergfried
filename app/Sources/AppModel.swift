@@ -100,12 +100,12 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the agent.
+    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the assistant.
     func deny(_ r: RequestInfo, note: String = "") async {
         do {
             switch r.kind {
             case "ssh":
-                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false, note: note))
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allWorktrees: false, perConnection: false, trustUnknownHost: false, note: note))
             case "ghtoken":
                 try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
             default:
