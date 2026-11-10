@@ -21,8 +21,8 @@ const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 echo "inst_claude=$([ -x "$HOME/.local/bin/claude" ] && echo true || echo false)"
 echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
-if [ %[2]d = 1 ]; then
-  OC="$HOME/.opencode/bin/opencode"
+OC="$HOME/.opencode/bin/opencode"
+if [ %[2]d = 1 ] || [ -x "$OC" ]; then
   if [ -x "$OC" ]; then
     echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
   else echo "login_opencode=false"; fi
@@ -138,6 +138,7 @@ type Monitor struct {
 	last      map[string]time.Time // letzter Versuch je Agent
 	actions   map[string]string    // Anzeige-Stand je Agent
 	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
+	repaired  map[string]bool      // runtime mismatch repair attempted once per agent
 	sticky    map[string]stickyRC  // active RC seen once per agent, bound to the claude PID
 	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
 }
@@ -206,7 +207,7 @@ func (mo *Monitor) MarkRC(name, agent string) error {
 
 func NewMonitor(m *sandbox.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repaired: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
@@ -231,6 +232,7 @@ func (mo *Monitor) ResetAgent(sandbox, agent string) {
 	delete(mo.attempts, k)
 	delete(mo.last, k)
 	delete(mo.actions, k)
+	delete(mo.repaired, k)
 	mo.mu.Unlock()
 }
 
@@ -439,6 +441,22 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		}
 		st.Agents[w] = a
 	}
+	// A window left over from an earlier attempt can run the other runtime. Restart it once
+	// with the stored runtime; otherwise the sidebar shows an OpenCode agent that runs Claude
+	// (or the reverse) nobody can sensibly act on.
+	var repairs []string
+	for w, a := range st.Agents {
+		key := name + "/" + w
+		if mo.repaired[key] {
+			continue
+		}
+		rt := runtimes[w]
+		wrong := (rt == sandbox.RuntimeClaude && a.OpenCodePID > 0) || (rt == sandbox.RuntimeOpenCode && a.ClaudePID > 0)
+		if wrong {
+			mo.repaired[key] = true
+			repairs = append(repairs, w)
+		}
+	}
 	// OpenCode activity: the local server knows busy/idle per session directory.
 	for dir, oc := range st.OpenCode {
 		for w := range st.Agents {
@@ -469,6 +487,18 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	}
 	mo.state[name] = &st
 	mo.mu.Unlock()
+
+	for _, w := range repairs {
+		if err := mo.M.RestartAgent(cctx, name, w); err != nil {
+			fmt.Fprintln(os.Stderr, "repair wrong runtime:", err)
+		} else {
+			_ = mo.M.S.Audit("daemon", "agent.runtime_repaired", name, w, "window ran the other runtime")
+		}
+	}
+	if len(repairs) > 0 {
+		mo.Poke(name)
+		return
+	}
 
 	// A login that has just completed: restart only the agents of that runtime.
 	restarted := false

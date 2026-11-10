@@ -26,7 +26,10 @@ const (
 // Asker shows the request to the user. The answer comes later via Service.Decide.
 type Asker interface{ Ask(r store.Request) }
 
-type decision struct{ allow bool }
+type decision struct {
+	allow bool
+	note  string
+}
 
 type Service struct {
 	S       *store.Store
@@ -128,7 +131,11 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 	select {
 	case d := <-ch:
 		if !d.allow {
-			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "The user declined."}, nil
+			msg := "The user declined."
+			if d.note != "" {
+				msg += " Note from the user: " + d.note
+			}
+			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: msg}, nil
 		}
 		dst, err := v.copyOut(sandbox, rel, abs, info.IsDir())
 		if err != nil {
@@ -150,8 +157,9 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 	}
 }
 
-// Decide decides an open request. Large requests need confirmLarge.
-func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
+// Decide decides an open request. Large requests need confirmLarge. note is optional and
+// returned to the agent when the request is denied (or allowed).
+func (v *Service) Decide(id int64, allow, confirmLarge bool, note string) (string, error) {
 	r, err := v.S.GetRequest(id)
 	if err != nil {
 		return "", err
@@ -168,6 +176,7 @@ func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("request %d is no longer waiting (agent gave up)", id)
 	}
+	note = strings.TrimSpace(sanitize(note, 500))
 	status := "denied"
 	if allow {
 		status = "allowed"
@@ -176,7 +185,7 @@ func (v *Service) Decide(id int64, allow, confirmLarge bool) (string, error) {
 		return "", fmt.Errorf("request %d is no longer open", id)
 	}
 	v.audit("request."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
-	ch <- decision{allow: allow}
+	ch <- decision{allow: allow, note: note}
 	return status, nil
 }
 

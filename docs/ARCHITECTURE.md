@@ -44,8 +44,8 @@ sequenceDiagram
   A->>D: request_file("Documents/report.pdf", reason)
   D->>D: blocklist check, resolve path (no symlinks)
   D->>U: notification + request card
-  U->>D: Allow / Deny
-  D-->>A: read-only copy in shared/in (or "denied")
+  U->>D: Allow / Deny (+ optional note)
+  D-->>A: read-only copy in shared/in (or "denied" with the note)
   D->>D: audit log entry
 ```
 
@@ -73,7 +73,7 @@ only while a grant is active (time window, key, target host key).
    answers Claude onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts). OpenCode is connected to the desktop app
    through a one-time local link (`opencode pair`, no internet): the OpenCode server listens on a stable per-sandbox port on `0.0.0.0` and Lima forwards it to `127.0.0.1` on the Mac.
    Before a link is created the daemon restarts the shared OpenCode service so it really uses that port (the config may already be right while the running process is stale), then returns the link and restarts the TUI windows in the background.
-   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. All OpenCode agents of a sandbox share **one** OpenCode service and **one** desktop link; each agent still has its own TUI process, worktree and MCP process.
+   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. All OpenCode agents of a sandbox share **one** OpenCode service and **one** desktop link; each agent still has its own TUI process, worktree and MCP process. The service can also be started without an OpenCode agent (Connect); the desktop app then opens the sandbox worktrees as projects. Connecting installs OpenCode on demand if it is missing. A tmux window left over from the other runtime is recreated on start/restart, and the monitor repairs such a mismatch once (`agent.runtime_repaired`).
 8. **UI:** the sandbox overview is one alphabetical card list. Each card has the state/actions, a compact metadata line, one card each for Claude and OpenCode (installed, signed in, sign-in/connect) and an agent table with runtime, status, worktree and actions. Settings has a secondary sidebar: General, Updates, Base VM, Notifications, Files & index, Terminal, Advanced (template editor behind Advanced). Base-build output follows new lines while the view is at the bottom.
 9. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
 

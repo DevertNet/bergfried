@@ -301,6 +301,8 @@ func TestWindowScriptUsesAgentAndSession(t *testing.T) {
 			"tmux new-window -t bf -n api",
 			"tmux send-keys -t bf:api ",
 			"COMPOSE_PROJECT_NAME=shop-api",
+			"ps -t \"${tty#/dev/}\" -o comm=",
+			"grep -qx " + rt.ProcessName(),
 		} {
 			if !strings.Contains(s, want) {
 				t.Fatalf("%s: %q missing in\n%s", rt, want, s)

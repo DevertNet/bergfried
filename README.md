@@ -12,7 +12,7 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 ## How it works in 30 seconds
 1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Agents run in tmux windows with their own git worktrees – Claude Code and OpenCode can run side by side.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
-3. **The agent asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged.
+3. **The agent asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the agent sees.
 
 ![Open requests and an active SSH grant](docs/img/requests.png)
 
@@ -67,12 +67,12 @@ In the app: **Settings → General → Install and start daemon**, **Settings �
 If something fails, the **Diagnostics** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ### OpenCode desktop app
-OpenCode agents are driven from the [OpenCode desktop app](https://opencode.ai/download), not from the phone:
-1. Start a sandbox with at least one OpenCode agent and sign in to OpenCode (button in the app).
-2. In the **OpenCode** runtime card click **Connect** (or **Shell / SSH → Connect desktop app …**).
-3. Copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. All OpenCode agents of that sandbox appear as projects.
+OpenCode is driven from the [OpenCode desktop app](https://opencode.ai/download), not from the phone. It is not tied to a Bergfried agent: Connect starts the shared OpenCode service in the sandbox and opens its worktrees, even if no OpenCode agent exists.
+1. Start the sandbox and sign in to OpenCode (button in the OpenCode runtime card if needed).
+2. In the **OpenCode** runtime card click **Connect** (or **Shell / SSH → Connect desktop app …**). Connecting installs OpenCode if it is missing.
+3. Copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. Open the sandbox's worktrees as projects; a Bergfried agent is not required.
 
-The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude agents keep using Remote Control and are not listed in the desktop app.
+The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude agents keep using Remote Control and are not listed in the desktop app. If you want a tmux/TUI agent for OpenCode as well, add an agent with runtime OpenCode; both models coexist.
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.

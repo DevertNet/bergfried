@@ -15,13 +15,15 @@ Everything below is manual (real Lima VM, macOS app); CI only runs the Go tests 
    After each login only the agents of that runtime restart.
 6. Wait until the status shows "OpenCode runs" and "Remote Control active" (Claude).
 
-## OpenCode desktop app
+## OpenCode desktop app (no agent required)
 
-1. In the **OpenCode runtime card** click **Connect** (or Sandbox menu → Shell / SSH → **Connect desktop app …**).
+OpenCode is a sandbox-level service, not an agent. Connect works in a sandbox without an OpenCode agent; it starts the service and lets the desktop app open the existing worktrees.
+
+1. In the **OpenCode runtime card** click **Connect** (or Sandbox menu → Shell / SSH → **Connect desktop app …**). If OpenCode is not installed, Connect installs the latest version first.
 2. The sheet opens immediately with "Preparing …" (the service is restarted on the sandbox port); then a one-time link appears (valid 5 minutes) with **Copy link** and the port (42xxx).
 3. OpenCode desktop app → add server → paste the link. Do not open it in the browser first if you want the desktop app.
-4. The app shows every OpenCode agent of the sandbox as a project. Send a prompt and check that the file/SSH/GitHub requests still appear in **Bergfried** (not only in OpenCode).
-5. Add another OpenCode agent: it appears in the desktop app without a new link.
+4. The desktop app can open the sandbox worktrees as projects; existing OpenCode agents appear as their own projects. Send a prompt and check that the file/SSH/GitHub requests still appear in **Bergfried** (not only in OpenCode).
+5. Add another OpenCode agent: it appears in the desktop app without a new link (the service and link are sandbox-level).
 6. Click **Connect** again after the link expired: a fresh link is issued; the saved connection keeps working. Errors are shown in the sheet with **Try again**.
 
 Check that the link uses a port in **42000–42999** and is **not** reachable from another device on the LAN (it is bound to `127.0.0.1` on the Mac). A link on the OpenCode default **49374** is wrong: a local OpenCode on the Mac can occupy it; click Connect again.
