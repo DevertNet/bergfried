@@ -53,22 +53,17 @@ func TestParseRuntime(t *testing.T) {
 	}
 }
 
-func TestRuntimeInstallScript(t *testing.T) {
-	s := installOpenCode("2.2.6")
+func TestOpenCodeInstallScript(t *testing.T) {
+	s := openCodeInstallScript()
 	for _, want := range []string{
-		"registry.npmjs.org/@opencode%2fcli-linux-",
-		"2.2.6",
-		"checksum mismatch",
-		"tar -xzf",
-		`grep -qE '(^| )v?2[.]'`,
-		".opencode/bin",
+		"tar -xzf /tmp/opencode.tgz",
+		`install -m755 "$tmp/package/bin/opencode"`,
+		`mkdir -p "$HOME/.opencode/bin"`,
+		"opencode/bin:$PATH",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("%q missing in\n%s", want, s)
 		}
-	}
-	if strings.Contains(s, "opencode.ai/v2/install") {
-		t.Fatal("must not pipe the vendor installer into a shell")
 	}
 }
 

@@ -19,11 +19,12 @@ import (
 // and (for Claude) the Remote Control status. need_claude/need_opencode are filled in by check.
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 echo "inst_claude=$(command -v claude >/dev/null 2>&1 && echo true || echo false)"
-echo "inst_opencode=$( { command -v opencode >/dev/null 2>&1 || [ -x "$HOME/.opencode/bin/opencode" ]; } && echo true || echo false)"
+echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
 if [ %[2]d = 1 ]; then
-  if command -v opencode >/dev/null 2>&1; then
-    echo "login_opencode=$(opencode auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
+  OC="$HOME/.opencode/bin/opencode"
+  if [ -x "$OC" ]; then
+    echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
   else echo "login_opencode=false"; fi
 fi
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
@@ -43,8 +44,8 @@ if tmux has-session -t bf 2>/dev/null; then
     echo "win=$w rc=$rc theme=$th idle=$idle ask=$ask dlg=$dlg cpid=$cpid opid=$opid url=$url"
   done
 fi
-if [ %[2]d = 1 ] && command -v opencode >/dev/null 2>&1 && pgrep -x opencode >/dev/null 2>&1; then
-  opencode api GET /api/session 2>/dev/null | jq -r '.data[]? | "oc dir=\(.location.directory) busy=\(.time.busy // 0) idle=\(.time.idle // 0) updated=\(.time.updated // 0) id=\(.id)"' 2>/dev/null || true
+if [ %[2]d = 1 ] && [ -x "$HOME/.opencode/bin/opencode" ] && pgrep -x opencode >/dev/null 2>&1; then
+  "$HOME/.opencode/bin/opencode" api GET /api/session 2>/dev/null | jq -r '.data[]? | "oc dir=\(.location.directory) busy=\(.time.busy // 0) idle=\(.time.idle // 0) updated=\(.time.updated // 0) id=\(.id)"' 2>/dev/null || true
 fi`
 
 type AgentState struct {

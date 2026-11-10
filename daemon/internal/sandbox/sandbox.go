@@ -429,16 +429,30 @@ if jq --arg bin "$HOME/.local/bin/bergfried-mcp" '.mcp = (.mcp // {}) | .mcp.ser
 else
   # JSONC with comments: let OpenCode write its own config instead.
   rm -f "$f.tmp"
-  opencode mcp add bergfried --global -- "$HOME/.local/bin/bergfried-mcp" >/dev/null 2>&1 || true
+  "$HOME/.opencode/bin/opencode" mcp add bergfried --global -- "$HOME/.local/bin/bergfried-mcp" >/dev/null 2>&1 || true
 fi
 printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd))
 	return err
 }
 
-// InstallOpenCode installs the pinned OpenCode CLI as the VM user (no root, no apt). Idempotent.
+// InstallOpenCode installs the pinned OpenCode CLI in the VM (no root, no apt). The package is
+// downloaded and verified on the Mac, copied into the VM and unpacked there; the VM needs no
+// network access, curl, jq or OpenSSL. Idempotent.
 func (m *Manager) InstallOpenCode(ctx context.Context, vm string) error {
-	progress(ctx, "Installing OpenCode in the VM (one-time, pinned version)")
-	_, err := m.L.Shell(ctx, vm, "bash", "-lc", installOpenCode(OpenCodeVersion))
+	out, err := m.L.Shell(ctx, vm, "bash", "-c", `OC="$HOME/.opencode/bin/opencode"; if [ -x "$OC" ] && "$OC" --version 2>/dev/null | grep -qE '(^| )v?2[.]'; then echo yes; fi`)
+	if err == nil && strings.TrimSpace(string(out)) == "yes" {
+		return nil
+	}
+	progress(ctx, "Installing OpenCode (pinned version, downloaded on the Mac)")
+	tgz, err := downloadOpenCode(ctx, OpenCodeVersion)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tgz)
+	if _, err := m.L.R.Run(ctx, "cp", tgz, vm+":/tmp/opencode.tgz"); err != nil {
+		return fmt.Errorf("OpenCode: upload to the VM: %w", err)
+	}
+	_, err = m.L.Shell(ctx, vm, "bash", "-c", openCodeInstallScript())
 	return err
 }
 
