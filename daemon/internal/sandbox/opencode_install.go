@@ -102,6 +102,12 @@ func downloadOpenCode(ctx context.Context, version string) (string, error) {
 	return name, nil
 }
 
+// openCodeCheckScript reports whether a usable v2 binary is already installed.
+func openCodeCheckScript() string {
+	return `OC="$HOME/.opencode/bin/opencode"
+if [ -x "$OC" ] && "$OC" --version 2>/dev/null | grep -qE '(^| )v?2[.]'; then echo yes; fi`
+}
+
 // openCodeInstallScript unpacks the uploaded tarball and installs the binary. It runs in the
 // VM and needs only tar/install (no network).
 func openCodeInstallScript() string {

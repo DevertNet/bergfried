@@ -86,7 +86,7 @@ changed=0
 [ "$changed" = 0 ] || "$OC" service start
 "$OC" service start >/dev/null 2>&1 || true
 echo "changed=$changed"`, port)
-	out, err := m.L.Shell(ctx, s.VM, "bash", "-lc", setup)
+	out, err := m.L.ShellStdin(ctx, s.VM, strings.NewReader(setup), "bash", "-s")
 	if err != nil {
 		return "", fmt.Errorf("OpenCode server: %w", err)
 	}
