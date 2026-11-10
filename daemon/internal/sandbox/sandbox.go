@@ -672,21 +672,25 @@ func (m *Manager) Delete(ctx context.Context, name string, force bool) error {
 	return nil
 }
 
-// ensureWindow creates the tmux session/window if missing and starts the agent in it.
-func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, agent string, runtime Runtime) error {
+// windowScript builds the shell script that creates the agent's tmux window and starts it.
+func windowScript(sandbox, agent string, runtime Runtime) string {
 	trust := ""
 	if runtime != RuntimeOpenCode {
 		// Claude shows a trust dialog on first start; accept it for this project.
-		trust = `f=~/.claude.json; [ -f "$f" ] || echo '{}' > "$f"
-jq --arg d "$HOME/work/` + agent + `" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`
+		trust = fmt.Sprintf(`f=~/.claude.json; [ -f "$f" ] || echo '{}' > "$f"
+jq --arg d "$HOME/work/%s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`, agent)
 	}
-	script := fmt.Sprintf(`set -e
-%s
-if ! tmux has-session -t %[2]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[2]s -n %[1]s
-elif ! tmux list-windows -t %[2]s -F '#W' | grep -qx %[1]s; then tmux new-window -t %[2]s -n %[1]s
+	return fmt.Sprintf(`set -e
+%[1]s
+if ! tmux has-session -t %[3]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[3]s -n %[2]s
+elif ! tmux list-windows -t %[3]s -F '#W' | grep -qx %[2]s; then tmux new-window -t %[3]s -n %[2]s
 else exit 0; fi
-tmux send-keys -t %[2]s:%[1]s %[3]q Enter`, trust, agent, tmuxSession, runtime.AgentCmd(sandbox, agent))
-	_, err := m.L.Shell(ctx, vm, "bash", "-c", script)
+tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, agent, tmuxSession, runtime.AgentCmd(sandbox, agent))
+}
+
+// ensureWindow creates the tmux session/window if missing and starts the agent in it.
+func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, agent string, runtime Runtime) error {
+	_, err := m.L.Shell(ctx, vm, "bash", "-c", windowScript(sandbox, agent, runtime))
 	return err
 }
 
