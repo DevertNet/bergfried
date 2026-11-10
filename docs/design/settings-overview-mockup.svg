@@ -39,7 +39,6 @@
     <!-- settings sub-sidebar -->
     <rect x="250" y="40" width="200" height="820" fill="#F7F7F9"/>
     <line x1="450" y1="40" x2="450" y2="860" stroke="#E3E3E8"/>
-    <text x="270" y="112" font-family="Inter" font-size="20" font-weight="700" fill="#1D1D1F">Settings</text>
 
     <text x="270" y="158" font-family="Inter" font-size="12.5" fill="#3C3C43">General</text>
     <rect x="262" y="176" width="176" height="32" rx="8" fill="#DCE8FA"/>

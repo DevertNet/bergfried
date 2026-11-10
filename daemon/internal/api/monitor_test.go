@@ -44,9 +44,9 @@ win=api rc=0 theme=1 cpid=0 opid=222 url=
 }
 
 func TestParseInstalledState(t *testing.T) {
-	st := parseProbe("inst_claude=true\ninst_opencode=false\n")
-	if !st.ClaudeInstalled || st.OpenCodeInstalled {
-		t.Fatalf("installed state: claude=%v opencode=%v", st.ClaudeInstalled, st.OpenCodeInstalled)
+	st := parseProbe("inst_claude=true\ninst_opencode=false\noc_service=true\n")
+	if !st.ClaudeInstalled || st.OpenCodeInstalled || !st.OpenCodeRunning {
+		t.Fatalf("installed state: claude=%v opencode=%v running=%v", st.ClaudeInstalled, st.OpenCodeInstalled, st.OpenCodeRunning)
 	}
 }
 

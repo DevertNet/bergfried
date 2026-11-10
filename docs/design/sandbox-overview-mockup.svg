@@ -114,10 +114,8 @@
     <text x="452" y="492" font-family="Inter" font-size="10" font-weight="600" fill="#7C3FA8" text-anchor="middle">Claude</text>
     <text x="530" y="494" font-family="Inter" font-size="11" fill="#34A853">Remote Control active</text>
     <text x="690" y="494" font-family="Inter" font-size="11" fill="#6E6E73">~/work/main</text>
-    <rect x="1012" y="479" width="76" height="24" rx="6" fill="#EAF3FE" stroke="#C9DFF8"/>
-    <text x="1050" y="495" font-family="Inter" font-size="10" font-weight="600" fill="#0A64C8" text-anchor="middle">Open RC</text>
-    <rect x="1094" y="479" width="66" height="24" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
-    <text x="1127" y="495" font-family="Inter" font-size="10" fill="#3C3C43" text-anchor="middle">Terminal</text>
+    <rect x="1012" y="479" width="66" height="24" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="1045" y="495" font-family="Inter" font-size="10" fill="#3C3C43" text-anchor="middle">Terminal</text>
     <text x="1176" y="495" font-family="Inter" font-size="13" fill="#6E6E73">⋯</text>
     <line x1="294" y1="510" x2="1194" y2="510" stroke="#F1F1F4"/>
 

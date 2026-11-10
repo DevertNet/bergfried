@@ -155,6 +155,7 @@ type sandboxJ struct {
 	OpenCodeLoggedIn  *bool    `json:"opencode_logged_in"`
 	ClaudeInstalled   *bool    `json:"claude_installed"`
 	OpenCodeInstalled *bool    `json:"opencode_installed"`
+	OpenCodeRunning   *bool    `json:"opencode_running"`
 	OpenCodePort      int      `json:"opencode_port"`
 	HostDiskUsed      int64    `json:"host_disk_used"`
 	GuestDiskUsed     int64    `json:"guest_disk_used"`
@@ -325,7 +326,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		}
 		if havePS {
 			j.ClaudeLoggedIn, j.OpenCodeLoggedIn = ps.ClaudeLoggedIn, ps.OpenCodeLoggedIn
-			j.ClaudeInstalled, j.OpenCodeInstalled = boolPtr(ps.ClaudeInstalled), boolPtr(ps.OpenCodeInstalled)
+			j.ClaudeInstalled, j.OpenCodeInstalled, j.OpenCodeRunning = boolPtr(ps.ClaudeInstalled), boolPtr(ps.OpenCodeInstalled), boolPtr(ps.OpenCodeRunning)
 			j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.GuestUsed, ps.GuestSize, ps.Err
 		}
 		j.HostDiskUsed = hostDiskUsed(x.VM)

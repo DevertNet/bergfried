@@ -182,6 +182,7 @@ struct SandboxCard: View {
                 RuntimeStatusCard(name: "OpenCode", letter: "O", tint: .blue,
                                   installed: s.opencodeInstalled, signedIn: s.opencodeLoggedIn,
                                   used: s.usesOpenCode, running: s.running,
+                                  serviceRunning: s.opencodeRunning,
                                   note: L("Connect installs it if needed"),
                                   signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
                                   connect: { pair() }, connecting: pairing)
@@ -270,6 +271,7 @@ struct RuntimeStatusCard: View {
     let signedIn: Bool?
     let used: Bool
     let running: Bool
+    var serviceRunning: Bool? = nil
     let note: String?
     let signIn: () -> Void
     var connect: (() -> Void)? = nil
@@ -282,6 +284,13 @@ struct RuntimeStatusCard: View {
             return (L("not installed"), Color.secondary)
         case .some(true):
             if !used {
+                if serviceRunning == true {
+                    switch signedIn {
+                    case .some(true): return (L("installed · running · signed in"), .green)
+                    case .some(false): return (L("installed · running · not signed in"), .orange)
+                    default: return (L("installed · running"), .green)
+                    }
+                }
                 switch signedIn {
                 case .some(true): return (L("installed · signed in · no agent"), .green)
                 case .some(false): return (L("installed · not signed in · no agent"), .orange)
@@ -473,9 +482,6 @@ struct AgentRow: View {
             Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         } else {
             HStack(spacing: 8) {
-                if !a.isOpenCode, a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
-                    Button { NSWorkspace.shared.open(url) } label: { Label("Open RC link", systemImage: "arrow.up.right.square") }.controlSize(.small)
-                }
                 Button { if let e = Terminal.attach(vm: s.vm, agent: a.name) { model.setBanner(e) } } label: { Label(L("%@: agent window", Terminal.appName), systemImage: "terminal") }
                     .controlSize(.small).disabled(!s.running || !a.window)
                     .help(L("Opens this agent's tmux window in %@", Terminal.appName))

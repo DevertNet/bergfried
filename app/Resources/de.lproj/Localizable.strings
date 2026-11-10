@@ -402,3 +402,7 @@
 "Optional note for the agent: why denied, what to do instead." = "Optionaler Hinweis für den Agenten: warum abgelehnt, was stattdessen tun.";
 "The agent sees this note with the denial." = "Der Agent sieht diesen Hinweis mit der Ablehnung.";
 "Note for the agent if you deny (optional)" = "Hinweis für den Agenten bei Ablehnung (optional)";
+
+"installed · running · signed in" = "installiert · läuft · angemeldet";
+"installed · running · not signed in" = "installiert · läuft · nicht angemeldet";
+"installed · running" = "installiert · läuft";

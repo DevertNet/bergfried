@@ -59,6 +59,7 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var opencodeLoggedIn: Bool?
     var claudeInstalled: Bool?
     var opencodeInstalled: Bool?
+    var opencodeRunning: Bool?
     var opencodePort: Int?
     var hostDiskUsed: Int64
     var guestDiskUsed: Int64

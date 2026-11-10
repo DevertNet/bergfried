@@ -20,6 +20,7 @@ import (
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 echo "inst_claude=$([ -x "$HOME/.local/bin/claude" ] && echo true || echo false)"
 echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
+echo "oc_service=$(pgrep -x opencode >/dev/null 2>&1 && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
 OC="$HOME/.opencode/bin/opencode"
 if [ %[2]d = 1 ] || [ -x "$OC" ]; then
@@ -104,6 +105,7 @@ type SandboxState struct {
 	OpenCodeLoggedIn     *bool // nil = not checked (no OpenCode agent in this sandbox)
 	ClaudeInstalled      bool
 	OpenCodeInstalled    bool
+	OpenCodeRunning      bool
 	GuestUsed, GuestSize int64
 	Agents               map[string]AgentState
 	OpenCode             map[string]openCodeSession // by directory
@@ -138,7 +140,7 @@ type Monitor struct {
 	last      map[string]time.Time // letzter Versuch je Agent
 	actions   map[string]string    // Anzeige-Stand je Agent
 	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
-	repaired  map[string]bool      // runtime mismatch repair attempted once per agent
+	repairAt  map[string]time.Time // last runtime-mismatch repair per agent
 	sticky    map[string]stickyRC  // active RC seen once per agent, bound to the claude PID
 	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
 }
@@ -207,7 +209,7 @@ func (mo *Monitor) MarkRC(name, agent string) error {
 
 func NewMonitor(m *sandbox.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repaired: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repairAt: map[string]time.Time{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
@@ -232,7 +234,7 @@ func (mo *Monitor) ResetAgent(sandbox, agent string) {
 	delete(mo.attempts, k)
 	delete(mo.last, k)
 	delete(mo.actions, k)
-	delete(mo.repaired, k)
+	delete(mo.repairAt, k)
 	mo.mu.Unlock()
 }
 
@@ -299,6 +301,8 @@ func parseProbe(out string) SandboxState {
 			st.ClaudeInstalled = strings.TrimPrefix(line, "inst_claude=") == "true"
 		case strings.HasPrefix(line, "inst_opencode="):
 			st.OpenCodeInstalled = strings.TrimPrefix(line, "inst_opencode=") == "true"
+		case strings.HasPrefix(line, "oc_service="):
+			st.OpenCodeRunning = strings.TrimPrefix(line, "oc_service=") == "true"
 		case strings.HasPrefix(line, "login_claude="):
 			v := strings.TrimPrefix(line, "login_claude=") == "true"
 			st.ClaudeLoggedIn = &v
@@ -447,13 +451,13 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	var repairs []string
 	for w, a := range st.Agents {
 		key := name + "/" + w
-		if mo.repaired[key] {
+		if last, ok := mo.repairAt[key]; ok && time.Since(last) < 30*time.Second {
 			continue
 		}
 		rt := runtimes[w]
 		wrong := (rt == sandbox.RuntimeClaude && a.OpenCodePID > 0) || (rt == sandbox.RuntimeOpenCode && a.ClaudePID > 0)
 		if wrong {
-			mo.repaired[key] = true
+			mo.repairAt[key] = time.Now()
 			repairs = append(repairs, w)
 		}
 	}
