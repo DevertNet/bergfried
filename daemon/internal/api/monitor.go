@@ -18,6 +18,8 @@ import (
 // probeScript runs in the VM and reports logins, disk usage and, per agent window, its processes
 // and (for Claude) the Remote Control status. need_claude/need_opencode are filled in by check.
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
+echo "inst_claude=$(command -v claude >/dev/null 2>&1 && echo true || echo false)"
+echo "inst_opencode=$( { command -v opencode >/dev/null 2>&1 || [ -x "$HOME/.opencode/bin/opencode" ]; } && echo true || echo false)"
 if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
 if [ %[2]d = 1 ]; then
   if command -v opencode >/dev/null 2>&1; then
@@ -99,6 +101,8 @@ func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 type SandboxState struct {
 	ClaudeLoggedIn       *bool // nil = not checked (no Claude agent in this sandbox)
 	OpenCodeLoggedIn     *bool // nil = not checked (no OpenCode agent in this sandbox)
+	ClaudeInstalled      bool
+	OpenCodeInstalled    bool
 	GuestUsed, GuestSize int64
 	Agents               map[string]AgentState
 	OpenCode             map[string]openCodeSession // by directory
@@ -288,6 +292,10 @@ func parseProbe(out string) SandboxState {
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
+		case strings.HasPrefix(line, "inst_claude="):
+			st.ClaudeInstalled = strings.TrimPrefix(line, "inst_claude=") == "true"
+		case strings.HasPrefix(line, "inst_opencode="):
+			st.OpenCodeInstalled = strings.TrimPrefix(line, "inst_opencode=") == "true"
 		case strings.HasPrefix(line, "login_claude="):
 			v := strings.TrimPrefix(line, "login_claude=") == "true"
 			st.ClaudeLoggedIn = &v
@@ -544,6 +552,8 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		}
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 func boolInt(b bool) int {
 	if b {

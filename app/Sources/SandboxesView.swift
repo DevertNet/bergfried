@@ -50,24 +50,29 @@ struct SandboxesView: View {
             if model.sandboxes.isEmpty && creating.isEmpty {
                 ContentUnavailableView("No sandboxes", systemImage: "shield", description: Text("Create an isolated VM with \"New sandbox\"."))
             } else {
-                List {
-                    ForEach(creating, id: \.name) { c in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 10) {
-                                ProgressView().controlSize(.small)
-                                Text(c.name).font(.headline)
-                                Text(c.step).foregroundStyle(.secondary).lineLimit(1)
-                                Spacer()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(creating, id: \.name) { c in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 10) {
+                                    ProgressView().controlSize(.small)
+                                    Text(c.name).font(.headline)
+                                    Text(c.step).foregroundStyle(.secondary).lineLimit(1)
+                                    Spacer()
+                                }
+                                JobOutput(key: "create-\(c.name)")
                             }
-                            JobOutput(key: "create-\(c.name)")
-                        }.padding(.vertical, 10).frame(minHeight: 44).fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(model.sandboxes) { s in
-                        SandboxRow(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
+                        }
+                        ForEach(model.sandboxes.sorted { $0.name < $1.name }) { s in
+                            SandboxCard(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
+                        }
+                    }.padding(16)
                 }
-                .transaction { $0.animation = nil }   // rows should not animate in when they appear (it looked cut off at the top)
+                .transaction { $0.animation = nil }
             }
         }
         .toolbar { Button { showCreate = true } label: { Label("New sandbox", systemImage: "plus") } }
@@ -92,7 +97,7 @@ struct SandboxesView: View {
     }
 }
 
-struct SandboxRow: View {
+struct SandboxCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
     let addAgent: () -> Void
@@ -103,78 +108,105 @@ struct SandboxRow: View {
     var busy: String? { model.running.first(where: { $0.key.hasSuffix(s.name) })?.value }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
-                Text(s.name).font(.headline)
-                Text(LocalizedStringKey(s.status)).foregroundStyle(.secondary)
-                if s.running { loginBadges }
-                Spacer()
-                if let b = busy { ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary) }
-                else { actions }
-            }
-            HStack(spacing: 14) {
-                Label("\(s.cpus) CPU", systemImage: "cpu")
-                Label(formatBytes(s.memory) + " RAM", systemImage: "memorychip")
-                diskLabel
-                if s.activeGrants > 0 { Label(L("%lld SSH grant(s)", s.activeGrants), systemImage: "key.fill").foregroundStyle(.orange) }
-                if s.pendingRequests > 0 { Label(L("%lld open", s.pendingRequests), systemImage: "bell.fill").foregroundStyle(.red) }
-                Text(L("Template r%lld", s.templateVersion))
-            }.font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            meta
             if let k = model.running.keys.first(where: { $0.hasSuffix(s.name) }) { JobOutput(key: k) }
-            if s.probeError != nil, s.running { Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary) }
-            if !s.agents.isEmpty {
-                // Agents belong to the sandbox: indented, with a guide line and their own panel.
-                HStack(alignment: .top, spacing: 0) {
-                    RoundedRectangle(cornerRadius: 1).fill(Color.accentColor.opacity(0.5)).frame(width: 3).padding(.leading, 4)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Label(L("Agents (%lld)", s.agents.count), systemImage: "person.2.fill").font(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 4)
-                        ForEach(Array(s.agents.enumerated()), id: \.element.name) { i, a in
-                            if i > 0 { Divider() }
-                            AgentRow(s: s, a: a)
-                        }
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-                    .padding(.leading, 10)
-                }
-                .padding(.leading, 22).padding(.top, 4)
+            if s.probeError != nil, s.running {
+                Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary)
             }
-        }.padding(.vertical, 4)
+            Divider()
+            runtimeSection
+            Divider()
+            agentsSection
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
         .sheet(isPresented: Binding(get: { pairLink != nil }, set: { if !$0 { pairLink = nil } })) {
             PairSheet(link: pairLink ?? "")
         }
     }
 
-    @ViewBuilder var loginBadges: some View {
-        if s.usesClaude {
-            loginBadge(runtime: "claude", name: "Claude", loggedIn: s.claudeLoggedIn)
-        }
-        if s.usesOpenCode {
-            loginBadge(runtime: "opencode", name: "OpenCode", loggedIn: s.opencodeLoggedIn)
+    var header: some View {
+        HStack(spacing: 10) {
+            Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
+            Text(s.name).font(.title3.bold())
+            Text(LocalizedStringKey(s.status)).font(.callout).foregroundStyle(.secondary)
+            Spacer()
+            if let b = busy {
+                ProgressView().controlSize(.small)
+                Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                actions
+            }
         }
     }
 
-    @ViewBuilder func loginBadge(runtime: String, name: String, loggedIn: Bool?) -> some View {
-        switch loggedIn {
-        case .some(true):
-            Label(L("%@ signed in", name), systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
-        case .some(false):
-            Button { report(Terminal.login(vm: s.vm, runtime: runtime)) } label: { Label(L("%@ not signed in – sign in now", name), systemImage: "person.crop.circle.badge.exclamationmark") }
-                .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
-        default:
-            Label(L("Checking %@ status …", name), systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
+    var meta: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) {
+                Text(s.vm).font(.caption.monospaced())
+                Label("\(s.cpus) CPU", systemImage: "cpu")
+                Label(formatBytes(s.memory) + " RAM", systemImage: "memorychip")
+                diskLabel
+                Text(L("Template r%lld", s.templateVersion))
+            }
+            if s.activeGrants > 0 || s.pendingRequests > 0 {
+                HStack(spacing: 14) {
+                    if s.activeGrants > 0 { Label(L("%lld SSH grant(s)", s.activeGrants), systemImage: "key.fill").foregroundStyle(.orange) }
+                    if s.pendingRequests > 0 { Label(L("%lld open", s.pendingRequests), systemImage: "bell.fill").foregroundStyle(.red) }
+                }
+            }
+        }.font(.caption).foregroundStyle(.secondary)
+    }
+
+    var runtimeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("Runtimes").uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                RuntimeStatusCard(name: "Claude Code", letter: "C", tint: .purple,
+                                  installed: s.claudeInstalled, signedIn: s.claudeLoggedIn,
+                                  used: s.usesClaude, running: s.running, note: nil,
+                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "claude")) })
+                RuntimeStatusCard(name: "OpenCode", letter: "O", tint: .blue,
+                                  installed: s.opencodeInstalled, signedIn: s.opencodeLoggedIn,
+                                  used: s.usesOpenCode, running: s.running,
+                                  note: L("installs with the first OpenCode agent"),
+                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) })
+            }
+        }
+    }
+
+    var agentsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(L("Agents").uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
+                Text("\(s.agents.count)").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
+            if s.agents.isEmpty {
+                Text("No agents yet").font(.caption).foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 10) {
+                    Text(L("Agent").uppercased()).frame(width: 130, alignment: .leading)
+                    Text(L("Runtime").uppercased()).frame(width: 100, alignment: .leading)
+                    Text(L("Status").uppercased()).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(L("Worktree").uppercased()).frame(width: 170, alignment: .leading)
+                    Text(L("Actions").uppercased()).frame(width: 220, alignment: .trailing)
+                }.font(.caption2).foregroundStyle(.secondary)
+                ForEach(Array(s.agents.enumerated()), id: \.element.name) { i, a in
+                    if i > 0 { Divider() }
+                    AgentRow(s: s, a: a)
+                }
+            }
         }
     }
 
     @ViewBuilder var diskLabel: some View {
         let host = formatBytes(s.hostDiskUsed)
-        if s.guestDiskSize > 0 {
-            Label(L("Disk: %@ used (in the VM %@ of %@)", host, formatBytes(s.guestDiskUsed), formatBytes(s.guestDiskSize)), systemImage: "internaldrive")
-                .help(L("On the Mac the VM disk uses %@ (sparse, at most %@). Inside the VM %@ are used.", host, formatBytes(s.disk), formatBytes(s.guestDiskUsed)))
-        } else {
-            Label(L("Disk: %@ used (max. %@)", host, formatBytes(s.disk)), systemImage: "internaldrive")
-        }
+        Label(L("Disk %@", host), systemImage: "internaldrive")
+            .help(L("On the Mac the VM disk uses %@ (sparse, at most %@). Inside the VM %@ are used.", host, formatBytes(s.disk), formatBytes(s.guestDiskUsed)))
     }
 
     @ViewBuilder var actions: some View {
@@ -214,6 +246,70 @@ struct SandboxRow: View {
     }
 
     func report(_ e: String?) { if let e { model.setBanner(e) } }
+}
+
+struct RuntimeStatusCard: View {
+    let name: String
+    let letter: String
+    let tint: Color
+    let installed: Bool?
+    let signedIn: Bool?
+    let used: Bool
+    let running: Bool
+    let note: String?
+    let signIn: () -> Void
+
+    var status: (String, Color) {
+        if !running { return (L("Not checked – start the sandbox"), Color.secondary) }
+        switch installed {
+        case .some(false):
+            return (L("not installed"), Color.secondary)
+        case .some(true):
+            if !used { return (L("installed · no agent of this runtime"), Color.secondary) }
+            switch signedIn {
+            case .some(true): return (L("installed · signed in"), .green)
+            case .some(false): return (L("installed · not signed in"), .orange)
+            default: return (L("installed · status unknown"), Color.secondary)
+            }
+        default:
+            return (L("checking …"), Color.secondary)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.12)).frame(width: 34, height: 34)
+                Text(letter).font(.headline).foregroundStyle(tint)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.callout.weight(.semibold))
+                Text(status.0).font(.caption).foregroundStyle(status.1)
+                if let note, installed == false, running {
+                    Text(note).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 4)
+            if running, installed == true, used, signedIn == false {
+                Button("Sign in", action: signIn).controlSize(.small)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
+    }
+}
+
+struct RuntimeChip: View {
+    let isOpenCode: Bool
+    var body: some View {
+        Text(isOpenCode ? "OpenCode" : "Claude")
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .foregroundStyle(isOpenCode ? Color.blue : Color.purple)
+            .background((isOpenCode ? Color.blue : Color.purple).opacity(0.12), in: Capsule())
+    }
 }
 
 struct PairSheet: View {
@@ -256,6 +352,7 @@ struct AgentRow: View {
     @Local private var forceMsg: String?
 
     var state: (color: Color, text: String) {
+        if !s.running { return (.gray, L("Stopped")) }
         if a.isOpenCode {
             if !a.window && sandboxBusy { return (.orange, L("starting …")) }
             if s.opencodeLoggedIn == false { return (.orange, L("waiting for OpenCode login")) }
@@ -280,22 +377,34 @@ struct AgentRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(state.color).frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(a.name).font(.callout.bold())
-                    Text(a.isOpenCode ? "OpenCode" : "Claude").font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
-                }
-                Text(state.text).font(.caption).foregroundStyle(.secondary)
-            }
-            Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
-            Spacer()
-            if let b = busy {
-                ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary)
-            } else {
+            HStack(spacing: 6) {
+                Circle().fill(state.color).frame(width: 8, height: 8)
+                Text(a.name).font(.callout.bold()).lineLimit(1)
+            }.frame(width: 130, alignment: .leading)
+            RuntimeChip(isOpenCode: a.isOpenCode).frame(width: 100, alignment: .leading)
+            Text(state.text).font(.caption).foregroundStyle(state.color)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(state.text)
+            Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+                .frame(width: 170, alignment: .leading)
+            agentActions.frame(width: 220, alignment: .trailing)
+        }
+        .padding(.vertical, 6)
+        .sheet(isPresented: $removeOpen) { RemoveAgentSheet(s: s, a: a, onForce: { msg in forceMsg = msg }) }
+        .alert("Unsaved work in the agent directory", isPresented: Binding(get: { forceMsg != nil }, set: { if !$0 { forceMsg = nil } })) {
+            Button("Delete anyway", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(forceMsg ?? "") }
+    }
+
+    @ViewBuilder var agentActions: some View {
+        if let b = busy {
+            ProgressView().controlSize(.small)
+            Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        } else {
+            HStack(spacing: 8) {
                 if !a.isOpenCode, a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
                     Button { NSWorkspace.shared.open(url) } label: { Label("Open RC link", systemImage: "arrow.up.right.square") }.controlSize(.small)
                 }
@@ -320,19 +429,12 @@ struct AgentRow: View {
                     Button("Restart") {
                         Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", L("restarting …"), "/v1/agents/restart", AgentBody(sandbox: s.name, agent: a.name)) { model.setBanner(e) } }
                     }.disabled(!s.running)
-
                     Divider()
                     Button("Remove …", role: .destructive) { removeOpen = true }.disabled(!s.running)
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
             }
         }
-        .padding(.vertical, 5)
-        .sheet(isPresented: $removeOpen) { RemoveAgentSheet(s: s, a: a, onForce: { msg in forceMsg = msg }) }
-        .alert("Unsaved work in the agent directory", isPresented: Binding(get: { forceMsg != nil }, set: { if !$0 { forceMsg = nil } })) {
-            Button("Delete anyway", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text(forceMsg ?? "") }
     }
 
     func remove(deleteDir: Bool, force: Bool) async {

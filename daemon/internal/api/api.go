@@ -141,26 +141,28 @@ type agentJ struct {
 }
 
 type sandboxJ struct {
-	Name             string   `json:"name"`
-	VM               string   `json:"vm"`
-	Status           string   `json:"status"`
-	Repo             string   `json:"repo"`
-	TemplateVersion  int      `json:"template_version"`
-	Created          int64    `json:"created_unix"`
-	CPUs             int      `json:"cpus"`
-	Memory           int64    `json:"memory"`
-	Disk             int64    `json:"disk"`
-	Agents           []agentJ `json:"agents"`
-	ClaudeLoggedIn   *bool    `json:"claude_logged_in"`
-	OpenCodeLoggedIn *bool    `json:"opencode_logged_in"`
-	OpenCodePort     int      `json:"opencode_port"`
-	HostDiskUsed     int64    `json:"host_disk_used"`
-	GuestDiskUsed    int64    `json:"guest_disk_used"`
-	GuestDiskSize    int64    `json:"guest_disk_size"`
-	ProbeError       string   `json:"probe_error,omitempty"`
-	ActiveGrants     int      `json:"active_grants"`
-	Pending          int      `json:"pending_requests"`
-	HasToken         bool     `json:"has_github_token"`
+	Name              string   `json:"name"`
+	VM                string   `json:"vm"`
+	Status            string   `json:"status"`
+	Repo              string   `json:"repo"`
+	TemplateVersion   int      `json:"template_version"`
+	Created           int64    `json:"created_unix"`
+	CPUs              int      `json:"cpus"`
+	Memory            int64    `json:"memory"`
+	Disk              int64    `json:"disk"`
+	Agents            []agentJ `json:"agents"`
+	ClaudeLoggedIn    *bool    `json:"claude_logged_in"`
+	OpenCodeLoggedIn  *bool    `json:"opencode_logged_in"`
+	ClaudeInstalled   *bool    `json:"claude_installed"`
+	OpenCodeInstalled *bool    `json:"opencode_installed"`
+	OpenCodePort      int      `json:"opencode_port"`
+	HostDiskUsed      int64    `json:"host_disk_used"`
+	GuestDiskUsed     int64    `json:"guest_disk_used"`
+	GuestDiskSize     int64    `json:"guest_disk_size"`
+	ProbeError        string   `json:"probe_error,omitempty"`
+	ActiveGrants      int      `json:"active_grants"`
+	Pending           int      `json:"pending_requests"`
+	HasToken          bool     `json:"has_github_token"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -323,6 +325,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		}
 		if havePS {
 			j.ClaudeLoggedIn, j.OpenCodeLoggedIn = ps.ClaudeLoggedIn, ps.OpenCodeLoggedIn
+			j.ClaudeInstalled, j.OpenCodeInstalled = boolPtr(ps.ClaudeInstalled), boolPtr(ps.OpenCodeInstalled)
 			j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.GuestUsed, ps.GuestSize, ps.Err
 		}
 		j.HostDiskUsed = hostDiskUsed(x.VM)

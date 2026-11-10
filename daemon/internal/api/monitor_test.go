@@ -76,8 +76,6 @@ func TestStableMixedRuntimes(t *testing.T) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestDecideRC(t *testing.T) {
 	idle := AgentState{Window: true, Running: true, Idle: true}
 	busy := AgentState{Window: true, Running: true}
