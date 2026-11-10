@@ -81,6 +81,8 @@ struct SandboxRow: View {
     let s: SandboxInfo
     let addAgent: () -> Void
     let delete: () -> Void
+    @Local private var pairLink: String? = nil
+    @Local private var pairing = false
 
     var busy: String? { model.running.first(where: { $0.key.hasSuffix(s.name) })?.value }
 
@@ -90,7 +92,7 @@ struct SandboxRow: View {
                 Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
                 Text(s.name).font(.headline)
                 Text(LocalizedStringKey(s.status)).foregroundStyle(.secondary)
-                if s.running { loginBadge }
+                if s.running { loginBadges }
                 Spacer()
                 if let b = busy { ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary) }
                 else { actions }
@@ -123,17 +125,29 @@ struct SandboxRow: View {
                 .padding(.leading, 22).padding(.top, 4)
             }
         }.padding(.vertical, 4)
+        .sheet(isPresented: Binding(get: { pairLink != nil }, set: { if !$0 { pairLink = nil } })) {
+            PairSheet(link: pairLink ?? "")
+        }
     }
 
-    @ViewBuilder var loginBadge: some View {
-        switch s.claudeLoggedIn {
+    @ViewBuilder var loginBadges: some View {
+        if s.usesClaude {
+            loginBadge(runtime: "claude", name: "Claude", loggedIn: s.claudeLoggedIn)
+        }
+        if s.usesOpenCode {
+            loginBadge(runtime: "opencode", name: "OpenCode", loggedIn: s.opencodeLoggedIn)
+        }
+    }
+
+    @ViewBuilder func loginBadge(runtime: String, name: String, loggedIn: Bool?) -> some View {
+        switch loggedIn {
         case .some(true):
-            Label("Claude logged in", systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
+            Label(L("%@ signed in", name), systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
         case .some(false):
-            Button { report(Terminal.login(vm: s.vm)) } label: { Label("Claude not logged in – log in now", systemImage: "person.crop.circle.badge.exclamationmark") }
+            Button { report(Terminal.login(vm: s.vm, runtime: runtime)) } label: { Label(L("%@ not signed in – sign in now", name), systemImage: "person.crop.circle.badge.exclamationmark") }
                 .buttonStyle(.borderedProminent).tint(.orange).controlSize(.small)
         default:
-            Label("Checking Claude status …", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
+            Label(L("Checking %@ status …", name), systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -157,7 +171,14 @@ struct SandboxRow: View {
                     if let c = Terminal.sshCommand(vm: s.vm) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
                 }
                 Divider()
-                Button("Claude login (once per VM)") { report(Terminal.login(vm: s.vm)) }
+                if s.usesClaude {
+                    Button("Sign in to Claude …") { report(Terminal.login(vm: s.vm, runtime: "claude")) }
+                }
+                if s.usesOpenCode {
+                    Button("Sign in to OpenCode …") { report(Terminal.login(vm: s.vm, runtime: "opencode")) }
+                    Button(pairing ? L("Preparing the connection …") : L("Connect desktop app …")) { pair() }
+                        .disabled(pairing)
+                }
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
             Button("Start") { Task { report(await model.runJob("start-\(s.name)", L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
@@ -165,7 +186,50 @@ struct SandboxRow: View {
         Button(role: .destructive, action: delete) { Image(systemName: "trash") }
     }
 
+    func pair() {
+        pairing = true
+        Task {
+            do {
+                let r = try await model.api.send("POST", "/v1/sandboxes/pair", NameBody(name: s.name), as: PairLink.self)
+                pairLink = r.url
+            } catch { model.setBanner(error.localizedDescription) }
+            pairing = false
+        }
+    }
+
     func report(_ e: String?) { if let e { model.setBanner(e) } }
+}
+
+struct PairSheet: View {
+    let link: String
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Connect the OpenCode desktop app").font(.title3.bold())
+            Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects.")
+                .font(.callout).fixedSize(horizontal: false, vertical: true)
+            Text(link)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .lineLimit(4)
+                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            Text("The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Copy link") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(link, forType: .string)
+                }
+                Button("Open in browser") {
+                    if let u = URL(string: link) { NSWorkspace.shared.open(u) }
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(20).frame(width: 560)
+    }
 }
 
 struct AgentRow: View {
@@ -176,6 +240,14 @@ struct AgentRow: View {
     @Local private var forceMsg: String?
 
     var state: (color: Color, text: String) {
+        if a.isOpenCode {
+            if !a.window && sandboxBusy { return (.orange, L("starting …")) }
+            if s.opencodeLoggedIn == false { return (.orange, L("waiting for OpenCode login")) }
+            if a.rcAction == "working" { return (.blue, L("OpenCode is working …")) }
+            if !a.window { return (.gray, L("no tmux window")) }
+            if a.running == false { return (.orange, L("OpenCode is not running – please restart")) }
+            return (.green, L("OpenCode runs"))
+        }
         if a.rc { return (.green, L("Remote Control active")) }
         if !a.window && sandboxBusy { return (.orange, L("starting …")) }
         if s.claudeLoggedIn == false { return (.orange, L("waiting for Claude login")) }
@@ -194,7 +266,13 @@ struct AgentRow: View {
         HStack(spacing: 10) {
             Circle().fill(state.color).frame(width: 9, height: 9)
             VStack(alignment: .leading, spacing: 1) {
-                Text(a.name).font(.callout.bold())
+                HStack(spacing: 5) {
+                    Text(a.name).font(.callout.bold())
+                    Text(a.isOpenCode ? "OpenCode" : "Claude").font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                }
                 Text(state.text).font(.caption).foregroundStyle(.secondary)
             }
             Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
@@ -202,24 +280,26 @@ struct AgentRow: View {
             if let b = busy {
                 ProgressView().controlSize(.small); Text(b).font(.caption).foregroundStyle(.secondary)
             } else {
-                if a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
+                if !a.isOpenCode, a.rc, let url = URL(string: a.rcUrl), !a.rcUrl.isEmpty {
                     Button { NSWorkspace.shared.open(url) } label: { Label("Open RC link", systemImage: "arrow.up.right.square") }.controlSize(.small)
                 }
-                Button { if let e = Terminal.attach(vm: s.vm, agent: a.name) { model.setBanner(e) } } label: { Label(L("%@: Claude window", Terminal.appName), systemImage: "terminal") }
+                Button { if let e = Terminal.attach(vm: s.vm, agent: a.name) { model.setBanner(e) } } label: { Label(L("%@: agent window", Terminal.appName), systemImage: "terminal") }
                     .controlSize(.small).disabled(!s.running || !a.window)
                     .help(L("Opens this agent's tmux window in %@", Terminal.appName))
                 Menu {
-                    if a.rc, !a.rcUrl.isEmpty {
-                        Button("Copy link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
-                        Divider()
-                    }
-                    if !a.rc {
-                        Button("Remote Control is running – mark as active") {
-                            Task {
-                                do { try await model.api.post("/v1/agents/rc-ok", AgentBody(sandbox: s.name, agent: a.name)); await model.refresh() }
-                                catch { model.setBanner(error.localizedDescription) }
-                            }
-                        }.disabled(!s.running || !a.window)
+                    if !a.isOpenCode {
+                        if a.rc, !a.rcUrl.isEmpty {
+                            Button("Copy link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
+                            Divider()
+                        }
+                        if !a.rc {
+                            Button("Remote Control is running – mark as active") {
+                                Task {
+                                    do { try await model.api.post("/v1/agents/rc-ok", AgentBody(sandbox: s.name, agent: a.name)); await model.refresh() }
+                                    catch { model.setBanner(error.localizedDescription) }
+                                }
+                            }.disabled(!s.running || !a.window)
+                        }
                     }
                     Button("Restart") {
                         Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", L("restarting …"), "/v1/agents/restart", AgentBody(sandbox: s.name, agent: a.name)) { model.setBanner(e) } }
@@ -256,7 +336,7 @@ struct RemoveAgentSheet: View {
     var body: some View {
         Form {
             Text(L("Remove agent \"%@\"", a.name)).font(.headline)
-            Text("The tmux window with Claude (and its Remote Control session) is terminated.").font(.callout)
+            Text("The tmux window with the agent is terminated (Claude: together with its Remote Control session).").font(.callout)
             Picker("", selection: $deleteDir) {
                 Text(L("Terminate the agent only – the directory %@ is kept", a.worktree)).tag(false)
                 if a.name != "main" { Text(L("Terminate the agent and delete its directory (git worktree including branch agent/%@, Docker stack %@-%@)", a.name, s.name, a.name)).tag(true) }
@@ -284,6 +364,7 @@ struct CreateSandboxSheet: View {
     @Environment(\.dismiss) var dismiss
     @Local private var name = ""
     @Local private var source = 0            // 0 empty, 1 git repo, 2 folder
+    @Local private var runtime = "claude"    // runtime of the first agent "main"
     @Local private var repo = ""
     @Local private var token = ""
     @Local private var link = ""
@@ -307,6 +388,14 @@ struct CreateSandboxSheet: View {
                 Text("Name").font(.callout.bold())
                 TextField("e.g. shop", text: $name).textFieldStyle(.roundedBorder)
                 Text("a–z, 0–9 and -, at most 24 characters").font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Agent").font(.callout.bold())
+                Picker("Agent", selection: $runtime) {
+                    Text("Claude Code").tag("claude")
+                    Text("OpenCode").tag("opencode")
+                }.pickerStyle(.segmented).labelsHidden()
+                Text("The first agent (\"main\"). More agents can use the other runtime later.").font(.caption).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text("Code source").font(.callout.bold())
@@ -348,7 +437,7 @@ struct CreateSandboxSheet: View {
                 Button("Create") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "", runtime: runtime)) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
@@ -379,22 +468,32 @@ struct AddAgentSheet: View {
     @Environment(\.dismiss) var dismiss
     let sandbox: SandboxInfo
     @Local private var name = ""
+    @Local private var runtime = "claude"
     var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil }
 
     var body: some View {
         Form {
             Text(L("New agent in \"%@\"", sandbox.name)).font(.headline)
             TextField("Agent name", text: $name)
-            Text("Each agent gets a tmux window, a Remote Control session and a git worktree.").font(.caption).foregroundStyle(.secondary)
+            Picker("Agent", selection: $runtime) {
+                Text("Claude Code").tag("claude")
+                Text("OpenCode").tag("opencode")
+            }.pickerStyle(.segmented)
+            Text("Each agent gets a tmux window, its own git worktree and uses the selected runtime. Claude and OpenCode can run side by side.").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Add") {
-                    let n = name, s = sandbox.name
+                    let n = name, s = sandbox.name, rt = runtime
                     dismiss()
-                    Task { if let e = await model.runJob("agent-\(s)", L("Agent %@ is starting …", n), "/v1/agents/add", AgentBody(sandbox: s, agent: n)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("agent-\(s)", L("Agent %@ is starting …", n), "/v1/agents/add", AgentBody(sandbox: s, agent: n, runtime: rt)) { model.setBanner(e) } }
                 }.disabled(!valid).keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 440)
+        }.padding(20).frame(width: 480)
+            .onAppear {
+                if let main = sandbox.agents.first(where: { $0.name == "main" }), let rt = main.runtime {
+                    runtime = rt
+                }
+            }
     }
 }

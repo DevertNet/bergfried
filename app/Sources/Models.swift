@@ -31,10 +31,13 @@ struct UpdateInfo: Codable {
 struct AgentInfo: Codable, Hashable {
     var name: String
     var worktree: String
+    var runtime: String?
     var window: Bool
+    var running: Bool?
     var rc: Bool
     var rcUrl: String
-    var rcAction: String   // "", "activating", "failed"
+    var rcAction: String   // "", "activating", "failed", "waiting", "working"
+    var isOpenCode: Bool { runtime == "opencode" }
 }
 
 struct SandboxInfo: Codable, Identifiable, Hashable {
@@ -51,6 +54,8 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var activeGrants: Int
     var pendingRequests: Int
     var claudeLoggedIn: Bool?
+    var opencodeLoggedIn: Bool?
+    var opencodePort: Int?
     var hostDiskUsed: Int64
     var guestDiskUsed: Int64
     var guestDiskSize: Int64
@@ -58,6 +63,8 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var hasGithubToken: Bool
     var id: String { name }
     var running: Bool { status == "Running" }
+    var usesClaude: Bool { agents.contains { !$0.isOpenCode } }
+    var usesOpenCode: Bool { agents.contains { $0.isOpenCode } }
 }
 
 struct SSHInfo: Codable, Hashable {
@@ -151,7 +158,7 @@ struct SSHDecideBody: Encodable {
 struct IDBody: Encodable { var id: Int64 }
 struct ChannelBody: Encodable { var channel: String }
 struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
-struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = "" }
+struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = ""; var runtime: String = "claude" }
 struct PathBody: Encodable { var path: String }
 struct ImportPreview: Codable { var files: Int64; var bytes: Int64 }
 struct YAMLBody: Encodable { var yaml: String }
@@ -163,8 +170,9 @@ struct TemplateInfo: Codable {
     var path: String
     var warnings: [String]
 }
-struct AgentBody: Encodable { var sandbox: String; var agent: String }
+struct AgentBody: Encodable { var sandbox: String; var agent: String; var runtime: String = "claude" }
 struct AgentRemoveBody: Encodable { var sandbox: String; var agent: String; var deleteDir: Bool; var force: Bool }
+struct PairLink: Codable { var url: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 

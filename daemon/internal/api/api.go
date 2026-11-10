@@ -132,31 +132,35 @@ func decode(r *http.Request, v any) error {
 type agentJ struct {
 	Name     string `json:"name"`
 	Worktree string `json:"worktree"`
+	Runtime  string `json:"runtime"`
 	Window   bool   `json:"window"`
+	Running  bool   `json:"running"`
 	RC       bool   `json:"rc"`
 	RCURL    string `json:"rc_url"`
-	RCAction string `json:"rc_action"` // "", "activating", "failed"
+	RCAction string `json:"rc_action"` // "", "activating", "failed", "waiting", "working" (OpenCode)
 }
 
 type sandboxJ struct {
-	Name            string   `json:"name"`
-	VM              string   `json:"vm"`
-	Status          string   `json:"status"`
-	Repo            string   `json:"repo"`
-	TemplateVersion int      `json:"template_version"`
-	Created         int64    `json:"created_unix"`
-	CPUs            int      `json:"cpus"`
-	Memory          int64    `json:"memory"`
-	Disk            int64    `json:"disk"`
-	Agents          []agentJ `json:"agents"`
-	ClaudeLoggedIn  *bool    `json:"claude_logged_in"`
-	HostDiskUsed    int64    `json:"host_disk_used"`
-	GuestDiskUsed   int64    `json:"guest_disk_used"`
-	GuestDiskSize   int64    `json:"guest_disk_size"`
-	ProbeError      string   `json:"probe_error,omitempty"`
-	ActiveGrants    int      `json:"active_grants"`
-	Pending         int      `json:"pending_requests"`
-	HasToken        bool     `json:"has_github_token"`
+	Name             string   `json:"name"`
+	VM               string   `json:"vm"`
+	Status           string   `json:"status"`
+	Repo             string   `json:"repo"`
+	TemplateVersion  int      `json:"template_version"`
+	Created          int64    `json:"created_unix"`
+	CPUs             int      `json:"cpus"`
+	Memory           int64    `json:"memory"`
+	Disk             int64    `json:"disk"`
+	Agents           []agentJ `json:"agents"`
+	ClaudeLoggedIn   *bool    `json:"claude_logged_in"`
+	OpenCodeLoggedIn *bool    `json:"opencode_logged_in"`
+	OpenCodePort     int      `json:"opencode_port"`
+	HostDiskUsed     int64    `json:"host_disk_used"`
+	GuestDiskUsed    int64    `json:"guest_disk_used"`
+	GuestDiskSize    int64    `json:"guest_disk_size"`
+	ProbeError       string   `json:"probe_error,omitempty"`
+	ActiveGrants     int      `json:"active_grants"`
+	Pending          int      `json:"pending_requests"`
+	HasToken         bool     `json:"has_github_token"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -211,6 +215,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/start", s.simple("sandbox.start", func(ctx context.Context, n string, _ bool) error { return s.M.Start(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
+	mux.HandleFunc("POST /v1/sandboxes/pair", s.pair)
 	mux.HandleFunc("POST /v1/agents/add", s.agentAdd)
 	mux.HandleFunc("POST /v1/agents/restart", s.agentRestart)
 	mux.HandleFunc("POST /v1/agents/remove", s.agentRemove)
@@ -317,16 +322,19 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 			ps, havePS = s.Mon.Get(x.Name)
 		}
 		if havePS {
-			j.ClaudeLoggedIn, j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.LoggedIn, ps.GuestUsed, ps.GuestSize, ps.Err
+			j.ClaudeLoggedIn, j.OpenCodeLoggedIn = ps.ClaudeLoggedIn, ps.OpenCodeLoggedIn
+			j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.GuestUsed, ps.GuestSize, ps.Err
 		}
 		j.HostDiskUsed = hostDiskUsed(x.VM)
+		j.OpenCodePort = x.OpenCodePort
 		if s.GH != nil {
 			j.HasToken = s.GH.Tokens.Has(x.Name)
 		}
 		ags, _ := s.M.S.ListAgents(x.Name)
 		for _, a := range ags {
 			as := ps.Agents[a.Name]
-			aj := agentJ{Name: a.Name, Worktree: a.Worktree, Window: as.Window, RC: as.RC, RCURL: as.URL, RCAction: as.Action}
+			rt, _ := sandbox.ParseRuntime(a.Runtime)
+			aj := agentJ{Name: a.Name, Worktree: a.Worktree, Runtime: string(rt), Window: as.Window, Running: as.Running, RC: as.RC, RCURL: as.URL, RCAction: as.Action}
 			j.Agents = append(j.Agents, aj)
 		}
 		for _, g := range grants {
@@ -352,6 +360,7 @@ type nameReq struct {
 	Token   string `json:"github_token"`
 	Sandbox string `json:"sandbox"`
 	Agent   string `json:"agent"`
+	Runtime string `json:"runtime"` // agent CLI: "claude" (default) or "opencode"
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -364,7 +373,31 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	writeJSON(w, 202, s.jobFor("sandbox.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token) }))
+	rt, err := sandbox.ParseRuntime(q.Runtime)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 202, s.jobFor("sandbox.create", q.Name, func(ctx context.Context) error { return s.M.Create(ctx, q.Name, q.Repo, q.Import, q.Token, rt) }))
+}
+
+// pair prepares the local OpenCode server and returns a one-time link for the desktop app.
+func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
+	var q nameReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if sandbox.ValidName(q.Name) != nil {
+		fail(w, 400, fmt.Errorf("invalid name"))
+		return
+	}
+	link, err := s.M.PairOpenCode(r.Context(), q.Name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"url": link})
 }
 
 func (s *Server) simple(kind string, f func(context.Context, string, bool) error) http.HandlerFunc {
@@ -392,7 +425,12 @@ func (s *Server) agentAdd(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, fmt.Errorf("invalid name"))
 		return
 	}
-	writeJSON(w, 202, s.jobFor("agent.add", q.Sandbox, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Sandbox, q.Agent) }))
+	rt, err := sandbox.ParseRuntime(q.Runtime)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 202, s.jobFor("agent.add", q.Sandbox, func(ctx context.Context) error { return s.M.AgentAdd(ctx, q.Sandbox, q.Agent, rt) }))
 }
 
 func (s *Server) agentRestart(w http.ResponseWriter, r *http.Request) {

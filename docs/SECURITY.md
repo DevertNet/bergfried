@@ -41,6 +41,9 @@ Revoking happens on GitHub; Bergfried only deletes its own copies when the sandb
 The app can update itself from GitHub releases. **Releases are not signed**: whoever can publish a release in this repository can ship code that runs on your Mac.
 Releases are not technically gated: a push to `dev` or a tag `vX.Y.Z` publishes one. By decision the agent of the development sandbox publishes dev pre-releases on its own, but makes **stable releases only on the maintainer's explicit request** (rule in `CLAUDE.md`; `scripts/release.sh` and `scripts/pr.sh merge … main` refuse without `--user-approved`; this is a rule, not a barrier). A token of your own account cannot be separated from you by rulesets. Keep the **Deployments** and **Workflows** permissions out of sandbox tokens. See [UPDATES.md](UPDATES.md) and [design/develop-in-sandbox.md](design/develop-in-sandbox.md).
 
+## OpenCode desktop connection
+OpenCode agents are connected to the OpenCode desktop app with a **one-time pairing link** created by `opencode pair` (without `--remote`). The OpenCode server listens on a stable per-sandbox port on `0.0.0.0` **inside the VM**; Lima forwards it to `127.0.0.1` on the Mac. The link therefore only works on your Mac, not from the internet or the local network. It is valid for 5 minutes and can be used once; the authenticated session is stored for 30 days. Anyone with access to your Mac during those 5 minutes could use the link, so create it when you need it. The link grants control over all OpenCode sessions of that sandbox. `--remote` (internet exposure) is never used by Bergfried.
+
 ## Logs
 `~/.bergfried/daemon.log` and the app's Diagnostics pane contain error texts, paths and VM names, not tokens or file contents; check before pasting a log somewhere public. The log endpoint (`GET /v1/log`) is on the owner-only app socket and reads fixed files only.
 

@@ -73,6 +73,10 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Secret redaction:** names like `DB_PASSWORD` slipped past `\b` before "password" (after `_` there is no word boundary).
 - **OpenSSH protocol names** such as `session-bind@openssh.com` must never be touched by renames.
 - **Renaming "session" → "sandbox"** once broke exactly that; the fix and a test exist.
+- **OpenCode is not in apt:** `apt install opencode` does not exist in Debian. The daemon installs the pinned version user-locally with the official script (`~/.opencode/bin/opencode`); older VMs get it on demand when the first OpenCode agent is added.
+- **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_AGENT` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the agent from its working directory (`~/work/<agent>`) and only falls back to the environment variable.
+- **OpenCode desktop connection:** the server must listen on `0.0.0.0` with a stable per-sandbox port; Lima forwards ports bound to `0.0.0.0` to `127.0.0.1` on the Mac with the same number. Changing the port breaks the saved desktop connection, so it is stored in the database.
+- **OpenCode pairing is per VM**, not per agent: one link covers all OpenCode agents of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
 
 ## Remote Control detection (monitor)
 - The banner "/remote-control is active" appears at the **start** of the output and scrolls away. The monitor reads the whole tmux scrollback (`history-limit 20000`) and remembers active RC **per claude PID** (`stickyRC`): the same process still running means RC is active.

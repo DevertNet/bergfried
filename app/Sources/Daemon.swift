@@ -119,9 +119,10 @@ enum Terminal {
         return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(agent) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
     }
 
-    static func login(vm: String) -> String? {
+    static func login(vm: String, runtime: String = "claude") -> String? {
         guard checked(vm) else { return L("Invalid VM name") }
-        return openLine("\(limactl) shell \(vm) -- bash -lc 'claude auth login; echo; echo \"\(L("Done. The agents restart automatically (status in the app)."))\"'", waitKey: true)
+        let cmd = runtime == "opencode" ? "opencode auth login" : "claude auth login"
+        return openLine("\(limactl) shell \(vm) -- bash -lc '\(cmd); echo; echo \"\(L("Done. The agents of this runtime restart automatically (status in the app)."))\"'", waitKey: true)
     }
 
     /// SSH command for external tools (terminal, VS Code Remote-SSH): uses the ssh.config maintained by Lima.

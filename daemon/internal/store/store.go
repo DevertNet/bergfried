@@ -17,11 +17,13 @@ type Store struct{ DB *sql.DB }
 type Sandbox struct {
 	Name, VM, Repo  string
 	TemplateVersion int
+	OpenCodePort    int // stable local port for the OpenCode desktop connection (0 = not assigned)
 	Created         time.Time
 }
 
 type Agent struct {
 	Sandbox, Name, Worktree, ComposeProject string
+	Runtime                                 string // "claude" (default) or "opencode"
 	Created                                 time.Time
 }
 
@@ -88,13 +90,15 @@ func (s *Store) migrate() error {
 		// Migration of older DBs (column extra); the "duplicate column" error is expected.
 		_, _ = s.DB.Exec(`ALTER TABLE requests ADD COLUMN extra TEXT`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode_port INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE agents ADD COLUMN runtime TEXT NOT NULL DEFAULT 'claude'`)
 		// Leftovers of the former Mac-push concept (the token now lives in the VM, see docs/GITHUB.md).
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS git_pushes`)
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS ci_grants`)
 	}()
 	_, err := s.DB.Exec(`
-CREATE TABLE IF NOT EXISTS sandboxes(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS agents(sandbox TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(sandbox,name));
+CREATE TABLE IF NOT EXISTS sandboxes(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL, seeded INTEGER NOT NULL DEFAULT 0, opencode_port INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS agents(sandbox TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, runtime TEXT NOT NULL DEFAULT 'claude', PRIMARY KEY(sandbox,name));
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, agent TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
 CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, agent TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, sandbox TEXT, agent TEXT, detail TEXT);`)
@@ -102,13 +106,13 @@ CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGE
 }
 
 func (s *Store) AddSandbox(x Sandbox) error {
-	_, err := s.DB.Exec(`INSERT INTO sandboxes(name,vm,repo,template_version,created) VALUES(?,?,?,?,?)`, x.Name, x.VM, x.Repo, x.TemplateVersion, x.Created.Unix())
+	_, err := s.DB.Exec(`INSERT INTO sandboxes(name,vm,repo,template_version,created,opencode_port) VALUES(?,?,?,?,?,?)`, x.Name, x.VM, x.Repo, x.TemplateVersion, x.Created.Unix(), x.OpenCodePort)
 	return err
 }
 func (s *Store) GetSandbox(name string) (Sandbox, error) {
 	var x Sandbox
 	var c int64
-	err := s.DB.QueryRow(`SELECT name,vm,repo,template_version,created FROM sandboxes WHERE name=?`, name).Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c)
+	err := s.DB.QueryRow(`SELECT name,vm,repo,template_version,created,opencode_port FROM sandboxes WHERE name=?`, name).Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c, &x.OpenCodePort)
 	if err == sql.ErrNoRows {
 		return x, fmt.Errorf("sandbox %q does not exist", name)
 	}
@@ -116,7 +120,7 @@ func (s *Store) GetSandbox(name string) (Sandbox, error) {
 	return x, err
 }
 func (s *Store) ListSandboxes() ([]Sandbox, error) {
-	rows, err := s.DB.Query(`SELECT name,vm,repo,template_version,created FROM sandboxes ORDER BY name`)
+	rows, err := s.DB.Query(`SELECT name,vm,repo,template_version,created,opencode_port FROM sandboxes ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +129,7 @@ func (s *Store) ListSandboxes() ([]Sandbox, error) {
 	for rows.Next() {
 		var x Sandbox
 		var c int64
-		if err := rows.Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c); err != nil {
+		if err := rows.Scan(&x.Name, &x.VM, &x.Repo, &x.TemplateVersion, &c, &x.OpenCodePort); err != nil {
 			return nil, err
 		}
 		x.Created = time.Unix(c, 0)
@@ -140,12 +144,20 @@ func (s *Store) DeleteSandbox(name string) error {
 	_, err := s.DB.Exec(`DELETE FROM sandboxes WHERE name=?`, name)
 	return err
 }
+func (s *Store) SetOpenCodePort(name string, port int) error {
+	_, err := s.DB.Exec(`UPDATE sandboxes SET opencode_port=? WHERE name=?`, port, name)
+	return err
+}
 func (s *Store) AddAgent(a Agent) error {
-	_, err := s.DB.Exec(`INSERT OR REPLACE INTO agents(sandbox,name,worktree,compose_project,created) VALUES(?,?,?,?,?)`, a.Sandbox, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix())
+	r := a.Runtime
+	if r == "" {
+		r = "claude"
+	}
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO agents(sandbox,name,worktree,compose_project,created,runtime) VALUES(?,?,?,?,?,?)`, a.Sandbox, a.Name, a.Worktree, a.ComposeProject, a.Created.Unix(), r)
 	return err
 }
 func (s *Store) ListAgents(sandbox string) ([]Agent, error) {
-	rows, err := s.DB.Query(`SELECT sandbox,name,worktree,compose_project,created FROM agents WHERE sandbox=? ORDER BY name`, sandbox)
+	rows, err := s.DB.Query(`SELECT sandbox,name,worktree,compose_project,created,runtime FROM agents WHERE sandbox=? ORDER BY name`, sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +166,7 @@ func (s *Store) ListAgents(sandbox string) ([]Agent, error) {
 	for rows.Next() {
 		var a Agent
 		var c int64
-		if err := rows.Scan(&a.Sandbox, &a.Name, &a.Worktree, &a.ComposeProject, &c); err != nil {
+		if err := rows.Scan(&a.Sandbox, &a.Name, &a.Worktree, &a.ComposeProject, &c, &a.Runtime); err != nil {
 			return nil, err
 		}
 		a.Created = time.Unix(c, 0)

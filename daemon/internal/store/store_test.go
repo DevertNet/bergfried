@@ -104,3 +104,63 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeAndOpenCodePort(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.AddSandbox(Sandbox{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now(), OpenCodePort: 42123})
+	x, err := s.GetSandbox("a")
+	if err != nil || x.OpenCodePort != 42123 {
+		t.Fatalf("%+v %v", x, err)
+	}
+	if err := s.SetOpenCodePort("a", 42456); err != nil {
+		t.Fatal(err)
+	}
+	if x, _ := s.GetSandbox("a"); x.OpenCodePort != 42456 {
+		t.Fatalf("port not updated: %+v", x)
+	}
+	_ = s.AddAgent(Agent{Sandbox: "a", Name: "main", Worktree: "/w", ComposeProject: "a-main", Created: time.Now()})
+	_ = s.AddAgent(Agent{Sandbox: "a", Name: "oc", Worktree: "/o", ComposeProject: "a-oc", Runtime: "opencode", Created: time.Now()})
+	ags, _ := s.ListAgents("a")
+	if len(ags) != 2 || ags[0].Runtime != "claude" || ags[1].Runtime != "opencode" {
+		t.Fatalf("%+v", ags)
+	}
+}
+
+func TestMigrateAddsRuntimeAndPort(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d")
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An old database without the two new columns.
+	for _, q := range []string{
+		`DROP TABLE sandboxes`, `DROP TABLE agents`,
+		`CREATE TABLE sandboxes(name TEXT PRIMARY KEY, vm TEXT NOT NULL, repo TEXT, template_version INTEGER NOT NULL, created INTEGER NOT NULL, seeded INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE agents(sandbox TEXT NOT NULL, name TEXT NOT NULL, worktree TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(sandbox,name))`,
+		`INSERT INTO sandboxes(name,vm,repo,template_version,created,seeded) VALUES('alt','bergfried-alt','',1,1,0)`,
+		`INSERT INTO agents(sandbox,name,worktree,compose_project,created) VALUES('alt','main','/w','alt-main',1)`,
+	} {
+		if _, err := s.DB.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := s2.GetSandbox("alt")
+	if err != nil || x.OpenCodePort != 0 {
+		t.Fatalf("%+v %v", x, err)
+	}
+	ags, _ := s2.ListAgents("alt")
+	if len(ags) != 1 || ags[0].Runtime != "claude" {
+		t.Fatalf("old agent must default to claude: %+v", ags)
+	}
+	_ = s2.SetOpenCodePort("alt", 42123)
+	if x, _ := s2.GetSandbox("alt"); x.OpenCodePort != 42123 {
+		t.Fatal("column missing")
+	}
+}
