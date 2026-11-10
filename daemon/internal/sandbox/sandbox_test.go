@@ -276,3 +276,29 @@ func TestPairLinkPrefersLoopback(t *testing.T) {
 		t.Fatal("no link expected")
 	}
 }
+
+func TestWindowScriptUsesAgentAndSession(t *testing.T) {
+	for _, rt := range []Runtime{RuntimeClaude, RuntimeOpenCode} {
+		s := windowScript("shop", "api", rt)
+		for _, want := range []string{
+			"tmux new-session -d -s bf -n api",
+			"tmux new-window -t bf -n api",
+			"tmux send-keys -t bf:api ",
+			"COMPOSE_PROJECT_NAME=shop-api",
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("%s: %q missing in\n%s", rt, want, s)
+			}
+		}
+		hasTrust := strings.Contains(s, "hasTrustDialogAccepted")
+		if rt == RuntimeOpenCode && hasTrust {
+			t.Fatalf("OpenCode must not get Claude's trust dialog block:\n%s", s)
+		}
+		if rt == RuntimeClaude && !hasTrust {
+			t.Fatalf("Claude needs the trust block:\n%s", s)
+		}
+		if strings.Contains(s, "-n \n") {
+			t.Fatalf("empty window name:\n%s", s)
+		}
+	}
+}
