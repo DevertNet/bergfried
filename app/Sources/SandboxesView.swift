@@ -112,6 +112,8 @@ struct SandboxCard: View {
     let delete: () -> Void
     @Local private var pairLink: String? = nil
     @Local private var pairing = false
+    @Local private var showPairSheet = false
+    @Local private var pairError: String? = nil
 
     var busy: String? { model.running.first(where: { $0.key.hasSuffix(s.name) })?.value }
 
@@ -131,8 +133,8 @@ struct SandboxCard: View {
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
-        .sheet(isPresented: Binding(get: { pairLink != nil }, set: { if !$0 { pairLink = nil } })) {
-            PairSheet(link: pairLink ?? "")
+        .sheet(isPresented: $showPairSheet) {
+            PairSheet(link: pairLink, pairing: pairing, error: pairError, retry: { pair() })
         }
     }
 
@@ -182,7 +184,7 @@ struct SandboxCard: View {
                                   used: s.usesOpenCode, running: s.running,
                                   note: L("installs with the first OpenCode agent"),
                                   signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
-                                  connect: { pair() })
+                                  connect: { pair() }, connecting: pairing)
             }
         }
     }
@@ -244,12 +246,15 @@ struct SandboxCard: View {
     }
 
     func pair() {
+        pairLink = nil
+        pairError = nil
         pairing = true
+        showPairSheet = true
         Task {
             do {
                 let r = try await model.api.send("POST", "/v1/sandboxes/pair", NameBody(name: s.name), as: PairLink.self)
                 pairLink = r.url
-            } catch { model.setBanner(error.localizedDescription) }
+            } catch { pairError = error.localizedDescription }
             pairing = false
         }
     }
@@ -268,6 +273,7 @@ struct RuntimeStatusCard: View {
     let note: String?
     let signIn: () -> Void
     var connect: (() -> Void)? = nil
+    var connecting: Bool = false
 
     var status: (String, Color) {
         if !running { return (L("Not checked – start the sandbox"), Color.secondary) }
@@ -304,7 +310,11 @@ struct RuntimeStatusCard: View {
                 Button("Sign in", action: signIn).controlSize(.small)
             }
             if let connect, running, installed == true, used {
-                Button("Connect", action: connect).controlSize(.small)
+                if connecting {
+                    ProgressView().controlSize(.small).help(L("Preparing the connection …"))
+                } else {
+                    Button("Connect", action: connect).controlSize(.small)
+                }
             }
         }
         .padding(10)
@@ -326,38 +336,71 @@ struct RuntimeChip: View {
 }
 
 struct PairSheet: View {
-    let link: String
+    let link: String?
+    let pairing: Bool
+    let error: String?
+    let retry: () -> Void
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Connect the OpenCode desktop app").font(.title3.bold())
-            Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true)
-            Text(link)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .lineLimit(4)
-                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-            if let port = URL(string: link)?.port {
-                Text(L("Port %lld – this link belongs to this sandbox. A link on port 49374 is not from Bergfried; click Connect again.", port))
+            if pairing {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text(L("Preparing the connection …")).font(.callout)
+                }
+                Text("The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; running agent sessions continue.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Text("Use the link immediately and only once. If you want the desktop app, do not open it in the browser first.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("Copy link") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link, forType: .string)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
-                Button("Open in browser") {
-                    if let u = URL(string: link) { NSWorkspace.shared.open(u) }
+            } else if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red).font(.callout)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                HStack {
+                    Button("Try again", action: retry).buttonStyle(.borderedProminent)
+                    Spacer()
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            } else if let link {
+                Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects.")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Text(link)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .lineLimit(4)
+                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                if let port = URL(string: link)?.port {
+                    Text(L("Port %lld – this link belongs to this sandbox. A link on port 49374 is not from Bergfried; click Connect again.", port))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Use the link immediately and only once. If you want the desktop app, do not open it in the browser first.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Copy link") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(link, forType: .string)
+                    }
+                    Button("Open in browser") {
+                        if let u = URL(string: link) { NSWorkspace.shared.open(u) }
+                    }
+                    Spacer()
+                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                }
+            } else {
+                Text("No link received. Please try again.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("Try again", action: retry).buttonStyle(.borderedProminent)
+                    Spacer()
+                    Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
             }
         }.padding(20).frame(width: 560)
     }

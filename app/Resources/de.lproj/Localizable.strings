@@ -357,3 +357,7 @@
 
 "Jump to latest" = "Zum Neuesten springen";
 "Scroll to the newest output and follow it again" = "Zur neuesten Ausgabe scrollen und wieder folgen";
+
+"The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; running agent sessions continue." = "Der OpenCode-Dienst wird auf dem eigenen Port dieser Sandbox neu gestartet und ein Einmal-Link erzeugt. Das kann ein paar Sekunden dauern; laufende Agent-Sitzungen bleiben erhalten.";
+"Try again" = "Erneut versuchen";
+"No link received. Please try again." = "Kein Link erhalten. Bitte erneut versuchen.";
