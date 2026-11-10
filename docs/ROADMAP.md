@@ -16,13 +16,17 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] First end-to-end runs confirmed by the maintainer (2026-11-09): real GitHub with a fine-grained token, published release, in-app update via the dev channel, rollback, app UI
 - [x] VM image with `make`, `chromium` (headless), `gh`, `git-lfs`; agent hints for browser, apt and `gh`; unedited template updates are adopted automatically
 - [x] Index explanation before the first index build after an install or update (`index.Gate`); Diagnostics pane in the app
-- [x] OpenCode as a second agent runtime: per-agent runtime, Claude and OpenCode side by side, on-demand install in older VMs, OpenCode desktop app connection (one-time local link)
+- [x] OpenCode as a second agent runtime: per-agent runtime, Claude and OpenCode side by side, on-demand install in older VMs, OpenCode desktop app connection (one-time local link, dedicated port, visible Connect button)
+- [x] Sandbox overview as an alphabetical card list with runtime/install/sign-in state and an agent table; settings with a secondary sidebar and cards
+- [x] Update checks show the download size; base-build output follows new lines but pauses when scrolling up
+- [x] Documentation refresh; agents must update README/docs in the same change (rule in `CLAUDE.md`)
 
 ## Next
 - [ ] Per-connection SSH confirmation as its own app request (currently only in the legacy dialog mode)
 - [ ] Port overview per sandbox ("open shop on localhost:8080") — Lima already forwards guest ports to `127.0.0.1`
 - [ ] Resource limits and idle auto-stop, `caffeinate` option
 - [ ] Update Claude Code in all VMs from the app
+- [ ] Update OpenCode in all VMs from the app (installs use the latest version, existing v2 installs are kept)
 - [ ] Scheduled tasks (recurring agent jobs per sandbox, e.g. cron-like prompts; design open: where the schedule lives, what happens while the VM is stopped, approvals for unattended runs)
 
 ## Later

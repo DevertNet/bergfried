@@ -60,6 +60,7 @@ only while a grant is active (time window, key, target host key).
 2. **Exactly two mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only) and `shared/out` (read-write). Existing folders are *copied* in (`importer`), never mounted.
 3. **Identity of a sandbox = the socket.** For each running sandbox the daemon listens on `~/.lima/<vm>/sock/bergfried.sock` (gRPC `SandboxAPI`) and `ssh-agent.sock`.
    Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The agent *name* is only metadata claimed from inside the VM (same Linux user, not a security boundary).
+   Claude passes it via `BERGFRIED_AGENT`; OpenCode's shared server starts one MCP process per project directory, so `bergfried-mcp` derives the agent from its working directory (`~/work/<agent>`) and only falls back to the environment variable.
 4. **Files:** the index covers your home **minus the blocklist** (`~/.ssh`, `~/Library`, `~/.config`, `.env*`, keys, …). Requests for blocked paths are refused without asking. Approved files are copied to `shared/in/<sandbox>/…`.
    Building the index makes macOS ask for folder access (again after every update, because the app is ad-hoc signed), so the first build after an install or update waits behind `index.Gate`: the app explains it and the user confirms (`POST /v1/index/start`); the confirmed daemon version is stored in `~/.bergfried/index-ack`. A daemon not started from the app bundle is not gated.
 5. **SSH:** the broker implements the ssh-agent protocol with destination constraints (`session-bind@openssh.com`). It signs only with an active grant **and** a matching target host key (fingerprint recorded at grant time from `known_hosts`/`ssh-keyscan`).
@@ -68,11 +69,13 @@ only while a grant is active (time window, key, target host key).
 6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`, also used to log in `gh`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
 7. **Agents:** one tmux window per agent (tmux session `bf`), one git worktree `~/work/<agent>` (`main` = `~/work/main`), `COMPOSE_PROJECT_NAME=<sandbox>-<agent>`.
    Each agent stores its runtime (`claude` or `opencode`); Claude runs `claude --continue --remote-control '<sandbox>/<agent>'`, OpenCode runs `opencode --continue`.
-   The **monitor** polls running VMs (login per runtime, Remote Control status and link for Claude, OpenCode busy state, disk usage), restarts only the agents of a runtime after its login,
+   The **monitor** polls running VMs (login per runtime, installed state per runtime, Remote Control status and link for Claude, OpenCode busy state, disk usage), restarts only the agents of a runtime after its login,
    answers Claude onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts). OpenCode is connected to the desktop app
    through a one-time local link (`opencode pair`, no internet): the OpenCode server listens on a stable per-sandbox port on `0.0.0.0` and Lima forwards it to `127.0.0.1` on the Mac.
-   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`.
-8. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
+   Before a link is created the daemon restarts the shared OpenCode service so it really uses that port (the config may already be right while the running process is stale), then returns the link and restarts the TUI windows in the background.
+   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. All OpenCode agents of a sandbox share **one** OpenCode service and **one** desktop link; each agent still has its own TUI process, worktree and MCP process.
+8. **UI:** the sandbox overview is one alphabetical card list. Each card has the state/actions, a compact metadata line, one card each for Claude and OpenCode (installed, signed in, sign-in/connect) and an agent table with runtime, status, worktree and actions. Settings has a secondary sidebar: General, Updates, Base VM, Notifications, Files & index, Terminal, Advanced (template editor behind Advanced). Base-build output follows new lines while the view is at the bottom.
+9. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
 
 ## Data on your Mac
 
