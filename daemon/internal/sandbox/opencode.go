@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -84,10 +85,6 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 	if err := m.S.SetOpenCodePort(sandbox, port); err != nil {
 		return "", err
 	}
-	// The service restart dropped the TUI connections; reopen the windows before pairing.
-	if _, err := m.RestartRuntimeAgents(ctx, sandbox, RuntimeOpenCode); err != nil {
-		return "", fmt.Errorf("restart OpenCode agents: %w", err)
-	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	out, err = m.L.Shell(cctx, s.VM, "bash", "-lc", `"$HOME/.opencode/bin/opencode" pair`)
@@ -102,6 +99,15 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 		return "", fmt.Errorf("opencode pair returned a link on the wrong port (expected %d): %s", port, link)
 	}
 	m.audit("sandbox.pair", sandbox, "", fmt.Sprintf("port=%d", port))
+	// The service restart dropped the TUI connections. Reopen the windows in the background so
+	// the one-time link is returned immediately; sessions continue on the server either way.
+	go func() {
+		rctx, rcancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer rcancel()
+		if _, err := m.RestartRuntimeAgents(rctx, sandbox, RuntimeOpenCode); err != nil {
+			fmt.Fprintln(os.Stderr, "OpenCode pairing: restart agents:", err)
+		}
+	}()
 	return link, nil
 }
 
