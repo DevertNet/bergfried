@@ -55,11 +55,20 @@ func TestParseRuntime(t *testing.T) {
 
 func TestRuntimeInstallScript(t *testing.T) {
 	s := installOpenCode("2.2.6")
-	if !strings.Contains(s, "opencode.ai/v2/install") || !strings.Contains(s, "--version 2.2.6") || !strings.Contains(s, ".opencode/bin") {
-		t.Fatal(s)
+	for _, want := range []string{
+		"registry.npmjs.org/@opencode%2fcli-linux-",
+		"2.2.6",
+		"checksum mismatch",
+		"tar -xzf",
+		`grep -qE '(^| )v?2[.]'`,
+		".opencode/bin",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
 	}
-	if !strings.Contains(s, `command -v opencode`) {
-		t.Fatal("must be idempotent")
+	if strings.Contains(s, "opencode.ai/v2/install") {
+		t.Fatal("must not pipe the vendor installer into a shell")
 	}
 }
 

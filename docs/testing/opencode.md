@@ -30,7 +30,7 @@ Check that the link is **not** reachable from another device on the LAN (it is b
 
 1. Take an old sandbox (created before this change) and start it.
 2. Add an agent with **OpenCode**.
-3. The job output should show "Installing OpenCode in the VM" (pinned version, user-local; OpenCode is not in the Debian repositories, so this uses the official installer, not `apt`), then the agent starts.
+3. The job output should show "Installing OpenCode in the VM" (pinned version, user-local; OpenCode is not in the Debian repositories, so this downloads the npm package directly, not `apt`), then the agent starts.
 4. Claude agents in the same VM keep running during the installation.
 5. Stop and start the sandbox: the OpenCode agent continues its session (`opencode --continue`) and the desktop connection still works (same port).
 

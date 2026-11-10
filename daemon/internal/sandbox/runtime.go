@@ -68,16 +68,32 @@ func (r Runtime) AgentCmd(sandbox, agent string) string {
 }
 
 // installOpenCode installs the pinned OpenCode CLI as the VM user (no root, no apt).
-// It is a no-op when a binary is already present.
+// It downloads the pinned npm package directly instead of piping the vendor installer into a
+// shell: the failure is then visible, the version is fixed and no extra code runs.
 func installOpenCode(version string) string {
 	return fmt.Sprintf(`set -e
-if [ -x "$HOME/.opencode/bin/opencode" ]; then exit 0; fi
-if command -v opencode >/dev/null 2>&1; then
-  mkdir -p "$HOME/.opencode/bin"
-  ln -sf "$(command -v opencode)" "$HOME/.opencode/bin/opencode"
-  exit 0
+OC="$HOME/.opencode/bin/opencode"
+if [ -x "$OC" ] && "$OC" --version 2>/dev/null | grep -qE '(^| )v?2[.]'; then exit 0; fi
+case "$(uname -m)" in
+  aarch64|arm64) arch=arm64 ;;
+  x86_64|amd64) if grep -qwi avx2 /proc/cpuinfo 2>/dev/null; then arch=x64; else arch=x64-baseline; fi ;;
+  *) echo "OpenCode: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+esac
+meta_url="https://registry.npmjs.org/@opencode%%2fcli-linux-$arch/%s"
+meta=$(curl -fsSL --connect-timeout 20 "$meta_url") || { echo "OpenCode: could not fetch package metadata from npm (network?)" >&2; exit 1; }
+url=$(echo "$meta" | jq -r '.dist.tarball // empty')
+want=$(echo "$meta" | jq -r '.dist.integrity // empty')
+[ -n "$url" ] || { echo "OpenCode: npm metadata has no tarball URL" >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+curl -fL --retry 3 --connect-timeout 20 -o "$tmp/opencode.tgz" "$url" || { echo "OpenCode: download failed: $url" >&2; exit 1; }
+if [ -n "$want" ] && command -v openssl >/dev/null 2>&1; then
+  got="sha512-$(openssl dgst -sha512 -binary "$tmp/opencode.tgz" | base64 | tr -d '\n')"
+  [ "$got" = "$want" ] || { echo "OpenCode: checksum mismatch" >&2; exit 1; }
 fi
-curl -fsSL https://opencode.ai/v2/install | bash -s -- --version %s --no-modify-path
+tar -xzf "$tmp/opencode.tgz" -C "$tmp" || { echo "OpenCode: could not extract the download" >&2; exit 1; }
+mkdir -p "$HOME/.opencode/bin"
+install -m755 "$tmp/package/bin/opencode" "$OC" || { echo "OpenCode: binary not found in the package" >&2; exit 1; }
 for f in "$HOME/.profile" "$HOME/.bashrc"; do
   if [ -f "$f" ] && ! grep -qF '.opencode/bin' "$f"; then echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> "$f"; fi
 done
