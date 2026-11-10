@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
     /// Last step text a job reported (survives the job; used to explain a lost connection during an update).
     var lastStep: [String: String] = [:]
+    /// Output lines of running (and the last finished) jobs by job key, shown by JobOutput.
+    @Published var logs: [String: [String]] = [:]
 
     var pendingCount: Int { requests.count }
     private var started = false
@@ -67,16 +69,19 @@ final class AppModel: ObservableObject {
     func runJob<B: Encodable>(_ key: String, _ label: String, _ path: String, _ body: B) async -> String? {
         running[key] = label
         lastStep[key] = nil
+        logs[key] = nil
         defer { running[key] = nil }
         do {
             let job: Job = try await api.send("POST", path, body)
             var j = job
             while j.state == "running" {
                 if let st = j.step, !st.isEmpty { running[key] = st; lastStep[key] = st }
+                if let l = j.log, !l.isEmpty { logs[key] = l }
                 try await Task.sleep(nanoseconds: 700_000_000)
                 j = try await api.get("/v1/jobs/\(job.id)")
                 await refresh()
             }
+            if let l = j.log, !l.isEmpty { logs[key] = l }
             await refresh()
             return j.state == "failed" ? (j.error ?? L("Failed")) : nil
         } catch {
@@ -95,16 +100,16 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Denies a request of any kind (file/folder, SSH, GitHub token).
-    func deny(_ r: RequestInfo) async {
+    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the assistant.
+    func deny(_ r: RequestInfo, note: String = "") async {
         do {
             switch r.kind {
             case "ssh":
-                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false))
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allWorktrees: false, perConnection: false, trustUnknownHost: false, note: note))
             case "ghtoken":
-                try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: ""))
+                try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
             default:
-                try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false))
+                try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false, note: note))
             }
         } catch { banner = error.localizedDescription }
         await refresh()

@@ -49,9 +49,15 @@ provision:
   script: |
     #!/bin/bash
     set -eux -o pipefail
-    command -v claude >/dev/null 2>&1 && exit 0
-    curl -fsSL https://claude.ai/install.sh | bash
+    if ! command -v claude >/dev/null 2>&1; then
+      curl -fsSL https://claude.ai/install.sh | bash
+    fi
     grep -q '.local/bin' ~/.profile || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
+    # OpenCode (latest; older VMs get it on demand when the first OpenCode agent is added).
+    if ! command -v opencode >/dev/null 2>&1; then
+      curl -fsSL https://opencode.ai/v2/install | bash
+    fi
+    grep -q '.opencode/bin' ~/.profile || echo 'export PATH="$HOME/.opencode/bin:$PATH"' >> ~/.profile
 # Daemon socket: /run/user/<uid>/bergfried.sock listens in the VM, connections go to the
 # socket of this instance's Mac daemon. The sandbox is derived from the socket path on the Mac.
 portForwards:
@@ -66,5 +72,5 @@ probes:
 - script: |
     #!/bin/bash
     set -eux -o pipefail
-    timeout 120 bash -c 'until command -v docker >/dev/null && [ -x "$HOME/.local/bin/claude" ]; do sleep 3; done'
+    timeout 180 bash -c 'until command -v docker >/dev/null && [ -x "$HOME/.local/bin/claude" ] && [ -x "$HOME/.opencode/bin/opencode" ]; do sleep 3; done'
   hint: "Siehe /var/log/cloud-init-output.log in der VM"

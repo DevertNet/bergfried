@@ -25,15 +25,14 @@
 "Add" = "Hinzufügen";
 "Agent %@ is starting …" = "Agent %@ startet …";
 "Agent name" = "Agent-Name";
-"Agent's reason (unchecked): %@" = "Begründung des Agents (ungeprüft): %@";
+"Assistant's reason (unchecked): %@" = "Begründung des Assistenten (ungeprüft): %@";
 "Allow" = "Erlauben";
 "Allow (default)" = "Erlauben (Standard)";
 "Approve" = "Freigeben";
-"Audit log" = "Protokoll";
+"Audit log" = "Audit-Protokoll";
 "Automatic (iTerm if installed)" = "Automatisch (iTerm, falls installiert)";
 "Available" = "Verfügbar";
 "Base" = "Basis";
-"Base VM" = "Basis-VM";
 "Base VM missing – it is built when you create the first sandbox (a few minutes)." = "Basis-VM fehlt – sie wird beim ersten Erstellen gebaut (einige Minuten).";
 "Bergfried – test notification" = "Bergfried – Testmitteilung";
 "Blocklist (never indexed, never shareable)" = "Sperrliste (nie im Index, nie freigebbar)";
@@ -95,7 +94,7 @@
 "Filter (sandbox, agent, event, details …)" = "Filter (Sandbox, Agent, Ereignis, Details …)";
 "Folder" = "Ordner";
 "Folder in your home directory that should be copied into the VM" = "Ordner im Home-Verzeichnis, der in die VM kopiert werden soll";
-"For all agents of the sandbox" = "Für alle Agents der Sandbox";
+"For all worktrees of the sandbox" = "Für alle Worktrees der Sandbox";
 "Git repo" = "Git-Repo";
 "GitHub access for %@ / %@" = "GitHub-Zugriff für %@ / %@";
 "GitHub access: %@/%@" = "GitHub-Zugriff: %@/%@";
@@ -120,7 +119,7 @@
 "Last check failed: %@" = "Letzte Prüfung fehlgeschlagen: %@";
 "Last permission request: %@" = "Letzte Berechtigungsanfrage: %@";
 "Name patterns (glob on file names, e.g. .env.*)" = "Namensmuster (Glob auf Dateinamen, z. B. .env.*)";
-"New agent in \"%@\"" = "Neuer Agent in „%@“";
+"New worktree in \"%@\"" = "Neuer Worktree in „%@“";
 "New sandbox" = "Neue Sandbox";
 "New sandboxes are cloned from this VM (seconds). Rebuilding only affects new sandboxes." = "Neue Sandboxes werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sandboxes.";
 "No active grants." = "Keine aktiven Freigaben.";
@@ -156,15 +155,14 @@
 "Remote Control is running – mark as active" = "Remote Control läuft – als aktiv markieren";
 "Remote Control starting …" = "Remote Control startet …";
 "Remove" = "Entfernen";
-"Remove agent \"%@\"" = "Agent „%@“ entfernen";
+"Remove worktree \"%@\"" = "Worktree „%@“ entfernen";
 "Remove daemon" = "Daemon entfernen";
 "Remove …" = "Entfernen …";
-"Requested by the agent." = "Vom Agent angefragt.";
-"Requested by the agent: %@" = "Vom Agent angefragt: %@";
+"Requested by the assistant." = "Vom Assistenten angefragt.";
+"Requested by the assistant: %@" = "Vom Assistenten angefragt: %@";
 "Requests" = "Anfragen";
 "Reset to the bundled template" = "Auf mitgelieferte Vorlage zurücksetzen";
 "Restart" = "Neu starten";
-"Restart daemon" = "Daemon neu starten";
 "Revoke" = "Entziehen";
 "Running" = "Läuft";
 "SSH access for %@/%@" = "SSH-Zugriff für %@/%@";
@@ -175,7 +173,6 @@
 "Saved. The base VM must be rebuilt (section \"Base VM\")." = "Gespeichert. Die Basis-VM muss neu gebaut werden (Abschnitt „Basis-VM“).";
 "Send test notification" = "Testmitteilung senden";
 "Set up …" = "Einrichten …";
-"Settings" = "Einstellungen";
 "Shell in the VM (%@)" = "Shell in der VM (%@)";
 "Show finished requests" = "Erledigte Anfragen anzeigen";
 "Socket path too long" = "Socket-Pfad zu lang";
@@ -219,7 +216,7 @@
 "Yes, copy %@" = "Ja, %@ kopieren";
 "You are up to date." = "Du bist auf dem neuesten Stand.";
 "activating Remote Control …" = "aktiviere Remote Control …";
-"all agents" = "alle Agents";
+"all worktrees" = "alle Worktrees";
 "allowed" = "erlaubt";
 "a–z, 0–9 and -, at most 24 characters" = "a–z, 0–9 und -, höchstens 24 Zeichen";
 "being built …" = "wird aufgebaut …";
@@ -227,7 +224,6 @@
 "bergfriedd is missing in the app bundle (run build.sh after `make build`)" = "bergfriedd fehlt im App-Bundle (build.sh nach `make build` ausführen)";
 "blocked" = "gesperrt";
 "built" = "gebaut";
-"checking …" = "wird geprüft …";
 "denied" = "abgelehnt";
 "e.g. shop" = "z. B. shop";
 "every connection individually" = "jede Verbindung einzeln";
@@ -273,3 +269,197 @@
 "Bergfried now builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index." = "Bergfried baut jetzt einen Suchindex der Dateinamen in deinem Home-Ordner, damit Agenten Dateien mit list_files/search_files finden. Deshalb fragt macOS nacheinander nach Dokumenten, Schreibtisch, Downloads und weiteren Ordnern – und nach jedem Update erneut, weil die App nicht mit einem Entwicklerzertifikat signiert ist. Indexiert werden nur Namen, Größen und Datumsangaben, nie Inhalte. Den Inhalt einer Datei bekommt ein Agent erst, wenn du die Anfrage in der App freigibst. Gesperrte Orte (etwa ~/.ssh und ~/Library) werden übersprungen. Wenn du einen Ordner ablehnst, fehlt er einfach im Index.";
 "waiting for your confirmation" = "wartet auf deine Bestätigung";
 "Open the Bergfried window to start indexing" = "Bergfried-Fenster öffnen, um die Indexierung zu starten";
+"Diagnostics" = "Diagnose";
+"Diagnostics log" = "Diagnose-Protokoll";
+"Daemon (errors of actions)" = "Daemon (Fehler von Aktionen)";
+"Copy all" = "Alles kopieren";
+"Show in Finder" = "Im Finder zeigen";
+"Show log" = "Diagnose öffnen";
+"(the log is empty or does not exist yet)" = "(das Protokoll ist leer oder existiert noch nicht)";
+"Last base build failure" = "Letzter Fehler beim Bauen der Basis-VM";
+"(not loaded, passphrase)" = "(nicht geladen, Passphrase)";
+"(not loaded)" = "(nicht geladen)";
+"Passphrase of this key" = "Passphrase dieses Schlüssels";
+"This key is not loaded in your ssh-agent. Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Dieser Schlüssel ist nicht in deinem ssh-agent geladen. Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieses Grants (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Ein neuer Grant braucht die Passphrase erneut.";
+"Copy output" = "Ausgabe kopieren";
+
+"%@ signed in" = "%@ angemeldet";
+"%@ not signed in – sign in now" = "%@ nicht angemeldet – jetzt anmelden";
+"Checking %@ status …" = "%@-Status wird geprüft …";
+"waiting for OpenCode login" = "wartet auf OpenCode-Anmeldung";
+"OpenCode is working …" = "OpenCode arbeitet …";
+"OpenCode runs" = "OpenCode läuft";
+"%@: agent window" = "%@: Agent-Fenster";
+"Done. The agents of this runtime restart automatically (status in the app)." = "Fertig. Die Agents dieser Laufzeit starten automatisch neu (Status in der App).";
+"Preparing the connection …" = "Verbindung wird vorbereitet …";
+"Connect desktop app …" = "Desktop-App verbinden …";
+"Sign in to Claude …" = "Bei Claude anmelden …";
+"Sign in to OpenCode …" = "Bei OpenCode anmelden …";
+"Agent" = "Agent";
+"Claude Code" = "Claude Code";
+"OpenCode" = "OpenCode";
+"The first agent (\"main\"). More agents can use the other runtime later." = "Der erste Agent („main“). Weitere Agents können später die andere Laufzeit nutzen.";
+"Each agent gets a tmux window, its own git worktree and uses the selected runtime. Claude and OpenCode can run side by side." = "Jeder Agent bekommt ein tmux-Fenster, einen eigenen Git-Worktree und nutzt die gewählte Laufzeit. Claude und OpenCode können parallel laufen.";
+"The tmux window with the agent is terminated (Claude: together with its Remote Control session)." = "Das tmux-Fenster des Agents wird beendet (bei Claude zusammen mit seiner Remote-Control-Sitzung).";
+"Connect the OpenCode desktop app" = "OpenCode-Desktop-App verbinden";
+"1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects." = "1. Kopiere den einmaligen Link unten (5 Minuten gültig).\n2. Wähle in der Desktop-App „Server hinzufügen“ und füge den Link ein.\n3. Alle OpenCode-Agents dieser Sandbox erscheinen als Projekte.";
+"The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again." = "Der Link funktioniert nur auf diesem Mac, nicht aus dem Internet oder dem lokalen Netzwerk. Wenn er abgelaufen ist, schließe dieses Fenster und verbinde erneut.";
+"Open in browser" = "Im Browser öffnen";
+"Done" = "Fertig";
+
+"OpenCode is not running – please restart" = "OpenCode läuft nicht – bitte neu starten";
+
+"Dismiss" = "Ausblenden";
+
+"Key" = "Schlüssel";
+"New host key" = "Neuer Host-Schlüssel";
+"Request" = "Anfrage";
+"Access" = "Zugriff";
+"Options" = "Optionen";
+"Note for the agent (optional)" = "Hinweis für den Agenten (optional)";
+"Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant." = "Nur ankreuzen, wenn der Fingerabdruck mit dem übereinstimmt, was der Server-Besitzer dir genannt hat. Bergfried merkt ihn sich nach der Freigabe für diesen Host.";
+"Key not loaded in your ssh-agent" = "Schlüssel nicht in deinem ssh-agent geladen";
+"Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieser Freigabe (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Eine neue Freigabe braucht die Passphrase erneut.";
+"Shown to the agent with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters." = "Wird dem Agenten mit der Antwort angezeigt – nützlich bei einer Ablehnung, z. B. „nimm stattdessen den Staging-Host“ oder „frag morgen noch einmal“. Max. 500 Zeichen.";
+"Deny and approve both send the note to the agent." = "Ablehnen und Freigeben senden den Hinweis beide an den Agenten.";
+
+"Runtimes" = "Laufzeiten";
+"Runtime" = "Laufzeit";
+"Status" = "Status";
+"Worktree" = "Worktree";
+"Actions" = "Aktionen";
+"Sign in" = "Anmelden";
+"No worktrees yet" = "Noch keine Worktrees";
+"Agents" = "Agents";
+"Not checked – start the sandbox" = "Nicht geprüft – Sandbox starten";
+"not installed" = "nicht installiert";
+"installed · no agent of this runtime" = "installiert · keine Laufzeit aktiv";
+"installed · signed in" = "installiert · angemeldet";
+"installed · not signed in" = "installiert · nicht angemeldet";
+"installed · status unknown" = "installiert · Status unbekannt";
+"installs with the first OpenCode agent" = "wird mit dem ersten OpenCode-Agenten installiert";
+
+"checking …" = "wird geprüft …";
+
+"Disk %@" = "Platte %@";
+
+"Connect" = "Verbinden";
+
+"Port %lld – this link belongs to this sandbox. A link on port 49374 is not from Bergfried; click Connect again." = "Port %lld – dieser Link gehört zu dieser Sandbox. Ein Link auf Port 49374 stammt nicht von Bergfried; klicke erneut auf Verbinden.";
+"Use the link immediately and only once. If you want the desktop app, do not open it in the browser first." = "Verwende den Link sofort und nur einmal. Wenn du die Desktop-App nutzen willst, öffne ihn nicht zuerst im Browser.";
+
+"Update available: version %@ (%@)" = "Update verfügbar: Version %@ (%@)";
+"Download size" = "Downloadgröße";
+"Install version %@ (%@) …" = "Version %@ installieren (%@) …";
+
+"Jump to latest" = "Zum Neuesten springen";
+"Scroll to the newest output and follow it again" = "Zur neuesten Ausgabe scrollen und wieder folgen";
+
+"The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; running agent sessions continue." = "Der OpenCode-Dienst wird auf dem eigenen Port dieser Sandbox neu gestartet und ein Einmal-Link erzeugt. Das kann ein paar Sekunden dauern; laufende Agent-Sitzungen bleiben erhalten.";
+"Try again" = "Erneut versuchen";
+"No link received. Please try again." = "Kein Link erhalten. Bitte erneut versuchen.";
+
+"Version %@" = "Version %@";
+"Paths" = "Pfade";
+"Available update" = "Verfügbares Update";
+"Rollback" = "Rollback";
+"Security" = "Sicherheit";
+"Channel" = "Kanal";
+"Installed" = "Installiert";
+"Data paths" = "Datenpfade";
+"Template (bergfried.yaml)" = "Vorlage (bergfried.yaml)";
+"SSH grants" = "SSH-Freigaben";
+"General" = "Allgemein";
+"Notifications" = "Mitteilungen";
+"Files & index" = "Dateien & Index";
+"Terminal" = "Terminal";
+"Advanced" = "Erweitert";
+"Daemon, paths and overall status" = "Daemon, Pfade und Gesamtstatus";
+"Version, channel and available releases" = "Version, Kanal und verfügbare Releases";
+"Base image and new sandboxes" = "Basis-Image und neue Sandboxes";
+"macOS notifications for requests" = "macOS-Mitteilungen für Anfragen";
+"Blocklist, index and data paths" = "Blocklist, Index und Datenpfade";
+"Terminal app for shell and login" = "Terminal-App für Shell und Login";
+"Template editor, GitHub and SSH notes" = "Vorlagen-Editor, GitHub- und SSH-Hinweise";
+"The file-name index is rebuilt from the blocklist. Contents are never indexed; agents only get a file after you approve a request." = "Der Dateinamen-Index wird aus der Blocklist neu aufgebaut. Inhalte werden nie indexiert; eine Datei bekommt ein Agent erst nach deiner Freigabe.";
+
+"Settings" = "Einstellungen";
+
+"Daemon" = "Daemon";
+"Version" = "Version";
+"Index" = "Index";
+"Blocklist" = "Blocklist";
+"GitHub" = "GitHub";
+"Copy" = "Kopieren";
+
+"Connect installs it if needed" = "Verbinden installiert es bei Bedarf";
+"installed · signed in · no agent" = "installiert · angemeldet · kein Worktree aktiv";
+"installed · not signed in · no agent" = "installiert · nicht angemeldet · kein Worktree aktiv";
+"1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; a Bergfried agent is not required." = "1. Kopiere den einmaligen Link unten (5 Minuten gültig).\n2. Wähle in der Desktop-App „Server hinzufügen“ und füge den Link ein.\n3. Öffne die Worktrees der Sandbox als Projekte; ein Bergfried-Agent ist nicht nötig.";
+
+"Deny request" = "Anfrage ablehnen";
+"Optional note for the agent: why denied, what to do instead." = "Optionaler Hinweis für den Agenten: warum abgelehnt, was stattdessen tun.";
+"The agent sees this note with the denial." = "Der Agent sieht diesen Hinweis mit der Ablehnung.";
+"Note for the agent if you deny (optional)" = "Hinweis für den Agenten bei Ablehnung (optional)";
+
+"installed · running · signed in" = "installiert · läuft · angemeldet";
+"installed · running · not signed in" = "installiert · läuft · nicht angemeldet";
+"installed · running" = "installiert · läuft";
+
+"Runtime conflict – restart the daemon" = "Laufzeit-Konflikt – Daemon neu starten";
+
+"Daemon version %@ does not match the app %@. Restart the daemon." = "Daemon-Version %@ passt nicht zur App %@. Daemon neu starten.";
+"The daemon did not report the new version. Check ~/.bergfried/daemon.log." = "Der Daemon hat die neue Version nicht gemeldet. Prüfe ~/.bergfried/daemon.log.";
+
+"Claude is probably waiting for input – open %@" = "Claude wartet vermutlich auf Eingabe – %@ öffnen";
+"Claude runs · Remote Control active" = "Claude läuft · Remote Control aktiv";
+"Claude runs · Remote Control starting …" = "Claude läuft · Remote Control startet …";
+"Done. The status in the app updates automatically." = "Fertig. Der Status in der App aktualisiert sich automatisch.";
+"Opens this worktree's Claude window in %@" = "Öffnet das Claude-Fenster dieses Worktrees in %@";
+"Remove the entry and delete the directory (git worktree including branch worktree/%@, Docker stack %@-%@)" = "Eintrag entfernen und Verzeichnis löschen (Git-Worktree inkl. Branch worktree/%@, Docker-Stack %@-%@)";
+"Remove the entry only – the directory ~/work/%@ is kept" = "Nur den Eintrag entfernen – das Verzeichnis ~/work/%@ bleibt erhalten";
+"Sandbox stopped" = "Sandbox gestoppt";
+"Starting the OpenCode service …" = "OpenCode-Dienst wird gestartet …";
+"Stopping the OpenCode service …" = "OpenCode-Dienst wird gestoppt …";
+"The folder is **copied**, not mounted: the VM never sees your home. Not copied: blocklist entries, .env files, keys, symlinks, node_modules and caches. Credentials in .git/config are removed. For git the assistant will need a GitHub token later (it asks for it)." = "Der Ordner wird **kopiert**, nicht eingebunden: die VM sieht dein Home nie. Nicht kopiert: Blocklist-Einträge, .env-Dateien, Schlüssel, Symlinks, node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Für Git braucht der Assistent später einen GitHub-Token (er fragt danach).";
+"Worktree %@" = "Worktree %@";
+"Worktree %@ is being created …" = "Worktree %@ wird erstellt …";
+"Worktrees" = "Worktrees";
+"installed" = "installiert";
+"not checked – start the sandbox" = "nicht geprüft – Sandbox starten";
+"not installed – Connect installs it" = "nicht installiert – Verbinden installiert es";
+"not started" = "nicht gestartet";
+"restarting Claude …" = "Claude wird neu gestartet …";
+"service running" = "Dienst läuft";
+"service stopped" = "Dienst gestoppt";
+"starting Claude …" = "Claude wird gestartet …";
+"stopping Claude …" = "Claude wird gestoppt …";
+
+"Start Claude" = "Claude starten";
+"Stop Claude" = "Claude stoppen";
+"Restart Claude" = "Claude neu starten";
+"Remove worktree …" = "Worktree entfernen …";
+"Copy Remote Control link" = "Remote-Control-Link kopieren";
+"Worktree +" = "Worktree +";
+"Worktree name" = "Worktree-Name";
+"Start service" = "Dienst starten";
+"Stop service" = "Dienst stoppen";
+"Connect desktop" = "Desktop-App verbinden";
+"A worktree is a folder with code. OpenCode opens these folders as projects." = "Ein Worktree ist ein Ordner mit Code. OpenCode öffnet diese Ordner als Projekte.";
+"Claude and OpenCode can use the same worktree, but not at the same time on the same files. Use separate worktrees for parallel work." = "Claude und OpenCode können denselben Worktree nutzen, aber nicht gleichzeitig an denselben Dateien. Für parallele Arbeit getrennte Worktrees anlegen.";
+"One service for the whole sandbox. Sessions live in the desktop app." = "Ein Dienst für die ganze Sandbox. Sitzungen leben in der Desktop-App.";
+"OpenCode opens the worktrees as projects; Claude is not required." = "OpenCode öffnet die Worktrees als Projekte; Claude ist nicht nötig.";
+"Runs per worktree. Start it in the worktree list below." = "Läuft pro Worktree. Starte Claude in der Worktree-Liste unten.";
+"Remote Control is available for every running Claude." = "Remote Control ist für jedes laufende Claude verfügbar.";
+"Claude is stopped first. The worktree can be removed with or without its directory." = "Claude wird zuerst gestoppt. Der Worktree kann mit oder ohne Verzeichnis entfernt werden.";
+"The sandbox starts with the worktree \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox." = "Die Sandbox startet mit dem Worktree „main“. Claude startet nicht automatisch; OpenCode läuft als Dienst für die ganze Sandbox.";
+"A worktree is a folder with code (~/work/<name>). Claude is not started automatically; start it in the worktree list. OpenCode sees the worktree as a project." = "Ein Worktree ist ein Ordner mit Code (~/work/<name>). Claude startet nicht automatisch; starte es in der Worktree-Liste. OpenCode sieht den Worktree als Projekt.";
+
+"During a grant an assistant could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config)." = "Während einer Freigabe könnte ein Assistent einen eigenen Key in authorized_keys des Ziels eintragen. Für wichtige Server einen eingeschränkten User „claude“ nutzen, dessen authorized_keys root gehört (AuthorizedKeysFile in sshd_config).";
+"Filter (sandbox, worktree, event, details …)" = "Filter (Sandbox, Worktree, Ereignis, Details …)";
+"The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here." = "Das GitHub-Token gehört zur Sandbox: Es wird beim Anlegen einer Sandbox mit Git-Repo abgefragt oder auf Anfrage des Assistenten (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.";
+"The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions." = "Das Token liegt anschließend in der VM; der Assistent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.";
+"VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further worktrees ~/work/<worktree>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Worktrees ~/work/<worktree>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
+"Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Worktree; technisch bleibt die Grenze die Sandbox.";
+"The file-name index is rebuilt from the blocklist. Contents are never indexed; assistants only get a file after you approve a request." = "Der Dateinamen-Index wird anhand der Sperrliste neu aufgebaut. Inhalte werden nie indexiert; Assistenten bekommen eine Datei erst nach deiner Freigabe.";
+"Unsaved work in the worktree" = "Ungesicherte Arbeit im Worktree";

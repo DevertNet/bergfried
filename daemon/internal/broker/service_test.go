@@ -59,7 +59,7 @@ func TestRequestAllowedCreatesGrantAndExpiryCleansUp(t *testing.T) {
 		t.Fatalf("%v %v", res, err)
 	}
 	gs, _ := f.b.St.ListGrants(true, f.now)
-	if len(gs) != 1 || gs[0].Host != "example.com" || gs[0].HostKeys[0] != hostFP || gs[0].Agent != "main" {
+	if len(gs) != 1 || gs[0].Host != "example.com" || gs[0].HostKeys[0] != hostFP || gs[0].Worktree != "main" {
 		t.Fatalf("%+v", gs)
 	}
 	if h.applied == 0 {
@@ -228,7 +228,7 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 	}
 	waitFor(t, "open request", func() bool { return pending() == 1 })
 	rs, _ := f.b.St.ListRequests(true, 5)
-	if rs[0].Agent != "terminal" || !strings.Contains(rs[0].Reason, "connection attempt") {
+	if rs[0].Worktree != "terminal" || !strings.Contains(rs[0].Reason, "connection attempt") {
 		t.Fatalf("%+v", rs[0])
 	}
 	// second attempt: no second request
@@ -359,5 +359,38 @@ func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
 	s.Timeout = 2 * time.Second
 	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict != pb.Verdict_VERDICT_ALLOWED {
 		t.Fatalf("with ConfirmEach it must work: %v", res)
+	}
+}
+
+func TestDecisionNoteReachesAgent(t *testing.T) {
+	hostFP := "SHA256:abc"
+
+	s, _, _ := svcFx(t, "known_hosts", []string{hostFP})
+	s.Asker = &autoAsker{s, Decision{Allow: false, Note: "use the staging host instead"}}
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_DENIED {
+		t.Fatalf("%v %v", res, err)
+	}
+	if !strings.Contains(res.Message, "use the staging host instead") {
+		t.Fatalf("note missing: %q", res.Message)
+	}
+
+	s2, f2, _ := svcFx(t, "known_hosts", []string{hostFP})
+	s2.Asker = &autoAsker{s2, Decision{Allow: true, Minutes: 5, KeyFP: ssh.FingerprintSHA256(f2.userKey.PublicKey()), User: "claude", Note: "only this host"}}
+	res, err = s2.RequestSSH(context.Background(), "shop", "main", "example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("%v %v", res, err)
+	}
+	if !strings.Contains(res.Message, "only this host") {
+		t.Fatalf("note missing: %q", res.Message)
+	}
+}
+
+func TestCleanNote(t *testing.T) {
+	if got := cleanNote("  hi\x00 there  "); got != "hi there" {
+		t.Fatalf("%q", got)
+	}
+	if got := cleanNote(strings.Repeat("x", 600)); len([]rune(got)) != 501 {
+		t.Fatalf("long note must be truncated, got %d runes", len([]rune(got)))
 	}
 }

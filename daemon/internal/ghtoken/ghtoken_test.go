@@ -160,17 +160,17 @@ func TestRequestFirstTokenFlow(t *testing.T) {
 		t.Fatalf("%+v", req)
 	}
 	// Without a token you cannot simply say "done".
-	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err == nil {
+	if err := f.svc.Decide(context.Background(), req.ID, true, "", ""); err == nil {
 		t.Fatal("it should have failed without a token")
 	}
 	// Invalid token (GitHub rejects it).
-	if err := f.svc.Decide(context.Background(), req.ID, true, strings.Replace(tok, "11ABC", "22ZZZ", 1)); err == nil || !strings.Contains(err.Error(), "rejects") {
+	if err := f.svc.Decide(context.Background(), req.ID, true, strings.Replace(tok, "11ABC", "22ZZZ", 1), ""); err == nil || !strings.Contains(err.Error(), "rejects") {
 		t.Fatalf("%v", err)
 	}
 	if len(f.installed) != 0 || f.svc.Tokens.Has("shop") {
 		t.Fatal("an invalid token was stored")
 	}
-	if err := f.svc.Decide(context.Background(), req.ID, true, tok); err != nil {
+	if err := f.svc.Decide(context.Background(), req.ID, true, tok, ""); err != nil {
 		t.Fatal(err)
 	}
 	r := <-ch
@@ -186,7 +186,7 @@ func TestTokenWithoutRepoAccessKeepsRequestOpen(t *testing.T) {
 	f := setup(t)
 	ch := ask(f, "o/new")
 	req := waitPending(t, f.st)
-	err := f.svc.Decide(context.Background(), req.ID, true, tok)
+	err := f.svc.Decide(context.Background(), req.ID, true, tok, "")
 	if err == nil || !strings.Contains(err.Error(), "no access to o/new") {
 		t.Fatalf("%v", err)
 	}
@@ -197,7 +197,7 @@ func TestTokenWithoutRepoAccessKeepsRequestOpen(t *testing.T) {
 		t.Fatal("request must stay open")
 	}
 	f.access["o/new"] = true
-	if err := f.svc.Decide(context.Background(), req.ID, true, tok); err != nil {
+	if err := f.svc.Decide(context.Background(), req.ID, true, tok, ""); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-ch; !r.ok {
@@ -224,11 +224,11 @@ func TestExtendAccessWithoutNewToken(t *testing.T) {
 	if req.Path != "o/zwei" {
 		t.Fatal(req.Path)
 	}
-	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err == nil || !strings.Contains(err.Error(), "no access") {
+	if err := f.svc.Decide(context.Background(), req.ID, true, "", ""); err == nil || !strings.Contains(err.Error(), "no access") {
 		t.Fatalf("%v", err)
 	}
 	f.access["o/zwei"] = true
-	if err := f.svc.Decide(context.Background(), req.ID, true, ""); err != nil {
+	if err := f.svc.Decide(context.Background(), req.ID, true, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-ch; !r.ok {
@@ -243,10 +243,10 @@ func TestDenyAndBadRepo(t *testing.T) {
 	f := setup(t)
 	ch := ask(f, "o/x")
 	req := waitPending(t, f.st)
-	if err := f.svc.Decide(context.Background(), req.ID, false, ""); err != nil {
+	if err := f.svc.Decide(context.Background(), req.ID, false, "", "use the staging repo instead"); err != nil {
 		t.Fatal(err)
 	}
-	if r := <-ch; r.ok || !strings.Contains(r.msg, "declined") {
+	if r := <-ch; r.ok || !strings.Contains(r.msg, "declined") || !strings.Contains(r.msg, "use the staging repo instead") {
 		t.Fatalf("%+v", r)
 	}
 	ok, msg, _ := f.svc.Request(context.Background(), "shop", "main", "evil.com/../x", "")

@@ -55,6 +55,8 @@ type Broker struct {
 	Now func() time.Time
 	// ConfirmEach asks after each connection for grants with per_connection; nil = refuse.
 	ConfirmEach func(g store.SSHGrant, hostKeyFP string) bool
+
+	local localStore // decrypted passphrase keys by grant id (memory only)
 }
 
 func (b *Broker) now() time.Time {
@@ -118,9 +120,19 @@ func (c *Conn) List() ([]*agent.Key, error) {
 		return nil, nil
 	}
 	var out []*agent.Key
+	have := map[string]bool{}
 	for _, k := range ks {
-		if want[ssh.FingerprintSHA256(k)] {
+		if fp := ssh.FingerprintSHA256(k); want[fp] {
 			out = append(out, k)
+			have[fp] = true
+		}
+	}
+	// keys decrypted for a grant (not in the upstream agent)
+	for _, g := range gs {
+		if ls := c.b.localSigner(g.ID); ls != nil && !have[g.KeyFP] {
+			pk := ls.PublicKey()
+			out = append(out, &agent.Key{Format: pk.Type(), Blob: pk.Marshal(), Comment: "bergfried"})
+			have[g.KeyFP] = true
 		}
 	}
 	return out, nil
@@ -181,7 +193,12 @@ func (c *Conn) SignWithFlags(key ssh.PublicKey, data []byte, flags agent.Signatu
 			return c.deny("per-connection confirmation refused", fp)
 		}
 	}
-	sig, err := c.b.Up.Sign(key, data, flags)
+	var sig *ssh.Signature
+	if ls := c.b.localSigner(match.ID); ls != nil {
+		sig, err = ls.sign(data, flags)
+	} else {
+		sig, err = c.b.Up.Sign(key, data, flags)
+	}
 	if err != nil {
 		c.b.audit("ssh.sign_failed", c.sandbox, err.Error())
 		return nil, errors.New("ssh-broker: Signatur fehlgeschlagen")

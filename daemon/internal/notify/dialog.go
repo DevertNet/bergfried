@@ -19,7 +19,7 @@ const script = `on run argv
 end run`
 
 type Dialog struct {
-	Decide func(id int64, allow, confirmLarge bool) (string, error)
+	Decide func(id int64, allow, confirmLarge bool, note string) (string, error)
 	Log    func(string)
 }
 
@@ -38,14 +38,14 @@ func Text(r store.Request) string {
 	if r.Kind == "folder" {
 		what = "the folder"
 	}
-	return fmt.Sprintf("Sandbox \"%s\" / agent \"%s\" wants %s copied:\n\n~/%s\n(%d file(s), %.1f MB)\n\nReason (from the agent, unchecked):\n%s",
-		r.Sandbox, r.Agent, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
+	return fmt.Sprintf("Sandbox \"%s\" / worktree \"%s\" wants %s copied:\n\n~/%s\n(%d file(s), %.1f MB)\n\nReason (from the assistant, unchecked):\n%s",
+		r.Sandbox, r.Worktree, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
 }
 
 func (d *Dialog) Ask(r store.Request) {
 	go func() {
 		if !ask(Text(r), "Ablehnen", "Erlauben") {
-			if _, err := d.Decide(r.ID, false, false); err != nil && d.Log != nil {
+			if _, err := d.Decide(r.ID, false, false, ""); err != nil && d.Log != nil {
 				d.Log(fmt.Sprintf("Dialog #%d: %v", r.ID, err))
 			}
 			return
@@ -54,11 +54,11 @@ func (d *Dialog) Ask(r store.Request) {
 		if access.Large(r) {
 			confirm = ask(fmt.Sprintf("Very large approval: %.0f MB in %d files.\nReally copy?", float64(r.Bytes)/1048576, r.Files), "Cancel", "Yes, copy")
 			if !confirm {
-				_, _ = d.Decide(r.ID, false, false)
+				_, _ = d.Decide(r.ID, false, false, "")
 				return
 			}
 		}
-		if _, err := d.Decide(r.ID, true, confirm); err != nil && d.Log != nil {
+		if _, err := d.Decide(r.ID, true, confirm, ""); err != nil && d.Log != nil {
 			d.Log(fmt.Sprintf("Dialog #%d: %v", r.ID, err))
 		}
 	}()

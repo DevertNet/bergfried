@@ -5,7 +5,7 @@ package bergfried.v1;
 option go_package = "github.com/DevertNet/bergfried/proto/gen/bergfried/v1;bergfriedv1";
 
 // SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
-// The agent name is in the gRPC metadata "x-bergfried-agent".
+// The worktree name is in the gRPC metadata "x-bergfried-worktree".
 service SandboxAPI {
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse);
@@ -58,7 +58,7 @@ message SSHAccessRequest {
   string host = 1;       // host name, optionally with :port
   int32 minutes = 2;     // only a suggestion
   string reason = 3;
-  string user = 4;       // user on the target, suggested by the agent (the user can change it)
+  string user = 4;       // user on the target, suggested by the assistant (the user can change it)
 }
 message SSHAccessResult {
   Verdict verdict = 1;
@@ -72,14 +72,14 @@ message DecideSSHRequest {
   int32 minutes = 3;
   string key_fingerprint = 4;   // SHA256:...
   string user = 5;
-  bool all_agents = 6;
+  bool all_worktrees = 6;
   bool per_connection = 7;
   bool trust_unknown_host = 8;  // host key was not in known_hosts
 }
 message Grant {
   int64 id = 1;
   string sandbox = 2;
-  string agent = 3;      // empty = all agents of the sandbox
+  string worktree = 3;   // empty = all worktrees of the sandbox
   string host = 4;
   string key_fingerprint = 5;
   string user = 6;
@@ -120,7 +120,7 @@ message SearchFilesResponse {
 
 message AccessRequest {
   string path = 1;       // relative to home
-  string reason = 2;     // supplied by the agent, display as text only
+  string reason = 2;     // supplied by the assistant, display as text only
 }
 
 enum Verdict {
@@ -140,7 +140,7 @@ message AccessResult {
 message Request {
   int64 id = 1;
   string sandbox = 2;
-  string agent = 3;
+  string worktree = 3;
   string kind = 4;       // file | folder
   string path = 5;
   string reason = 6;

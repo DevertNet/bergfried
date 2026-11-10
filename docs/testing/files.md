@@ -5,9 +5,9 @@ make build
 export BERGFRIED_TEMPLATE=vm/bergfried.yaml
 ./bin/bergfriedd serve               # terminal 1: daemon (index, sockets, approval dialog)
 ./bin/bergfriedd create shop         # terminal 2: installs bergfried-mcp in the VM
-./bin/bergfriedd login shop && ./bin/bergfriedd agent add shop main
+./bin/bergfriedd login shop && ./bin/bergfriedd worktree start shop main
 ```
-In the agent: "List my files in Documents and fetch <file>".
+In Claude: "List my files in Documents and fetch <file>".
 
 - `list_files` / `search_files` return names, size and date only. `~/.ssh`, `~/Library`, `~/.config`, `.env` and similar never show up.
 - `request_file` shows a macOS dialog (**Deny** is the default). Without dialog: `serve --no-dialog`, then `./bin/bergfriedd requests list` → `requests allow <id>` / `requests deny <id>`.
@@ -22,9 +22,9 @@ JSON-RPC over stdio inside the VM; the identity is the socket. Example (`initial
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_files","arguments":{"path":""}}}' | BERGFRIED_AGENT=shop/main ~/.local/bin/bergfried-mcp
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_files","arguments":{"path":""}}}' | BERGFRIED_WORKTREE=shop/main ~/.local/bin/bergfried-mcp
 ```
 
 ## Known limits
-- The agent name in dialogs is claimed from inside the VM (same Linux user) — not proof. The **sandbox** comes from the socket.
-- A request waits up to 10 minutes; whether Claude Code waits that long for an MCP tool is unverified.
+- The worktree name in dialogs is claimed from inside the VM (same Linux user) — not proof. The **sandbox** comes from the socket.
+- A request waits up to 10 minutes; whether Claude Code or OpenCode wait that long for an MCP tool is unverified.

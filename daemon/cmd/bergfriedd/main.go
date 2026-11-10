@@ -38,9 +38,12 @@ const usage = `bergfriedd – Bergfried CLI
     create <name> [--repo URL | --import FOLDER]   clone a sandbox from the base VM
   start|stop <name>
     delete <name> [--force]       warns about unpushed commits
-    list                          sandboxes with VM status and agents
-    agent add <sandbox> <agent>   new agent (tmux window + worktree + Remote Control)
-    login <sandbox>               claude auth login in the VM (once per VM)
+    list                          sandboxes with VM status and worktrees
+    worktree add <sandbox> <worktree>          create a worktree (no Claude)
+    worktree start|stop|restart <sandbox> <worktree>   Claude in a worktree
+    opencode start|stop <sandbox>              the sandbox-wide OpenCode service
+    login <sandbox> [claude|opencode]   sign in the assistant CLI in the VM (once per runtime)
+    pair <sandbox>                 one-time link for the OpenCode desktop app
     attach <sandbox>              open the sandbox's tmux
     shell <sandbox>               shell in the VM
     audit [-n 50]                 audit log
@@ -151,11 +154,42 @@ func run(cmd string, args []string) error {
 		return m.Delete(ctx, args[0], *f)
 	case "list":
 		return list(ctx, m)
-	case "agent":
-		if err := need(3); err != nil || args[0] != "add" {
-			return errors.New("nutze: agent add <sandbox> <agent>")
+	case "worktree":
+		if err := need(3); err != nil {
+			return errors.New("nutze: worktree add <sandbox> <worktree> | worktree start|stop|restart <sandbox> <worktree>")
 		}
-		return m.AgentAdd(ctx, args[1], args[2])
+		switch args[0] {
+		case "add":
+			return m.WorktreeAdd(ctx, args[1], args[2])
+		case "start":
+			return m.WorktreeStartClaude(ctx, args[1], args[2])
+		case "stop":
+			return m.WorktreeStopClaude(ctx, args[1], args[2])
+		case "restart":
+			return m.WorktreeRestartClaude(ctx, args[1], args[2])
+		}
+		return errors.New("nutze: worktree add <sandbox> <worktree> | worktree start|stop|restart <sandbox> <worktree>")
+	case "opencode":
+		if err := need(2); err != nil {
+			return errors.New("nutze: opencode start|stop <sandbox>")
+		}
+		switch args[0] {
+		case "start":
+			return m.OpenCodeStart(ctx, args[1])
+		case "stop":
+			return m.OpenCodeStop(ctx, args[1])
+		}
+		return errors.New("nutze: opencode start|stop <sandbox>")
+	case "pair":
+		if err := need(1); err != nil {
+			return err
+		}
+		link, err := m.PairOpenCode(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Println(link)
+		return nil
 	case "login", "attach", "shell":
 		if err := need(1); err != nil {
 			return err
@@ -165,10 +199,20 @@ func run(cmd string, args []string) error {
 			return err
 		}
 		inner := map[string][]string{
-			"login":  {"bash", "-lc", "claude auth login"},
 			"attach": {"bash", "-lc", "tmux attach -t bf || tmux new -s bf"},
 			"shell":  {"bash", "-l"},
 		}[cmd]
+		if cmd == "login" {
+			rtName := "claude"
+			if len(args) > 1 {
+				rtName = args[1]
+			}
+			login, err := sandbox.LoginCommand(rtName)
+			if err != nil {
+				return err
+			}
+			inner = []string{"bash", "-lc", login}
+		}
 		lc, err := exec.LookPath("limactl")
 		if err != nil {
 			return err
@@ -195,7 +239,7 @@ func run(cmd string, args []string) error {
 			return err
 		}
 		for _, e := range es {
-			fmt.Printf("%s  %-8s %-16s %s/%s %s\n", e.TS.Format("2006-01-02 15:04:05"), e.Actor, e.Event, e.Sandbox, e.Agent, e.Detail)
+			fmt.Printf("%s  %-8s %-16s %s/%s %s\n", e.TS.Format("2006-01-02 15:04:05"), e.Actor, e.Event, e.Sandbox, e.Worktree, e.Detail)
 		}
 		return nil
 	default:
@@ -217,16 +261,21 @@ func list(ctx context.Context, m *sandbox.Manager) error {
 	for _, v := range vms {
 		status[v.Name] = v.Status
 	}
-	fmt.Printf("%-16s %-10s %-4s %s\n", "SANDBOX", "STATUS", "TPL", "AGENTS")
+	fmt.Printf("%-16s %-10s %-4s %s\n", "SANDBOX", "STATUS", "TPL", "WORKTREES")
 	for _, s := range ss {
 		st := status[s.VM]
 		if st == "" {
 			st = "fehlt"
 		}
-		ags, _ := m.S.ListAgents(s.Name)
+		wts, _ := m.S.ListWorktrees(s.Name)
 		names := ""
-		for _, a := range ags {
-			names += a.Name + " "
+		for _, w := range wts {
+			names += w.Name
+			if w.Claude {
+				names += "(claude) "
+			} else {
+				names += " "
+			}
 		}
 		fmt.Printf("%-16s %-10s v%-3d %s\n", s.Name, st, s.TemplateVersion, names)
 	}
@@ -280,6 +329,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	br := &broker.Broker{St: m.S, Up: broker.SocketUpstream{Path: upstream}}
 	sshSvc := broker.NewService(br, broker.ResolveHostKeys(knownHosts),
 		sandbox.Hooks{M: m, Render: broker.RenderSSHConfig}, nil, hc)
+	sshSvc.SSHDir = filepath.Join(userHome, ".ssh") // key files for passphrase keys that are not loaded in the agent
 	if !noDialog {
 		sshSvc.Asker = &notify.SSHDialog{Decide: sshSvc.DecideSSH, Keys: sshSvc.Keys, Log: func(s string) { fmt.Fprintln(os.Stderr, s) }}
 		br.ConfirmEach = notify.ConfirmEach
@@ -326,7 +376,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)
@@ -386,9 +436,9 @@ func requests(ctx context.Context, home string, args []string) error {
 			return fmt.Errorf("daemon not reachable (is `bergfriedd serve` running?): %w", err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/AGENT\tKIND\tPATH\tSIZE\tREASON")
+		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/WORKTREE\tKIND\tPATH\tSIZE\tREASON")
 		for _, q := range r.Requests {
-			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d files, %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Agent, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
+			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d files, %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Worktree, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
 		}
 		return tw.Flush()
 	case "allow", "deny":
@@ -420,7 +470,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 	defer conn.Close()
 	c := pb.NewAdminClient(conn)
 	if len(args) == 0 {
-		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-agents] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
+		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-worktrees] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
 	}
 	num := func(i int) (int64, error) {
 		var n int64
@@ -452,7 +502,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			return unreachable(err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSANDBOX\tAGENT\tHOST\tUSER\tUNTIL\tMODE\tSTATUS")
+		fmt.Fprintln(tw, "ID\tSANDBOX\tWORKTREE\tHOST\tUSER\tUNTIL\tMODE\tSTATUS")
 		for _, g := range r.Grants {
 			st := "active"
 			if g.Revoked {
@@ -460,15 +510,15 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			} else if time.Unix(g.ExpiresUnix, 0).Before(time.Now()) {
 				st = "expired"
 			}
-			ag := g.Agent
-			if ag == "" {
-				ag = "(all)"
+			wt := g.Worktree
+			if wt == "" {
+				wt = "(all)"
 			}
 			mode := "silent"
 			if g.PerConnection {
 				mode = "each"
 			}
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Sandbox, ag, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.Id, g.Sandbox, wt, g.Host, g.User, time.Unix(g.ExpiresUnix, 0).Format("01-02 15:04"), mode, st)
 		}
 		return tw.Flush()
 	case "allow", "deny":
@@ -480,12 +530,12 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		minutes := fs.Int("minutes", 15, "Dauer")
 		key := fs.String("key", "", "key fingerprint (SHA256:…); otherwise the host default")
 		user := fs.String("user", "", "user on the target (default: claude)")
-		allAg := fs.Bool("all-agents", false, "for all agents of the sandbox")
+		allWt := fs.Bool("all-worktrees", false, "for all worktrees of the sandbox")
 		per := fs.Bool("per-connection", false, "confirm every connection individually")
 		trust := fs.Bool("trust-host-key", false, "confirm a new host key")
 		_ = fs.Parse(args[2:])
 		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
-			User: *user, AllAgents: *allAg, PerConnection: *per, TrustUnknownHost: *trust})
+			User: *user, AllWorktrees: *allWt, PerConnection: *per, TrustUnknownHost: *trust})
 		if err != nil {
 			return err
 		}

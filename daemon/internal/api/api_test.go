@@ -244,3 +244,22 @@ func TestUpdateEndpoints(t *testing.T) {
 		t.Fatalf("%+v", j)
 	}
 }
+
+func TestSandboxesReportWorktrees(t *testing.T) {
+	s, ts := srv(t)
+	_ = s.M.S.AddSandbox(store.Sandbox{Name: "shop", VM: "bergfried-shop", TemplateVersion: 1, Created: time.Now(), OpenCodePort: 42123})
+	_ = s.M.S.AddWorktree(store.Worktree{Sandbox: "shop", Name: "main", Path: "~/work/main", ComposeProject: "shop-main", Claude: true, Created: time.Now()})
+	_ = s.M.S.AddWorktree(store.Worktree{Sandbox: "shop", Name: "api", Path: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
+	code, body := do(t, "GET", ts.URL+"/v1/sandboxes", "")
+	if code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	for _, want := range []string{`"worktrees":[{"name":"api"`, `"name":"main"`, `"opencode_port":42123`, `"opencode_logged_in"`, `"claude_installed"`, `"opencode_installed"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("%s missing in %s", want, body)
+		}
+	}
+	if strings.Contains(body, `"runtime"`) || strings.Contains(body, `"agents"`) {
+		t.Fatalf("runtime/agents must be gone: %s", body)
+	}
+}

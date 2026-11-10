@@ -2,14 +2,17 @@ import SwiftUI
 import AppKit
 
 enum Pane: String, CaseIterable, Identifiable {
-    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", settings = "Settings"
+    case sandboxes = "Sandboxes", requests = "Requests", audit = "Audit log", log = "Diagnostics", settings = "Settings"
     var id: String { rawValue }
     var title: LocalizedStringKey { LocalizedStringKey(rawValue) }
-    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Settings": "gearshape"][rawValue] ?? "circle" }
+    var icon: String { ["Sandboxes": "shield", "Requests": "bell", "Audit log": "list.bullet.rectangle", "Diagnostics": "stethoscope", "Settings": "gearshape"][rawValue] ?? "circle" }
 }
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+
+    var appVersion: String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?" }
+    var daemonVersion: String? { model.status?.version }
 
     var body: some View {
         NavigationSplitView {
@@ -24,15 +27,28 @@ struct ContentView: View {
                 if !model.online {
                     Label("The daemon is not reachable. You can install and start it under \"Settings\".", systemImage: "exclamationmark.triangle.fill")
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.red.opacity(0.15))
+                } else if let dv = daemonVersion, dv != appVersion {
+                    HStack {
+                        Label(L("Daemon version %@ does not match the app %@. Restart the daemon.", dv, appVersion), systemImage: "exclamationmark.triangle.fill")
+                        Spacer()
+                        Button("Restart daemon") { Task { await restartDaemon() } }
+                    }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.2))
                 }
                 if let b = model.banner {
-                    HStack { Text(b).textSelection(.enabled); Spacer(); Button("Close") { model.banner = nil } }
+                    HStack {
+                        // Long errors (for example from limactl) are cut here; the full text is in the Diagnostics pane.
+                        Text(b).lineLimit(4).truncationMode(.tail).textSelection(.enabled)
+                        Spacer()
+                        Button("Show log") { model.pane = .log }
+                        Button("Close") { model.banner = nil }
+                    }
                         .padding(8).background(.orange.opacity(0.2))
                 }
                 switch model.pane ?? .sandboxes {
                 case .sandboxes: SandboxesView()
                 case .requests: RequestsView()
                 case .audit: AuditView()
+                case .log: LogView()
                 case .settings: SettingsView()
                 }
             }.navigationTitle((model.pane ?? .sandboxes).title)
@@ -40,7 +56,22 @@ struct ContentView: View {
         // Before the first index build after an install or update: explain the many macOS folder prompts, then let the daemon start.
         .alert("Why macOS asks for access to many folders", isPresented: Binding(get: { model.status?.indexWaiting == true }, set: { _ in })) {
             Button("Continue") { Task { do { try await model.api.post("/v1/index/start", NameBody(name: "x")) } catch { model.setBanner(error.localizedDescription) }; await model.refresh() } }
-        } message: { Text("Bergfried now builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
+        } message: { Text("Bergfried now builds a search index of file names in your home folder, so that the assistants can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An assistant only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
+    }
+
+    func restartDaemon() async {
+        do {
+            _ = try await Task.detached { try DaemonController.install() }.value
+        } catch {
+            model.setBanner(error.localizedDescription)
+            return
+        }
+        for _ in 0..<20 {
+            await model.refresh()
+            if model.online, model.status?.version == appVersion { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        model.setBanner(L("The daemon did not report the new version. Check ~/.bergfried/daemon.log."))
     }
 }
 
@@ -64,11 +95,11 @@ struct MenuContent: View {
         else if model.requests.isEmpty { Text("No open requests") }
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {
-                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.agent, r.path)) { open() }
+                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.worktree, r.path)) { open() }
             } else if r.kind == "ghtoken" {
-                Button("GitHub \(r.sandbox)/\(r.agent): \(r.path) …") { open() }
+                Button("GitHub \(r.sandbox)/\(r.worktree): \(r.path) …") { open() }
             } else {
-                Menu("\(r.sandbox)/\(r.agent): ~/\(r.path)") {
+                Menu("\(r.sandbox)/\(r.worktree): ~/\(r.path)") {
                     Button("Allow") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
                     Button("Deny") { Task { await model.decideFile(r, allow: false) } }
                 }

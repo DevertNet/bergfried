@@ -27,10 +27,51 @@ func TestValidName(t *testing.T) {
 	}
 }
 
-func TestAgentCmdIsolatesComposeProject(t *testing.T) {
-	c := AgentCmd("shop", "api")
-	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "--remote-control 'shop/api'") {
+func TestClaudeCmd(t *testing.T) {
+	c := claudeCmd("shop", "api")
+	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "BERGFRIED_WORKTREE=shop/api") || !strings.Contains(c, "--remote-control 'shop/api'") {
 		t.Fatal(c)
+	}
+	if strings.Contains(c, ".opencode/bin/opencode") {
+		t.Fatalf("OpenCode is a sandbox-level service and must not run per worktree: %s", c)
+	}
+}
+
+func TestLoginCommand(t *testing.T) {
+	for in, want := range map[string]string{"": "claude", "claude": "claude", "opencode": ".opencode/bin/opencode"} {
+		got, err := LoginCommand(in)
+		if err != nil || !strings.Contains(got, want) {
+			t.Fatalf("%q: %v %v", in, got, err)
+		}
+	}
+	if _, err := LoginCommand("codex"); err == nil {
+		t.Fatal("unknown runtime must be rejected")
+	}
+}
+
+func TestOpenCodeInstallScript(t *testing.T) {
+	s := openCodeInstallScript()
+	for _, want := range []string{
+		"set -Eeuo pipefail",
+		`FAILED at line $LINENO`,
+		"/tmp/opencode-install.log",
+		"sudo chown -R",
+		"https://opencode.ai/v2/install",
+		`bash "$SCRIPT"`,
+		"opencode in PATH",
+		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+		`"$OC" --version`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "--version 2.2.6") {
+		t.Fatal("the installer must use the latest version")
+	}
+	c := openCodeCheckScript()
+	if !strings.Contains(c, `[ "$major" -ge 2 ]`) || !strings.Contains(c, "echo yes") {
+		t.Fatalf("bad check script:\n%s", c)
 	}
 }
 
@@ -84,24 +125,24 @@ func mgr(t *testing.T, out string) (*Manager, *shellFake) {
 		t.Fatal(err)
 	}
 	_ = st.AddSandbox(store.Sandbox{Name: "shop", VM: "bergfried-shop", TemplateVersion: 3, Created: time.Now()})
-	_ = st.AddAgent(store.Agent{Sandbox: "shop", Name: "api", Worktree: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
-	_ = st.AddAgent(store.Agent{Sandbox: "shop", Name: "main", Worktree: "~/work/main", ComposeProject: "shop-main", Created: time.Now()})
+	_ = st.AddWorktree(store.Worktree{Sandbox: "shop", Name: "api", Path: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
+	_ = st.AddWorktree(store.Worktree{Sandbox: "shop", Name: "main", Path: "~/work/main", ComposeProject: "shop-main", Claude: true, Created: time.Now()})
 	f := &shellFake{out: out}
 	return &Manager{L: lima.Client{R: f}, S: st, Actor: "t"}, f
 }
 
-func TestAgentRemoveRules(t *testing.T) {
+func TestWorktreeRemoveRules(t *testing.T) {
 	m, f := mgr(t, "")
-	if err := m.AgentRemove(context.Background(), "shop", "main", true, true); err == nil {
-		t.Fatal("main's directory must never be deleted")
+	if err := m.WorktreeRemove(context.Background(), "shop", "main", true, true); err == nil {
+		t.Fatal("main must never be removed")
 	}
-	if err := m.AgentRemove(context.Background(), "shop", "main", false, false); err != nil {
-		t.Fatal("terminating main (without the directory) is allowed:", err)
+	if err := m.WorktreeRemove(context.Background(), "shop", "main", false, false); err == nil {
+		t.Fatal("main must not be removed even without deleting the directory")
 	}
-	if ags, _ := m.S.ListAgents("shop"); len(ags) != 1 || ags[0].Name != "api" {
-		t.Fatalf("%+v", ags)
+	if wts, _ := m.S.ListWorktrees("shop"); len(wts) != 2 {
+		t.Fatalf("%+v", wts)
 	}
-	if err := m.AgentRemove(context.Background(), "shop", "../x", false, false); err == nil {
+	if err := m.WorktreeRemove(context.Background(), "shop", "../x", false, false); err == nil {
 		t.Fatal("invalid name")
 	}
 	joined := strings.Join(f.calls, "\n")
@@ -110,26 +151,26 @@ func TestAgentRemoveRules(t *testing.T) {
 	}
 }
 
-func TestAgentRemoveDirtyNeedsForce(t *testing.T) {
+func TestWorktreeRemoveDirtyNeedsForce(t *testing.T) {
 	m, f := mgr(t, " M file.go\nabc123 unpushed")
-	err := m.AgentRemove(context.Background(), "shop", "api", true, false)
-	var d ErrAgentDirty
+	err := m.WorktreeRemove(context.Background(), "shop", "api", true, false)
+	var d ErrWorktreeDirty
 	if !errors.As(err, &d) {
-		t.Fatalf("erwartet ErrAgentDirty, bekam %v", err)
+		t.Fatalf("erwartet ErrWorktreeDirty, bekam %v", err)
 	}
-	if ags, _ := m.S.ListAgents("shop"); len(ags) != 2 {
-		t.Fatal("the agent must not be removed while work is unsaved")
+	if ags, _ := m.S.ListWorktrees("shop"); len(ags) != 2 {
+		t.Fatal("the worktree must not be removed while work is unsaved")
 	}
 	for _, c := range f.calls {
 		if strings.Contains(c, "worktree remove") || strings.Contains(c, "kill-window") {
 			t.Fatalf("nothing may happen before the confirmation: %s", c)
 		}
 	}
-	if err := m.AgentRemove(context.Background(), "shop", "api", true, true); err != nil {
+	if err := m.WorktreeRemove(context.Background(), "shop", "api", true, true); err != nil {
 		t.Fatal(err)
 	}
-	if ags, _ := m.S.ListAgents("shop"); len(ags) != 1 {
-		t.Fatal("with force the agent must be removed")
+	if ags, _ := m.S.ListWorktrees("shop"); len(ags) != 1 {
+		t.Fatal("with force the worktree must be removed")
 	}
 	if !strings.Contains(strings.Join(f.calls, "\n"), "worktree remove") {
 		t.Fatal("worktree must be removed")
@@ -222,5 +263,82 @@ func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(h2, "sandboxes"), 0o700)
 	if err := MigrateHome(h2); err == nil {
 		t.Fatal("both present: error expected")
+	}
+}
+
+func TestOpenCodePortIsStableAndInRange(t *testing.T) {
+	a, err := openCodePort("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a < openCodePortFirst || a > openCodePortLast {
+		t.Fatalf("port %d outside range", a)
+	}
+	if !portFree(a) {
+		t.Fatalf("port %d is not free", a)
+	}
+}
+
+func TestPairLinkPrefersLoopback(t *testing.T) {
+	out := "\x1b[0m\n  http://192.168.5.15:42123/auth/connect/abc\n  http://127.0.0.1:42123/auth/connect/abc\n"
+	if got := pairLink(out); got != "http://127.0.0.1:42123/auth/connect/abc" {
+		t.Fatalf("pairLink() = %q", got)
+	}
+	if pairLink("no link here") != "" {
+		t.Fatal("no link expected")
+	}
+}
+
+func TestWindowScriptStartsClaude(t *testing.T) {
+	s := windowScript("shop", "api")
+	for _, want := range []string{
+		"tmux new-session -d -s bf -n api",
+		"tmux new-window -t bf -n api",
+		"tmux send-keys -t bf:api ",
+		"COMPOSE_PROJECT_NAME=shop-api",
+		"ps -t \"${tty#/dev/}\" -o comm=",
+		"grep -qx claude",
+		"hasTrustDialogAccepted",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, ".opencode/bin/opencode") {
+		t.Fatalf("no per-worktree OpenCode TUI:\n%s", s)
+	}
+	if strings.Contains(s, "-n \n") {
+		t.Fatalf("empty window name:\n%s", s)
+	}
+}
+
+func TestWorktreeScriptIsIdempotent(t *testing.T) {
+	s := worktreeScript("octest")
+	for _, want := range []string{
+		`a="octest"`,
+		`d="$HOME/work/$a"`,
+		`if [ ! -d "$d" ]; then`,
+		`git -C ~/work/main worktree add "$d" -b "worktree/$a"`,
+		`git -C ~/work/main worktree add "$d" "worktree/$a"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+}
+
+func TestOpenCodePairSetupAndLinkValidation(t *testing.T) {
+	s := openCodePairSetupScript(42123)
+	for _, want := range []string{"service set port 42123", "service set hostname 0.0.0.0", "service restart", "service start"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+	good := "http://127.0.0.1:42123/auth/connect/abc"
+	if !linkUsesPort(good, 42123) {
+		t.Fatal("own port must be accepted")
+	}
+	if linkUsesPort("http://127.0.0.1:49374/auth/connect/abc", 42123) {
+		t.Fatal("default port must be rejected")
 	}
 }
