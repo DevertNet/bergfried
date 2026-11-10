@@ -392,3 +392,13 @@
 "Blocklist" = "Blocklist";
 "GitHub" = "GitHub";
 "Copy" = "Kopieren";
+
+"Connect installs it if needed" = "Verbinden installiert es bei Bedarf";
+"installed · signed in · no agent" = "installiert · angemeldet · kein Agent";
+"installed · not signed in · no agent" = "installiert · nicht angemeldet · kein Agent";
+"1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; a Bergfried agent is not required." = "1. Kopiere den einmaligen Link unten (5 Minuten gültig).\n2. Wähle in der Desktop-App „Server hinzufügen“ und füge den Link ein.\n3. Öffne die Worktrees der Sandbox als Projekte; ein Bergfried-Agent ist nicht nötig.";
+
+"Deny request" = "Anfrage ablehnen";
+"Optional note for the agent: why denied, what to do instead." = "Optionaler Hinweis für den Agenten: warum abgelehnt, was stattdessen tun.";
+"The agent sees this note with the denial." = "Der Agent sieht diesen Hinweis mit der Ablehnung.";
+"Note for the agent if you deny (optional)" = "Hinweis für den Agenten bei Ablehnung (optional)";

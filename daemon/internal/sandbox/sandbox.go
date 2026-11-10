@@ -714,8 +714,15 @@ jq --arg d "$HOME/work/%s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$
 %[1]s
 if ! tmux has-session -t %[3]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[3]s -n %[2]s
 elif ! tmux list-windows -t %[3]s -F '#W' | grep -qx %[2]s; then tmux new-window -t %[3]s -n %[2]s
-else exit 0; fi
-tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, agent, tmuxSession, runtime.AgentCmd(sandbox, agent))
+else
+  # A window with this name can be left over from an earlier attempt with another runtime
+  # (or from a crashed TUI). Only keep it if the agent's process runs in this pane.
+  tty=$(tmux display-message -p -t %[3]s:%[2]s '#{pane_tty}' 2>/dev/null || true)
+  if [ -n "$tty" ] && ps -t "${tty#/dev/}" -o comm= 2>/dev/null | grep -qx %[5]s; then exit 0; fi
+  tmux kill-window -t %[3]s:%[2]s 2>/dev/null || true
+  if tmux has-session -t %[3]s 2>/dev/null; then tmux new-window -t %[3]s -n %[2]s; else tmux new-session -d -s %[3]s -n %[2]s; fi
+fi
+tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, agent, tmuxSession, runtime.AgentCmd(sandbox, agent), runtime.ProcessName())
 }
 
 // ensureWindow creates the tmux session/window if missing and starts the agent in it.

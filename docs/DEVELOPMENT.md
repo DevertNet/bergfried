@@ -66,7 +66,7 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Unix socket paths** are limited to ~104 characters.
 - **Notification permission:** never quit or restart the app while the macOS prompt is open — that counts as "denied" and macOS never asks again (only System Settings or a new bundle id help). Current bundle id: `de.einfach123.bergfried`.
 - **Terminal start** goes through a `.command` file + `open -a` (AppleScript for iTerm failed silently without automation rights).
-- **tmux default window** (`bash`/`shell`) is not an agent; the monitor only looks at registered agents. "Is the runtime running?" is detected with `ps -t <tty>` and the runtime process name (`claude` or `opencode`); `pane_current_command` wrongly shows `bash`.
+- **tmux default window** (`bash`/`shell`) is not an agent; the monitor only looks at registered agents. "Is the runtime running?" is detected with `ps -t <tty>` and the runtime process name (`claude` or `opencode`); `pane_current_command` wrongly shows `bash`. A window with an agent name can be left over from an earlier attempt with the other runtime: `ensureWindow` checks the pane process and recreates it, and the monitor repairs a wrong-runtime window once per daemon start (`agent.runtime_repaired`).
 - **Race in tests:** right after `create` the sandbox socket is briefly not open; an `ssh` in that second triggers no request.
 - **Docker Go builds:** `make build` builds `bergfriedd` for darwin/arm64 and `bergfried-mcp` for linux/arm64 (a VPS host would need linux/amd64).
 - **Empty lists as JSON `null`** break Swift decoding (`Detail.Normalize`).

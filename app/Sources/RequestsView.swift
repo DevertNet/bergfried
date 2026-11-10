@@ -7,12 +7,13 @@ struct RequestsView: View {
     @Local private var sshFor: RequestInfo?
     @Local private var largeFor: RequestInfo?
     @Local private var gitFor: RequestInfo?
+    @Local private var denyFor: RequestInfo?
 
     var body: some View {
         List {
             Section("Open requests") {
                 if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
-                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }) }
+                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, deny: { denyFor = r }) }
             }
             Section("Active SSH grants") {
                 if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
@@ -27,6 +28,7 @@ struct RequestsView: View {
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
         .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
+        .sheet(item: $denyFor) { r in DenyRequestSheet(r: r, onDeny: { note in Task { await model.deny(r, note: note) } }) }
         .confirmationDialog("Large approval", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
             Button(L("Yes, copy %@", largeFor.map { formatBytes($0.bytes) } ?? "")) { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
         } message: { Text(L("%lld files, %@. Really copy?", largeFor?.files ?? 0, formatBytes(largeFor?.bytes ?? 0))) }
@@ -43,6 +45,7 @@ struct PendingRow: View {
     let decideSSH: () -> Void
     let confirmLarge: () -> Void
     let decideGit: () -> Void
+    let deny: () -> Void
 
     var icon: String {
         switch r.kind {
@@ -72,13 +75,13 @@ struct PendingRow: View {
             HStack {
                 if r.kind == "ghtoken" {
                     Button("Set up …", action: decideGit).buttonStyle(.borderedProminent)
-                    Button("Deny", role: .destructive) { Task { await model.deny(r) } }
+                    Button("Deny", role: .destructive, action: deny)
                 } else if r.kind == "ssh" {
                     Button("Decide …", action: decideSSH).buttonStyle(.borderedProminent)
-                    Button("Deny", role: .destructive) { Task { await model.deny(r) } }
+                    Button("Deny", role: .destructive, action: deny)
                 } else {
                     Button("Allow") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
-                    Button("Deny", role: .destructive) { Task { await model.decideFile(r, allow: false) } }
+                    Button("Deny", role: .destructive, action: deny)
                 }
             }
         }.padding(.vertical, 4)
@@ -296,11 +299,37 @@ struct SSHDecisionSheet: View {
     }
 }
 
+struct DenyRequestSheet: View {
+    let r: RequestInfo
+    let onDeny: (String) -> Void
+    @Environment(\.dismiss) var dismiss
+    @Local private var note = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L("Deny request")).font(.title3.bold())
+            Text("\(r.sandbox) / \(r.agent)").font(.callout).foregroundStyle(.secondary)
+            Text("Optional note for the agent: why denied, what to do instead.").font(.callout)
+            TextEditor(text: $note)
+                .font(.callout)
+                .frame(height: 80)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            Text("The agent sees this note with the denial.").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Deny", role: .destructive) { onDeny(note); dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(20).frame(width: 480)
+    }
+}
+
 struct GitHubTokenSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     let r: RequestInfo
     @Local private var token = ""
+    @Local private var denyNote = ""
     @Local private var error: String?
     @Local private var busy = false
     var d: GitHubDetail? { r.github }
@@ -319,11 +348,16 @@ struct GitHubTokenSheet: View {
                 GitHubTokenSteps(link: d?.link ?? "", hint: d?.hint ?? "", token: $token)
             }
             if hasToken { SecureField("Optional: paste a new token", text: $token).textFieldStyle(.roundedBorder) }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Note for the agent if you deny (optional)").font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $denyNote).font(.callout).frame(height: 54)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            }
             if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Deny", role: .destructive) { Task { await model.deny(r); dismiss() } }
+                Button("Deny", role: .destructive) { Task { await model.deny(r, note: denyNote); dismiss() } }
                 Button(hasToken && token.isEmpty ? "Check access" : "Check and save") {
                     busy = true
                     Task {

@@ -52,21 +52,9 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 	if err != nil {
 		return "", err
 	}
-	ags, err := m.S.ListAgents(sandbox)
-	if err != nil {
-		return "", err
-	}
-	hasOpenCode := false
-	for _, a := range ags {
-		if a.Runtime == string(RuntimeOpenCode) {
-			hasOpenCode = true
-			break
-		}
-	}
-	if !hasOpenCode {
-		return "", fmt.Errorf("this sandbox has no OpenCode agent")
-	}
-	if err := m.InstallOpenCode(ctx, s.VM); err != nil {
+	// The desktop connection is a property of the sandbox, not of an agent: OpenCode can be
+	// started and used here without adding an agent or a new worktree.
+	if err := m.InstallHelpers(ctx, s.VM, sandbox, true); err != nil {
 		return "", err
 	}
 	port := s.OpenCodePort

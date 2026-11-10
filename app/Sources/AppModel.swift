@@ -100,16 +100,16 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Denies a request of any kind (file/folder, SSH, GitHub token).
-    func deny(_ r: RequestInfo) async {
+    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the agent.
+    func deny(_ r: RequestInfo, note: String = "") async {
         do {
             switch r.kind {
             case "ssh":
-                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false))
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false, note: note))
             case "ghtoken":
-                try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: ""))
+                try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
             default:
-                try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false))
+                try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false, note: note))
             }
         } catch { banner = error.localizedDescription }
         await refresh()

@@ -182,7 +182,7 @@ struct SandboxCard: View {
                 RuntimeStatusCard(name: "OpenCode", letter: "O", tint: .blue,
                                   installed: s.opencodeInstalled, signedIn: s.opencodeLoggedIn,
                                   used: s.usesOpenCode, running: s.running,
-                                  note: L("installs with the first OpenCode agent"),
+                                  note: L("Connect installs it if needed"),
                                   signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
                                   connect: { pair() }, connecting: pairing)
             }
@@ -233,11 +233,11 @@ struct SandboxCard: View {
                 if s.usesClaude {
                     Button("Sign in to Claude …") { report(Terminal.login(vm: s.vm, runtime: "claude")) }
                 }
-                if s.usesOpenCode {
+                if s.opencodeInstalled != false {
                     Button("Sign in to OpenCode …") { report(Terminal.login(vm: s.vm, runtime: "opencode")) }
-                    Button(pairing ? L("Preparing the connection …") : L("Connect desktop app …")) { pair() }
-                        .disabled(pairing)
                 }
+                Button(pairing ? L("Preparing the connection …") : L("Connect desktop app …")) { pair() }
+                    .disabled(pairing)
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
             Button("Start") { Task { report(await model.runJob("start-\(s.name)", L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
@@ -281,7 +281,13 @@ struct RuntimeStatusCard: View {
         case .some(false):
             return (L("not installed"), Color.secondary)
         case .some(true):
-            if !used { return (L("installed · no agent of this runtime"), Color.secondary) }
+            if !used {
+                switch signedIn {
+                case .some(true): return (L("installed · signed in · no agent"), .green)
+                case .some(false): return (L("installed · not signed in · no agent"), .orange)
+                default: return (L("installed · no agent of this runtime"), Color.secondary)
+                }
+            }
             switch signedIn {
             case .some(true): return (L("installed · signed in"), .green)
             case .some(false): return (L("installed · not signed in"), .orange)
@@ -306,10 +312,10 @@ struct RuntimeStatusCard: View {
                 }
             }
             Spacer(minLength: 4)
-            if running, installed == true, used, signedIn == false {
+            if running, installed == true, signedIn != true, (used || connect != nil) {
                 Button("Sign in", action: signIn).controlSize(.small)
             }
-            if let connect, running, installed == true, used {
+            if let connect, running {
                 if connecting {
                     ProgressView().controlSize(.small).help(L("Preparing the connection …"))
                 } else {
@@ -366,7 +372,7 @@ struct PairSheet: View {
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
             } else if let link {
-                Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects.")
+                Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; a Bergfried agent is not required.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 Text(link)
                     .font(.caption.monospaced())

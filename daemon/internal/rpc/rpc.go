@@ -210,7 +210,7 @@ func (a *adminServer) ListRequests(_ context.Context, r *pb.ListRequestsRequest)
 }
 
 func (a *adminServer) Decide(_ context.Context, r *pb.DecideRequest) (*pb.DecideResponse, error) {
-	msg, err := a.svc.Decide(r.Id, r.Allow, r.ConfirmLarge)
+	msg, err := a.svc.Decide(r.Id, r.Allow, r.ConfirmLarge, "")
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}

@@ -21,7 +21,7 @@ type fakeAsker struct {
 
 func (f *fakeAsker) Ask(r store.Request) {
 	f.calls++
-	go func() { _, _ = f.svc.Decide(r.ID, f.allow, true) }()
+	go func() { _, _ = f.svc.Decide(r.ID, f.allow, true, "") }()
 }
 
 func env(t *testing.T, allow bool) (*Service, *fakeAsker, string) {
@@ -148,13 +148,13 @@ func TestLargeNeedsSecondConfirmation(t *testing.T) {
 	svc.Asker = silentAsker{}
 	id, _ := svc.S.AddRequest(store.Request{Sandbox: "s", Kind: "folder", Path: "big", Status: "pending", Bytes: LargeBytes + 1, Files: 1})
 	svc.waiters[id] = make(chan decision, 1)
-	if _, err := svc.Decide(id, true, false); err == nil || !strings.Contains(err.Error(), "second confirmation") {
+	if _, err := svc.Decide(id, true, false, ""); err == nil || !strings.Contains(err.Error(), "second confirmation") {
 		t.Fatalf("without confirm_large it must fail: %v", err)
 	}
-	if _, err := svc.Decide(id, true, true); err != nil {
+	if _, err := svc.Decide(id, true, true, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Decide(id, true, true); err == nil {
+	if _, err := svc.Decide(id, true, true, ""); err == nil {
 		t.Fatal("a second decision must fail")
 	}
 }
@@ -163,5 +163,26 @@ func TestSanitizeAgentText(t *testing.T) {
 	got := sanitize("a\x00b\x1b[31mc"+strings.Repeat("x", 600), 50)
 	if strings.ContainsAny(got, "\x00\x1b") || len([]rune(got)) > 51 {
 		t.Fatalf("%q", got)
+	}
+}
+
+type denyNoteAsker struct {
+	svc  *Service
+	note string
+}
+
+func (a *denyNoteAsker) Ask(r store.Request) {
+	go func() { _, _ = a.svc.Decide(r.ID, false, false, a.note) }()
+}
+
+func TestDenyNoteReachesAgent(t *testing.T) {
+	svc, _, _ := env(t, true)
+	svc.Asker = &denyNoteAsker{svc: svc, note: "use Documents/b.txt instead"}
+	res, err := svc.Request(context.Background(), "shop", "main", false, "Documents/a.txt", "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_DENIED {
+		t.Fatalf("%v %v", res, err)
+	}
+	if !strings.Contains(res.Message, "use Documents/b.txt instead") {
+		t.Fatalf("note missing: %q", res.Message)
 	}
 }

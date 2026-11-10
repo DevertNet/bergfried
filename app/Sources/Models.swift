@@ -147,7 +147,7 @@ struct Blocklist: Codable, Equatable { var paths: [String]; var names: [String] 
 struct Job: Codable { var id: Int64; var kind: String; var state: String; var step: String?; var error: String?; var log: [String]? }
 struct Message: Codable { var message: String? }
 
-struct DecideBody: Encodable { var id: Int64; var allow: Bool; var confirmLarge: Bool = false }
+struct DecideBody: Encodable { var id: Int64; var allow: Bool; var confirmLarge: Bool = false; var note: String = "" }
 struct SSHDecideBody: Encodable {
     var id: Int64
     var allow: Bool
@@ -181,5 +181,5 @@ struct PairLink: Codable { var url: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 
-struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String }
+struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String; var note: String = "" }
 struct GitHubLink: Codable { var url: String; var hint: String }

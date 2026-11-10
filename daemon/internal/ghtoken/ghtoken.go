@@ -123,7 +123,10 @@ type Service struct {
 	waiters map[int64]chan result
 }
 
-type result struct{ ok bool }
+type result struct {
+	ok   bool
+	note string
+}
 
 func NewService(st *store.Store, tokens Store, install func(context.Context, string, string) error) *Service {
 	return &Service{S: st, Tokens: tokens, Install: install, Timeout: 10 * time.Minute, waiters: map[int64]chan result{},
@@ -188,6 +191,20 @@ func (s *Service) Deposit(ctx context.Context, sandbox, token, repo string) erro
 	return nil
 }
 
+// cleanNote limits a user note and removes control characters (newlines stay).
+func cleanNote(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 && r != '\n' || r == 127 {
+			return -1
+		}
+		return r
+	}, s)
+	if r := []rune(s); len(r) > 500 {
+		return string(r[:500]) + "…"
+	}
+	return s
+}
+
 // Request: the agent needs a token (repo empty) or access to repo. Blocks until decided.
 // Returns (done, message). A repo the token already reaches is confirmed without asking.
 func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason string) (bool, string, error) {
@@ -232,7 +249,11 @@ func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason stri
 		if r.ok {
 			return true, "Access set up. Repeat the git command.", nil
 		}
-		return false, "The user declined the setup.", nil
+		msg := "The user declined the setup."
+		if r.note != "" {
+			msg += " Note from the user: " + r.note
+		}
+		return false, msg, nil
 	case <-timer.C:
 		if ok, _ := s.S.SetRequestStatus(id, "expired"); ok {
 			s.audit("ghtoken.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
@@ -246,7 +267,7 @@ func (s *Service) Request(ctx context.Context, sandbox, agent, repo, reason stri
 
 // Decide: decision from the app. With a token: verify, store, install. Without a token (access only extended): check the existing token
 // against the repo. If that fails the request stays open and the error goes to the app (try again).
-func (s *Service) Decide(ctx context.Context, id int64, allow bool, token string) error {
+func (s *Service) Decide(ctx context.Context, id int64, allow bool, token, note string) error {
 	r, err := s.S.GetRequest(id)
 	if err != nil {
 		return err
@@ -260,6 +281,7 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token string
 	if !ok {
 		return fmt.Errorf("request %d is no longer waiting (agent gave up)", id)
 	}
+	note = strings.TrimSpace(cleanNote(note))
 	status := "denied"
 	if allow {
 		var d Detail
@@ -288,6 +310,6 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, token string
 		return errors.New("request no longer open")
 	}
 	s.audit("ghtoken."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d", id))
-	ch <- result{ok: allow}
+	ch <- result{ok: allow, note: note}
 	return nil
 }

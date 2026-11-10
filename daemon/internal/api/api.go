@@ -521,12 +521,13 @@ func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
 		ID    int64  `json:"id"`
 		Allow bool   `json:"allow"`
 		Token string `json:"token"`
+		Note  string `json:"note"`
 	}
 	if err := decode(r, &q); err != nil || s.GH == nil {
 		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
-	if err := s.GH.Decide(r.Context(), q.ID, q.Allow, q.Token); err != nil {
+	if err := s.GH.Decide(r.Context(), q.ID, q.Allow, q.Token, q.Note); err != nil {
 		fail(w, 409, err)
 		return
 	}
@@ -740,15 +741,16 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	var q struct {
-		ID           int64 `json:"id"`
-		Allow        bool  `json:"allow"`
-		ConfirmLarge bool  `json:"confirm_large"`
+		ID           int64  `json:"id"`
+		Allow        bool   `json:"allow"`
+		ConfirmLarge bool   `json:"confirm_large"`
+		Note         string `json:"note"`
 	}
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	msg, err := s.Access.Decide(q.ID, q.Allow, q.ConfirmLarge)
+	msg, err := s.Access.Decide(q.ID, q.Allow, q.ConfirmLarge, q.Note)
 	if err != nil {
 		fail(w, 409, err)
 		return
