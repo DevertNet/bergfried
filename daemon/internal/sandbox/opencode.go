@@ -77,13 +77,14 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 	}
 	// Make the server reachable for Lima and keep the port stable across restarts.
 	setup := fmt.Sprintf(`set -e
-curh=$(opencode service get hostname 2>/dev/null || true)
-curp=$(opencode service get port 2>/dev/null || true)
+OC="$HOME/.opencode/bin/opencode"
+curh=$("$OC" service get hostname 2>/dev/null || true)
+curp=$("$OC" service get port 2>/dev/null || true)
 changed=0
-[ "$curh" = 0.0.0.0 ] || { opencode service set hostname 0.0.0.0; changed=1; }
-[ "$curp" = %[1]d ] || { opencode service set port %[1]d; changed=1; }
-[ "$changed" = 0 ] || opencode service start
-opencode service start >/dev/null 2>&1 || true
+[ "$curh" = 0.0.0.0 ] || { "$OC" service set hostname 0.0.0.0; changed=1; }
+[ "$curp" = %[1]d ] || { "$OC" service set port %[1]d; changed=1; }
+[ "$changed" = 0 ] || "$OC" service start
+"$OC" service start >/dev/null 2>&1 || true
 echo "changed=$changed"`, port)
 	out, err := m.L.Shell(ctx, s.VM, "bash", "-lc", setup)
 	if err != nil {
@@ -100,7 +101,7 @@ echo "changed=$changed"`, port)
 	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	out, err = m.L.Shell(cctx, s.VM, "bash", "-lc", `opencode pair`)
+	out, err = m.L.Shell(cctx, s.VM, "bash", "-lc", `"$HOME/.opencode/bin/opencode" pair`)
 	if err != nil {
 		return "", fmt.Errorf("opencode pair: %w", err)
 	}
@@ -153,5 +154,5 @@ func (m *Manager) RestartRuntimeAgents(ctx context.Context, sandbox string, runt
 
 // ReloadOpenCode makes a running OpenCode server pick up new credentials/config.
 func (m *Manager) ReloadOpenCode(ctx context.Context, vm string) {
-	_, _ = m.L.Shell(ctx, vm, "bash", "-lc", `command -v opencode >/dev/null 2>&1 && opencode reload >/dev/null 2>&1 || true`)
+	_, _ = m.L.Shell(ctx, vm, "bash", "-lc", `OC="$HOME/.opencode/bin/opencode"; [ -x "$OC" ] && "$OC" reload >/dev/null 2>&1 || true`)
 }
