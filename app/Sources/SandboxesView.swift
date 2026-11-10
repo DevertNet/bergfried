@@ -173,7 +173,8 @@ struct SandboxCard: View {
                                   installed: s.opencodeInstalled, signedIn: s.opencodeLoggedIn,
                                   used: s.usesOpenCode, running: s.running,
                                   note: L("installs with the first OpenCode agent"),
-                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) })
+                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
+                                  connect: { pair() })
             }
         }
     }
@@ -258,6 +259,7 @@ struct RuntimeStatusCard: View {
     let running: Bool
     let note: String?
     let signIn: () -> Void
+    var connect: (() -> Void)? = nil
 
     var status: (String, Color) {
         if !running { return (L("Not checked – start the sandbox"), Color.secondary) }
@@ -292,6 +294,9 @@ struct RuntimeStatusCard: View {
             Spacer(minLength: 4)
             if running, installed == true, used, signedIn == false {
                 Button("Sign in", action: signIn).controlSize(.small)
+            }
+            if let connect, running, installed == true, used {
+                Button("Connect", action: connect).controlSize(.small)
             }
         }
         .padding(10)
