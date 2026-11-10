@@ -8,6 +8,7 @@ struct SandboxesView: View {
     @Local private var deleteFor: SandboxInfo?
     @Local private var forceDeleteMsg: String?
     @Local private var forceDeleteFor: SandboxInfo?
+    @Local private var baseBannerDismissed = false
 
     /// Sandboxes that are being created and are not in the list yet (immediate feedback).
     var creating: [(name: String, step: String)] {
@@ -20,9 +21,24 @@ struct SandboxesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let s = model.status, !s.baseReady {
-                Label("Base VM missing – it is built when you create the first sandbox (a few minutes).", systemImage: "info.circle")
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.yellow.opacity(0.15))
+            if let s = model.status, !s.baseReady, !baseBannerDismissed {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Label("Base VM missing – it is built when you create the first sandbox (a few minutes).", systemImage: "info.circle")
+                        Spacer()
+                        if let step = model.running["base"] {
+                            ProgressView().controlSize(.small)
+                            Text(step).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        } else {
+                            Button("Build now") {
+                                Task { if let e = await model.runJob("base", L("Building base VM (several minutes) …"), "/v1/base/build", NameBody(name: "x")) { model.setBanner(e) } }
+                            }.buttonStyle(.borderedProminent).controlSize(.small)
+                        }
+                        Button { baseBannerDismissed = true } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).help(L("Dismiss"))
+                    }
+                    JobOutput(key: "base")
+                }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.yellow.opacity(0.15))
             }
             if let st = model.status, st.updateAvailable == true {
                 HStack {

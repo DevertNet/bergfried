@@ -138,6 +138,7 @@ struct SSHDecisionSheet: View {
     @Local private var perConn = false
     @Local private var trust = false
     @Local private var passphrase = ""
+    @Local private var note = ""
     @Local private var error: String?
 
     func keyLabel(_ k: KeyInfo) -> String {
@@ -152,62 +153,137 @@ struct SSHDecisionSheet: View {
     var needsPassphrase: Bool { notLoaded && selectedKey?.encrypted == true }
     var canAllow: Bool { !key.isEmpty && (!unknownHost || trust) && (!needsPassphrase || !passphrase.isEmpty) }
 
+    @ViewBuilder func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(LocalizedStringKey(title)).font(.callout.bold())
+            content()
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     var body: some View {
-        Form {
-            Text(L("SSH access for %@/%@", r.sandbox, r.agent)).font(.headline)
-            LT("Target: **%@**", r.path)
-            Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
-            if unknownHost {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) { Text($0).font(.caption.monospaced()).textSelection(.enabled) }
-                    Toggle("I know this host key", isOn: $trust)
-                }
-            }
-            Picker("Duration", selection: $minutes) {
-                Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
-            }
-            Picker("Key", selection: $key) {
-                ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
-            }
-            if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption) }
-            if notLoaded {
-                if needsPassphrase {
-                    SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
-                }
-                Text("This key is not loaded in your ssh-agent. Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.").font(.caption).foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("User").frame(width: 80, alignment: .leading)
-                VStack(alignment: .leading, spacing: 2) {
-                    TextField("", text: $user).textFieldStyle(.roundedBorder)
-                    if let ru = r.ssh?.requestedUser, !ru.isEmpty {
-                        Text(ru == user ? L("Requested by the agent.") : L("Requested by the agent: %@", ru)).font(.caption).foregroundStyle(.secondary)
-                    }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L("SSH access for %@/%@", r.sandbox, r.agent)).font(.title3.bold())
+                    LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if unknownHost {
+                    Label("New host key", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.bold()).foregroundStyle(.orange)
                 }
             }
-            Toggle("For all agents of the sandbox", isOn: $allAgents)
-            Text("Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox.").font(.caption).foregroundStyle(.secondary)
-            Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
-            if let error { Text(error).foregroundStyle(.red) }
-            HStack {
+            Divider().padding(.vertical, 12)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    section("Request") {
+                        Text(L("Agent's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    }
+
+                    if unknownHost {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) {
+                                Text($0).font(.caption.monospaced()).textSelection(.enabled)
+                            }
+                            Toggle("I know this host key", isOn: $trust)
+                            Text("Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    section("Access") {
+                        LabeledContent("Duration") {
+                            Picker("Duration", selection: $minutes) {
+                                Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
+                            }.labelsHidden().fixedSize()
+                        }
+                        LabeledContent("User") {
+                            VStack(alignment: .leading, spacing: 3) {
+                                TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
+                                if let ru = r.ssh?.requestedUser, !ru.isEmpty {
+                                    Text(ru == user ? L("Requested by the agent.") : L("Requested by the agent: %@", ru))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        LabeledContent("Key") {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Picker("Key", selection: $key) {
+                                    ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
+                                }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                                if let k = selectedKey {
+                                    Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                        .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                        if needsPassphrase {
+                            SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
+                        }
+                    }
+
+                    if notLoaded {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label("Key not loaded in your ssh-agent", systemImage: "key.slash")
+                                .font(.caption.bold()).foregroundStyle(.orange)
+                            Text("Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.")
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    section("Options") {
+                        Toggle("For all agents of the sandbox", isOn: $allAgents)
+                        Text("Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
+                    }
+
+                    section("Note for the agent (optional)") {
+                        TextEditor(text: $note)
+                            .font(.callout)
+                            .frame(minHeight: 62, maxHeight: 90)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                        Text("Shown to the agent with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }.padding(.trailing, 6)
+            }
+
+            if let error {
+                Text(error).foregroundStyle(.red).font(.callout)
+                    .fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+            }
+            Divider().padding(.vertical, 12)
+            HStack(spacing: 10) {
+                Text("Deny and approve both send the note to the agent.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { passphrase = ""; dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Deny", role: .destructive) {
                     passphrase = ""
-                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false)); dismiss() }
+                    let n = note
+                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allAgents: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
                 }
                 Button("Approve") {
                     let pw = passphrase
                     passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
+                    let n = note
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust, passphrase: pw))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allAgents: allAgents, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 580)
+        .padding(20).frame(width: 680, height: 720)
         .task {
             // Precedence: the agent's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }

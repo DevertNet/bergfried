@@ -154,6 +154,7 @@ struct SSHDecideBody: Encodable {
     var perConnection: Bool
     var trustUnknownHost: Bool
     var passphrase: String = ""   // only for a key that is not loaded in the agent; never stored
+    var note: String = ""         // optional message shown to the agent with the decision
 }
 struct IDBody: Encodable { var id: Int64 }
 struct ChannelBody: Encodable { var channel: String }

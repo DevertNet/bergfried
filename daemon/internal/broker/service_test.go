@@ -361,3 +361,36 @@ func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
 		t.Fatalf("with ConfirmEach it must work: %v", res)
 	}
 }
+
+func TestDecisionNoteReachesAgent(t *testing.T) {
+	hostFP := "SHA256:abc"
+
+	s, _, _ := svcFx(t, "known_hosts", []string{hostFP})
+	s.Asker = &autoAsker{s, Decision{Allow: false, Note: "use the staging host instead"}}
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_DENIED {
+		t.Fatalf("%v %v", res, err)
+	}
+	if !strings.Contains(res.Message, "use the staging host instead") {
+		t.Fatalf("note missing: %q", res.Message)
+	}
+
+	s2, f2, _ := svcFx(t, "known_hosts", []string{hostFP})
+	s2.Asker = &autoAsker{s2, Decision{Allow: true, Minutes: 5, KeyFP: ssh.FingerprintSHA256(f2.userKey.PublicKey()), User: "claude", Note: "only this host"}}
+	res, err = s2.RequestSSH(context.Background(), "shop", "main", "example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("%v %v", res, err)
+	}
+	if !strings.Contains(res.Message, "only this host") {
+		t.Fatalf("note missing: %q", res.Message)
+	}
+}
+
+func TestCleanNote(t *testing.T) {
+	if got := cleanNote("  hi\x00 there  "); got != "hi there" {
+		t.Fatalf("%q", got)
+	}
+	if got := cleanNote(strings.Repeat("x", 600)); len([]rune(got)) != 501 {
+		t.Fatalf("long note must be truncated, got %d runes", len([]rune(got)))
+	}
+}
