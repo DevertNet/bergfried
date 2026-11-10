@@ -419,7 +419,7 @@ claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/ber
 		return err
 	}
 	agentsMd := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
-	_, err = m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
+	script := fmt.Sprintf(`set -e
 mkdir -p ~/.config/opencode
 f=~/.config/opencode/opencode.json
 [ -f "$f" ] || { [ -f ~/.config/opencode/opencode.jsonc ] && f=~/.config/opencode/opencode.jsonc; }
@@ -431,7 +431,8 @@ else
   rm -f "$f.tmp"
   "$HOME/.opencode/bin/opencode" mcp add bergfried --global -- "$HOME/.local/bin/bergfried-mcp" >/dev/null 2>&1 || true
 fi
-printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd))
+printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd)
+	_, err = m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s")
 	return err
 }
 
@@ -439,7 +440,7 @@ printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd))
 // downloaded and verified on the Mac, copied into the VM and unpacked there; the VM needs no
 // network access, curl, jq or OpenSSL. Idempotent.
 func (m *Manager) InstallOpenCode(ctx context.Context, vm string) error {
-	out, err := m.L.Shell(ctx, vm, "bash", "-c", `OC="$HOME/.opencode/bin/opencode"; if [ -x "$OC" ] && "$OC" --version 2>/dev/null | grep -qE '(^| )v?2[.]'; then echo yes; fi`)
+	out, err := m.L.ShellStdin(ctx, vm, strings.NewReader(openCodeCheckScript()), "bash", "-s")
 	if err == nil && strings.TrimSpace(string(out)) == "yes" {
 		return nil
 	}
@@ -452,7 +453,7 @@ func (m *Manager) InstallOpenCode(ctx context.Context, vm string) error {
 	if _, err := m.L.R.Run(ctx, "cp", tgz, vm+":/tmp/opencode.tgz"); err != nil {
 		return fmt.Errorf("OpenCode: upload to the VM: %w", err)
 	}
-	_, err = m.L.Shell(ctx, vm, "bash", "-c", openCodeInstallScript())
+	_, err = m.L.ShellStdin(ctx, vm, strings.NewReader(openCodeInstallScript()), "bash", "-s")
 	return err
 }
 
