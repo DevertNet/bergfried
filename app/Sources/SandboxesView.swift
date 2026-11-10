@@ -332,6 +332,12 @@ struct PairSheet: View {
                 .lineLimit(4)
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            if let port = URL(string: link)?.port {
+                Text(L("Port %lld – this link belongs to this sandbox. A link on port 49374 is not from Bergfried; click Connect again.", port))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Use the link immediately and only once. If you want the desktop app, do not open it in the browser first.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text("The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {

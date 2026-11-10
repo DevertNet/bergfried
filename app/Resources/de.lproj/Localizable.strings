@@ -347,3 +347,6 @@
 "Disk %@" = "Platte %@";
 
 "Connect" = "Verbinden";
+
+"Port %lld – this link belongs to this sandbox. A link on port 49374 is not from Bergfried; click Connect again." = "Port %lld – dieser Link gehört zu dieser Sandbox. Ein Link auf Port 49374 stammt nicht von Bergfried; klicke erneut auf Verbinden.";
+"Use the link immediately and only once. If you want the desktop app, do not open it in the browser first." = "Verwende den Link sofort und nur einmal. Wenn du die Desktop-App nutzen willst, öffne ihn nicht zuerst im Browser.";

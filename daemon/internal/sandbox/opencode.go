@@ -76,16 +76,7 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 		}
 	}
 	// Make the server reachable for Lima and keep the port stable across restarts.
-	setup := fmt.Sprintf(`set -e
-OC="$HOME/.opencode/bin/opencode"
-curh=$("$OC" service get hostname 2>/dev/null || true)
-curp=$("$OC" service get port 2>/dev/null || true)
-changed=0
-[ "$curh" = 0.0.0.0 ] || { "$OC" service set hostname 0.0.0.0; changed=1; }
-[ "$curp" = %[1]d ] || { "$OC" service set port %[1]d; changed=1; }
-[ "$changed" = 0 ] || "$OC" service start
-"$OC" service start >/dev/null 2>&1 || true
-echo "changed=$changed"`, port)
+	setup := openCodePairSetupScript(port)
 	out, err := m.L.ShellStdin(ctx, s.VM, strings.NewReader(setup), "bash", "-s")
 	if err != nil {
 		return "", fmt.Errorf("OpenCode server: %w", err)
@@ -93,11 +84,9 @@ echo "changed=$changed"`, port)
 	if err := m.S.SetOpenCodePort(sandbox, port); err != nil {
 		return "", err
 	}
-	if strings.Contains(string(out), "changed=1") {
-		// The setting change stopped the shared server; reopen the agent windows so they attach again.
-		if _, err := m.RestartRuntimeAgents(ctx, sandbox, RuntimeOpenCode); err != nil {
-			return "", fmt.Errorf("restart OpenCode agents: %w", err)
-		}
+	// The service restart dropped the TUI connections; reopen the windows before pairing.
+	if _, err := m.RestartRuntimeAgents(ctx, sandbox, RuntimeOpenCode); err != nil {
+		return "", fmt.Errorf("restart OpenCode agents: %w", err)
 	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -109,8 +98,30 @@ echo "changed=$changed"`, port)
 	if link == "" {
 		return "", fmt.Errorf("opencode pair returned no link")
 	}
+	if !linkUsesPort(link, port) {
+		return "", fmt.Errorf("opencode pair returned a link on the wrong port (expected %d): %s", port, link)
+	}
 	m.audit("sandbox.pair", sandbox, "", fmt.Sprintf("port=%d", port))
 	return link, nil
+}
+
+// openCodePairSetupScript configures the shared server before pairing. It always restarts the
+// service: the config may already name the right port while the running service still sits on
+// the old default port (that was exactly how a 49374 link appeared).
+func openCodePairSetupScript(port int) string {
+	return fmt.Sprintf(`set -e
+OC="$HOME/.opencode/bin/opencode"
+curh=$("$OC" service get hostname 2>/dev/null || true)
+curp=$("$OC" service get port 2>/dev/null || true)
+[ "$curh" = 0.0.0.0 ] || "$OC" service set hostname 0.0.0.0
+[ "$curp" = %[1]d ] || "$OC" service set port %[1]d
+"$OC" service restart >/dev/null 2>&1 || "$OC" service start
+echo "service=$("$OC" service status 2>/dev/null || true)"`, port)
+}
+
+// linkUsesPort checks that the pairing link points at the sandbox's dedicated port.
+func linkUsesPort(link string, port int) bool {
+	return strings.Contains(link, fmt.Sprintf(":%d/", port))
 }
 
 // pairLink picks the loopback link from `opencode pair` output (it also prints the VM's LAN address).

@@ -333,3 +333,19 @@ func TestWorktreeScriptIsIdempotent(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodePairSetupAndLinkValidation(t *testing.T) {
+	s := openCodePairSetupScript(42123)
+	for _, want := range []string{"service set port 42123", "service set hostname 0.0.0.0", "service restart", "service start"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("%q missing in\n%s", want, s)
+		}
+	}
+	good := "http://127.0.0.1:42123/auth/connect/abc"
+	if !linkUsesPort(good, 42123) {
+		t.Fatal("own port must be accepted")
+	}
+	if linkUsesPort("http://127.0.0.1:49374/auth/connect/abc", 42123) {
+		t.Fatal("default port must be rejected")
+	}
+}
