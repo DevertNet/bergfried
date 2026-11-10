@@ -47,6 +47,9 @@ struct SettingsView: View {
                 if let u = upd {
                     if u.available {
                         LabeledContent("Available") { Text(u.latest) }
+                        if let size = u.size, size > 0 {
+                            LabeledContent("Download size") { Text(formatBytes(size)) }
+                        }
                         if !u.notes.isEmpty {
                             Text("Release notes").font(.caption.bold())
                             ScrollView { Text(u.notes).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 120)
@@ -60,7 +63,7 @@ struct SettingsView: View {
                 HStack {
                     Button("Check now") { Task { await checkUpdate() } }
                     if let u = upd, u.available, u.updatable {
-                        Button(L("Install version %@ …", u.latest)) { confirmUpdate = true }.buttonStyle(.borderedProminent).disabled(model.running["update"] != nil)
+                        Button(installTitle(u)) { confirmUpdate = true }.buttonStyle(.borderedProminent).disabled(model.running["update"] != nil)
                     }
                     if let l = model.running["update"] { ProgressView().controlSize(.small); Text(l).font(.caption) }
                 }
@@ -144,6 +147,13 @@ struct SettingsView: View {
             Button("Install and restart", role: .destructive) { Task { await installUpdate() } }
         } message: { Text("Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running.") }
         .task { await load(); await loadTemplate(); notifStatus = await Notifier.shared.status(); await checkUpdate(refresh: false) }
+    }
+
+    func installTitle(_ u: UpdateInfo) -> String {
+        if let size = u.size, size > 0 {
+            return L("Install version %@ (%@) …", u.latest, formatBytes(size))
+        }
+        return L("Install version %@ …", u.latest)
     }
 
     func checkUpdate(refresh: Bool = true) async {

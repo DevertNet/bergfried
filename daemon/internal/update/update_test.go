@@ -116,7 +116,7 @@ func newFx(t *testing.T, current string, rels ...rel) *fx {
 		for _, rl := range f.rels {
 			assets := "[]"
 			if !rl.noAssets {
-				assets = fmt.Sprintf(`[{"name":%q,"browser_download_url":"%s/dl/%s/zip","size":1},{"name":"SHA256SUMS","browser_download_url":"%s/dl/%s/sums","size":1}]`,
+				assets = fmt.Sprintf(`[{"name":%q,"browser_download_url":"%s/dl/%s/zip","size":12345678},{"name":"SHA256SUMS","browser_download_url":"%s/dl/%s/sums","size":1}]`,
 					AssetName(rl.tag), f.srv.URL, rl.tag, f.srv.URL, rl.tag)
 			}
 			items = append(items, fmt.Sprintf(`{"tag_name":%q,"body":"notes for %s","html_url":"https://example/rel","draft":%v,"prerelease":%v,"assets":%s}`, rl.tag, rl.tag, rl.draft, rl.pre, assets))
@@ -158,6 +158,9 @@ func TestCheckStableChannel(t *testing.T) {
 	info := f.svc.Check(context.Background())
 	if !info.Available || info.Latest != "0.1.5" || info.Channel != Stable || info.Notes != "notes for v0.1.5" || !info.Updatable || info.Error != "" {
 		t.Fatalf("stable must ignore dev pre-releases: %+v", info)
+	}
+	if info.Size != 12345678 {
+		t.Fatalf("download size: %d", info.Size)
 	}
 	if f.svc.Last().Latest != "0.1.5" {
 		t.Fatal("Last() must return the cached answer")

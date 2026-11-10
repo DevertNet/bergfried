@@ -288,7 +288,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"template_version": s.M.Rev(), "index_ready": s.Ix.Ready(), "index_waiting": s.Gate != nil && s.Gate.Waiting(), "upstream_agent": s.Upstream != "", "sandboxes": len(ss)}
 	if s.Upd != nil {
 		if u := s.Upd.Last(); u.Available {
-			st["update_available"], st["update_version"] = true, u.Latest
+			st["update_available"], st["update_version"], st["update_size"] = true, u.Latest, u.Size
 		}
 	}
 	writeJSON(w, 200, st)

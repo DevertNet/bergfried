@@ -45,6 +45,7 @@ type Info struct {
 	Available bool   `json:"available"`
 	Notes     string `json:"notes"`
 	URL       string `json:"url"`
+	Size      int64  `json:"size"`
 	Checked   int64  `json:"checked_unix"`
 	Error     string `json:"error,omitempty"`
 	Updatable bool   `json:"updatable"` // false when the daemon does not run from an app bundle
@@ -363,7 +364,7 @@ func (s *Service) Check(ctx context.Context) Info {
 		for _, a := range best.Assets {
 			switch a.Name {
 			case want:
-				info.assetURL = a.URL
+				info.assetURL, info.Size = a.URL, a.Size
 			case "SHA256SUMS":
 				info.sumsURL = a.URL
 			}

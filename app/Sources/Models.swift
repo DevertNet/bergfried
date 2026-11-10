@@ -11,6 +11,7 @@ struct DaemonStatus: Codable, Equatable {
     var sandboxes: Int
     var updateAvailable: Bool?
     var updateVersion: String?
+    var updateSize: Int64?
 }
 
 struct LogInfo: Codable, Equatable { var path: String; var text: String }
@@ -22,6 +23,7 @@ struct UpdateInfo: Codable {
     var available: Bool
     var notes: String
     var url: String
+    var size: Int64?
     var checkedUnix: Int64
     var error: String?
     var updatable: Bool
