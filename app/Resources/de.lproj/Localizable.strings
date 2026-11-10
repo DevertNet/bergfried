@@ -33,7 +33,6 @@
 "Automatic (iTerm if installed)" = "Automatisch (iTerm, falls installiert)";
 "Available" = "Verfügbar";
 "Base" = "Basis";
-"Base VM" = "Basis-VM";
 "Base VM missing – it is built when you create the first sandbox (a few minutes)." = "Basis-VM fehlt – sie wird beim ersten Erstellen gebaut (einige Minuten).";
 "Bergfried – test notification" = "Bergfried – Testmitteilung";
 "Blocklist (never indexed, never shareable)" = "Sperrliste (nie im Index, nie freigebbar)";
@@ -175,7 +174,6 @@
 "Saved. The base VM must be rebuilt (section \"Base VM\")." = "Gespeichert. Die Basis-VM muss neu gebaut werden (Abschnitt „Basis-VM“).";
 "Send test notification" = "Testmitteilung senden";
 "Set up …" = "Einrichten …";
-"Settings" = "Einstellungen";
 "Shell in the VM (%@)" = "Shell in der VM (%@)";
 "Show finished requests" = "Erledigte Anfragen anzeigen";
 "Socket path too long" = "Socket-Pfad zu lang";
@@ -361,3 +359,36 @@
 "The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; running agent sessions continue." = "Der OpenCode-Dienst wird auf dem eigenen Port dieser Sandbox neu gestartet und ein Einmal-Link erzeugt. Das kann ein paar Sekunden dauern; laufende Agent-Sitzungen bleiben erhalten.";
 "Try again" = "Erneut versuchen";
 "No link received. Please try again." = "Kein Link erhalten. Bitte erneut versuchen.";
+
+"Version %@" = "Version %@";
+"Paths" = "Pfade";
+"Available update" = "Verfügbares Update";
+"Rollback" = "Rollback";
+"Security" = "Sicherheit";
+"Channel" = "Kanal";
+"Installed" = "Installiert";
+"Data paths" = "Datenpfade";
+"Template (bergfried.yaml)" = "Vorlage (bergfried.yaml)";
+"SSH grants" = "SSH-Freigaben";
+"General" = "Allgemein";
+"Notifications" = "Mitteilungen";
+"Files & index" = "Dateien & Index";
+"Terminal" = "Terminal";
+"Advanced" = "Erweitert";
+"Daemon, paths and overall status" = "Daemon, Pfade und Gesamtstatus";
+"Version, channel and available releases" = "Version, Kanal und verfügbare Releases";
+"Base image and new sandboxes" = "Basis-Image und neue Sandboxes";
+"macOS notifications for requests" = "macOS-Mitteilungen für Anfragen";
+"Blocklist, index and data paths" = "Blocklist, Index und Datenpfade";
+"Terminal app for shell and login" = "Terminal-App für Shell und Login";
+"Template editor, GitHub and SSH notes" = "Vorlagen-Editor, GitHub- und SSH-Hinweise";
+"The file-name index is rebuilt from the blocklist. Contents are never indexed; agents only get a file after you approve a request." = "Der Dateinamen-Index wird aus der Blocklist neu aufgebaut. Inhalte werden nie indexiert; eine Datei bekommt ein Agent erst nach deiner Freigabe.";
+
+"Settings" = "Einstellungen";
+
+"Daemon" = "Daemon";
+"Version" = "Version";
+"Index" = "Index";
+"Blocklist" = "Blocklist";
+"GitHub" = "GitHub";
+"Copy" = "Kopieren";
