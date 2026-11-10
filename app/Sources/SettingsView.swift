@@ -79,9 +79,6 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                Text(L("Settings")).font(.title3.bold())
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
                 List(SettingsSection.allCases, selection: $section) { s in
                     Label(L(s.title), systemImage: s.icon).tag(s)
                 }
