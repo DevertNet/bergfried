@@ -163,7 +163,6 @@
 "Requests" = "Anfragen";
 "Reset to the bundled template" = "Auf mitgelieferte Vorlage zurücksetzen";
 "Restart" = "Neu starten";
-"Restart daemon" = "Daemon neu starten";
 "Revoke" = "Entziehen";
 "Running" = "Läuft";
 "SSH access for %@/%@" = "SSH-Zugriff für %@/%@";
@@ -406,3 +405,8 @@
 "installed · running · signed in" = "installiert · läuft · angemeldet";
 "installed · running · not signed in" = "installiert · läuft · nicht angemeldet";
 "installed · running" = "installiert · läuft";
+
+"Runtime conflict – restart the daemon" = "Laufzeit-Konflikt – Daemon neu starten";
+
+"Daemon version %@ does not match the app %@. Restart the daemon." = "Daemon-Version %@ passt nicht zur App %@. Daemon neu starten.";
+"The daemon did not report the new version. Check ~/.bergfried/daemon.log." = "Der Daemon hat die neue Version nicht gemeldet. Prüfe ~/.bergfried/daemon.log.";

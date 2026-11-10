@@ -431,6 +431,7 @@ struct AgentRow: View {
     var state: (color: Color, text: String) {
         if !s.running { return (.gray, L("Stopped")) }
         if a.isOpenCode {
+            if a.rcAction == "conflict" { return (.red, L("Runtime conflict – restart the daemon")) }
             if !a.window && sandboxBusy { return (.orange, L("starting …")) }
             if s.opencodeLoggedIn == false { return (.orange, L("waiting for OpenCode login")) }
             if a.rcAction == "working" { return (.blue, L("OpenCode is working …")) }

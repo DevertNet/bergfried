@@ -141,6 +141,7 @@ type Monitor struct {
 	actions   map[string]string    // Anzeige-Stand je Agent
 	installed map[string]bool      // MCP/Hook/Hinweise in dieser VM seit Daemon-Start aktualisiert
 	repairAt  map[string]time.Time // last runtime-mismatch repair per agent
+	repairs   map[string]int       // runtime-mismatch repairs per agent (stop after 3)
 	sticky    map[string]stickyRC  // active RC seen once per agent, bound to the claude PID
 	pids      map[string]int       // zuletzt gesehene claude-PID je Agent
 }
@@ -209,7 +210,7 @@ func (mo *Monitor) MarkRC(name, agent string) error {
 
 func NewMonitor(m *sandbox.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repairAt: map[string]time.Time{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, repairAt: map[string]time.Time{}, repairs: map[string]int{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
@@ -235,6 +236,7 @@ func (mo *Monitor) ResetAgent(sandbox, agent string) {
 	delete(mo.last, k)
 	delete(mo.actions, k)
 	delete(mo.repairAt, k)
+	delete(mo.repairs, k)
 	mo.mu.Unlock()
 }
 
@@ -248,7 +250,11 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 	cp := *s
 	cp.Agents = map[string]AgentState{}
 	for k, v := range s.Agents {
-		if v.Runtime == string(sandbox.RuntimeClaude) && !v.RC {
+		if v.Runtime == string(sandbox.RuntimeOpenCode) {
+			if act := mo.actions[name+"/"+k]; act != "" {
+				v.Action = act
+			}
+		} else if !v.RC {
 			v.Action = mo.actions[name+"/"+k]
 			// A running Claude agent that is neither idle nor active is probably waiting for input.
 			if v.Action == "" && v.Running && !v.Idle && mo.norc[name+"/"+k] >= 8 {
@@ -451,15 +457,29 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	var repairs []string
 	for w, a := range st.Agents {
 		key := name + "/" + w
+		rt := runtimes[w]
+		wrong := (rt == sandbox.RuntimeClaude && a.OpenCodePID > 0) || (rt == sandbox.RuntimeOpenCode && a.ClaudePID > 0)
+		if !wrong {
+			delete(mo.repairAt, key)
+			delete(mo.repairs, key)
+			if mo.actions[key] == "conflict" {
+				delete(mo.actions, key)
+			}
+			continue
+		}
+		if mo.repairs[key] >= 3 {
+			if mo.actions[key] != "conflict" {
+				mo.actions[key] = "conflict"
+				_ = mo.M.S.Audit("daemon", "agent.runtime_conflict", name, w, "window keeps switching runtimes; another daemon or manual start?")
+			}
+			continue
+		}
 		if last, ok := mo.repairAt[key]; ok && time.Since(last) < 30*time.Second {
 			continue
 		}
-		rt := runtimes[w]
-		wrong := (rt == sandbox.RuntimeClaude && a.OpenCodePID > 0) || (rt == sandbox.RuntimeOpenCode && a.ClaudePID > 0)
-		if wrong {
-			mo.repairAt[key] = time.Now()
-			repairs = append(repairs, w)
-		}
+		mo.repairs[key]++
+		mo.repairAt[key] = time.Now()
+		repairs = append(repairs, w)
 	}
 	// OpenCode activity: the local server knows busy/idle per session directory.
 	for dir, oc := range st.OpenCode {
