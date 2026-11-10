@@ -11,6 +11,9 @@ enum Pane: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
 
+    var appVersion: String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?" }
+    var daemonVersion: String? { model.status?.version }
+
     var body: some View {
         NavigationSplitView {
             List(Pane.allCases, selection: $model.pane) { p in
@@ -24,6 +27,12 @@ struct ContentView: View {
                 if !model.online {
                     Label("The daemon is not reachable. You can install and start it under \"Settings\".", systemImage: "exclamationmark.triangle.fill")
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.red.opacity(0.15))
+                } else if let dv = daemonVersion, dv != appVersion {
+                    HStack {
+                        Label(L("Daemon version %@ does not match the app %@. Restart the daemon.", dv, appVersion), systemImage: "exclamationmark.triangle.fill")
+                        Spacer()
+                        Button("Restart daemon") { Task { await restartDaemon() } }
+                    }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.2))
                 }
                 if let b = model.banner {
                     HStack {
@@ -48,6 +57,21 @@ struct ContentView: View {
         .alert("Why macOS asks for access to many folders", isPresented: Binding(get: { model.status?.indexWaiting == true }, set: { _ in })) {
             Button("Continue") { Task { do { try await model.api.post("/v1/index/start", NameBody(name: "x")) } catch { model.setBanner(error.localizedDescription) }; await model.refresh() } }
         } message: { Text("Bergfried now builds a search index of file names in your home folder, so that agents can find files with list_files/search_files. macOS therefore asks one by one for Documents, Desktop, Downloads and other folders – and again after every update, because the app is not signed with a developer certificate. Only names, sizes and dates are indexed, never contents. An agent only gets the content of a file after you approve that request in the app. Blocked locations (such as ~/.ssh and ~/Library) are skipped. If you deny a folder, it is simply missing from the index.") }
+    }
+
+    func restartDaemon() async {
+        do {
+            _ = try await Task.detached { try DaemonController.install() }.value
+        } catch {
+            model.setBanner(error.localizedDescription)
+            return
+        }
+        for _ in 0..<20 {
+            await model.refresh()
+            if model.online, model.status?.version == appVersion { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        model.setBanner(L("The daemon did not report the new version. Check ~/.bergfried/daemon.log."))
     }
 }
 
