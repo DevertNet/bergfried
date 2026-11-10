@@ -35,12 +35,13 @@ import (
 const usage = `bergfriedd – Bergfried CLI
 
     base build [--rebuild]        build the base VM from the template
-    create <name> [--repo URL | --import FOLDER]   clone a sandbox from the base VM
+    create <name> [--repo URL | --import FOLDER] [--runtime claude|opencode]   clone a sandbox from the base VM
   start|stop <name>
     delete <name> [--force]       warns about unpushed commits
     list                          sandboxes with VM status and agents
-    agent add <sandbox> <agent>   new agent (tmux window + worktree + Remote Control)
-    login <sandbox>               claude auth login in the VM (once per VM)
+    agent add <sandbox> <agent> [--runtime claude|opencode]   new agent (tmux window + worktree)
+    login <sandbox> [claude|opencode]   sign in the agent CLI in the VM (once per runtime)
+    pair <sandbox>                 one-time link for the OpenCode desktop app
     attach <sandbox>              open the sandbox's tmux
     shell <sandbox>               shell in the VM
     audit [-n 50]                 audit log
@@ -120,7 +121,12 @@ func run(cmd string, args []string) error {
 		fs := flag.NewFlagSet("create", flag.ExitOnError)
 		repo := fs.String("repo", "", "git URL, cloned to ~/work/main")
 		imp := fs.String("import", "", "existing folder in home, COPIED to ~/work/main (blocklist, without .env/keys)")
+		runtime := fs.String("runtime", "claude", "agent CLI for the first agent: claude or opencode")
 		_ = fs.Parse(args[1:])
+		rt, err := sandbox.ParseRuntime(*runtime)
+		if err != nil {
+			return err
+		}
 		if *imp != "" {
 			bl, err := index.LoadBlocklist(filepath.Join(home, "blocklist.json"))
 			if err != nil {
@@ -128,7 +134,7 @@ func run(cmd string, args []string) error {
 			}
 			m.Imp = importer.Importer{Home: h, BL: func() index.Blocklist { return bl }}
 		}
-		return m.Create(ctx, args[0], *repo, *imp, "")
+		return m.Create(ctx, args[0], *repo, *imp, "", rt)
 	case "update":
 		return updateCmd(home, args)
 	case "start":
@@ -153,9 +159,26 @@ func run(cmd string, args []string) error {
 		return list(ctx, m)
 	case "agent":
 		if err := need(3); err != nil || args[0] != "add" {
-			return errors.New("nutze: agent add <sandbox> <agent>")
+			return errors.New("nutze: agent add <sandbox> <agent> [--runtime claude|opencode]")
 		}
-		return m.AgentAdd(ctx, args[1], args[2])
+		fs := flag.NewFlagSet("agent", flag.ExitOnError)
+		runtime := fs.String("runtime", "claude", "agent CLI: claude or opencode")
+		_ = fs.Parse(args[3:])
+		rt, err := sandbox.ParseRuntime(*runtime)
+		if err != nil {
+			return err
+		}
+		return m.AgentAdd(ctx, args[1], args[2], rt)
+	case "pair":
+		if err := need(1); err != nil {
+			return err
+		}
+		link, err := m.PairOpenCode(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Println(link)
+		return nil
 	case "login", "attach", "shell":
 		if err := need(1); err != nil {
 			return err
@@ -165,10 +188,20 @@ func run(cmd string, args []string) error {
 			return err
 		}
 		inner := map[string][]string{
-			"login":  {"bash", "-lc", "claude auth login"},
 			"attach": {"bash", "-lc", "tmux attach -t bf || tmux new -s bf"},
 			"shell":  {"bash", "-l"},
 		}[cmd]
+		if cmd == "login" {
+			rtName := "claude"
+			if len(args) > 1 {
+				rtName = args[1]
+			}
+			rt, err := sandbox.ParseRuntime(rtName)
+			if err != nil {
+				return err
+			}
+			inner = []string{"bash", "-lc", rt.LoginCommand()}
+		}
 		lc, err := exec.LookPath("limactl")
 		if err != nil {
 			return err
@@ -226,7 +259,11 @@ func list(ctx context.Context, m *sandbox.Manager) error {
 		ags, _ := m.S.ListAgents(s.Name)
 		names := ""
 		for _, a := range ags {
-			names += a.Name + " "
+			if a.Runtime == string(sandbox.RuntimeOpenCode) {
+				names += a.Name + "(opencode) "
+			} else {
+				names += a.Name + " "
+			}
 		}
 		fmt.Printf("%-16s %-10s v%-3d %s\n", s.Name, st, s.TemplateVersion, names)
 	}

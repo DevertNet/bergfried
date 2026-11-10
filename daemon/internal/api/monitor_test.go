@@ -6,35 +6,77 @@ import (
 )
 
 func TestParseProbe(t *testing.T) {
-	out := `login=true
+	out := `login_claude=true
 disk=3221225472 63312289792
-win=main rc=1 theme=0 url=https://claude.ai/code/session_ABC123
-win=api rc=0 theme=1 url=
+win=main rc=1 theme=0 cpid=111 opid=0 url=https://claude.ai/code/session_ABC123
+win=api rc=0 theme=1 cpid=0 opid=222 url=
 `
 	st := parseProbe(out)
-	if st.LoggedIn == nil || !*st.LoggedIn {
+	if st.ClaudeLoggedIn == nil || !*st.ClaudeLoggedIn {
 		t.Fatal("login")
+	}
+	if st.OpenCodeLoggedIn != nil {
+		t.Fatal("OpenCode login must stay unknown when it was not checked")
 	}
 	if st.GuestUsed != 3221225472 || st.GuestSize != 63312289792 {
 		t.Fatalf("%d %d", st.GuestUsed, st.GuestSize)
 	}
-	if a := st.Agents["main"]; !a.Window || !a.RC || a.URL != "https://claude.ai/code/session_ABC123" {
+	if a := st.Agents["main"]; !a.Window || !a.RC || a.ClaudePID != 111 || a.OpenCodePID != 0 || a.URL != "https://claude.ai/code/session_ABC123" {
 		t.Fatalf("%+v", a)
 	}
-	if a := st.Agents["api"]; a.RC || !a.Theme {
+	if a := st.Agents["api"]; a.RC || !a.Theme || a.OpenCodePID != 222 {
 		t.Fatalf("%+v", a)
 	}
-	if st.stable() {
-		t.Fatal("an agent without RC must not be stable")
+	st.Agents["main"] = AgentState{Window: true, RC: true, Runtime: "claude"}
+	st.Agents["api"] = AgentState{Window: true, RC: true, Runtime: "claude"}
+	if !st.stable() {
+		t.Fatal("two signed-in Claude agents with RC are stable")
 	}
-	f := parseProbe("login=false\n")
-	if f.LoggedIn == nil || *f.LoggedIn || f.stable() {
+	f := parseProbe("login_claude=false\nwin=main rc=1 runtime=claude\n")
+	f.Agents["main"] = AgentState{Window: true, RC: true, Runtime: "claude"}
+	if f.ClaudeLoggedIn == nil || *f.ClaudeLoggedIn || f.stable() {
 		t.Fatal("ausgeloggt")
 	}
-	if parseProbe("").LoggedIn != nil {
+	empty := parseProbe("")
+	if empty.ClaudeLoggedIn != nil || empty.OpenCodeLoggedIn != nil {
 		t.Fatal("without output the login is unknown")
 	}
 }
+
+func TestParseProbeOpenCode(t *testing.T) {
+	st := parseProbe(`login_claude=true
+login_opencode=false
+oc dir=/home/x/work/api busy=200 idle=100 updated=200 id=ses_2
+oc dir=/home/x/work/api busy=10 idle=100 updated=50 id=ses_1
+`)
+	if st.OpenCodeLoggedIn == nil || *st.OpenCodeLoggedIn {
+		t.Fatal("OpenCode login false")
+	}
+	oc := st.OpenCode["/home/x/work/api"]
+	if oc.Busy != 200 || oc.Idle != 100 || oc.Updated != 200 {
+		t.Fatalf("newest session must win: %+v", oc)
+	}
+}
+
+func TestStableMixedRuntimes(t *testing.T) {
+	st := SandboxState{
+		ClaudeLoggedIn:   boolPtr(true),
+		OpenCodeLoggedIn: boolPtr(true),
+		Agents: map[string]AgentState{
+			"main": {Window: true, RC: true, Runtime: "claude"},
+			"api":  {Window: true, Runtime: "opencode"},
+		},
+	}
+	if !st.stable() {
+		t.Fatal("mixed sandbox with both logins is stable")
+	}
+	st.OpenCodeLoggedIn = boolPtr(false)
+	if st.stable() {
+		t.Fatal("missing OpenCode login must not be stable")
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
 
 func TestDecideRC(t *testing.T) {
 	idle := AgentState{Window: true, Running: true, Idle: true}
@@ -64,11 +106,11 @@ func TestDecideRC(t *testing.T) {
 }
 
 func TestParseProbeNewFields(t *testing.T) {
-	st := parseProbe("login=true\nwin=main rc=0 theme=0 run=1 idle=1 ask=0 url=\nwin=x rc=0 theme=0 run=0 idle=0 ask=1 url=\n")
-	if a := st.Agents["main"]; !a.Running || !a.Idle || a.Ask {
+	st := parseProbe("login_claude=true\nwin=main rc=0 theme=0 cpid=1 opid=0 idle=1 ask=0 url=\nwin=x rc=0 theme=0 cpid=0 opid=2 idle=0 ask=1 url=\n")
+	if a := st.Agents["main"]; !a.Idle || a.Ask || a.ClaudePID != 1 {
 		t.Fatalf("%+v", a)
 	}
-	if a := st.Agents["x"]; a.Running || a.Idle || !a.Ask {
+	if a := st.Agents["x"]; a.ClaudePID != 0 || a.OpenCodePID != 2 || a.Idle || !a.Ask {
 		t.Fatalf("%+v", a)
 	}
 }
@@ -138,16 +180,26 @@ func TestMarkRCClearsFailed(t *testing.T) {
 }
 
 func TestParseProbePID(t *testing.T) {
-	st := parseProbe("login=true\nwin=main rc=1 theme=0 run=1 pid=4242 idle=1 ask=0 url=https://claude.ai/code/session_A\n")
-	if a := st.Agents["main"]; a.PID != 4242 || !a.RC {
+	st := parseProbe("login_claude=true\nwin=main rc=1 theme=0 cpid=4242 opid=0 idle=1 ask=0 url=https://claude.ai/code/session_A\n")
+	if a := st.Agents["main"]; a.ClaudePID != 4242 || !a.RC {
 		t.Fatalf("%+v", a)
 	}
 }
 
 func TestParseProbeDialog(t *testing.T) {
-	st := parseProbe("login=true\nwin=main rc=1 theme=0 run=1 pid=7 idle=0 ask=0 dlg=1 url=https://claude.ai/code/session_Z\n")
+	st := parseProbe("login_claude=true\nwin=main rc=1 theme=0 cpid=7 opid=0 idle=0 ask=0 dlg=1 url=https://claude.ai/code/session_Z\n")
 	a := st.Agents["main"]
-	if !a.Dialog || !a.RC || a.Idle || a.PID != 7 {
+	if !a.Dialog || !a.RC || a.Idle || a.ClaudePID != 7 {
 		t.Fatalf("%+v", a)
+	}
+}
+
+func TestMarkRCOpenCodeRejected(t *testing.T) {
+	mo := NewMonitor(nil)
+	mo.state["s"] = &SandboxState{Agents: map[string]AgentState{
+		"api": {Window: true, Running: true, PID: 5, Runtime: "opencode"},
+	}}
+	if err := mo.MarkRC("s", "api"); err == nil {
+		t.Fatal("Remote Control must be rejected for OpenCode")
 	}
 }

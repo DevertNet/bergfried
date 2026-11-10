@@ -1,16 +1,16 @@
 # Bergfried
 
-**Run Claude Code agents in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
+**Run Claude Code and OpenCode agents in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
 
 ![Bergfried app: sandboxes with their agents](docs/img/app.png)
 
 <sub>Screenshots show made-up demo data ([tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
-Bergfried gives every project its own Linux VM (a **sandbox**) with a Claude Code agent inside. Control the agent from your phone with Claude Code Remote Control; the agent
-sees nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
+Bergfried gives every project its own Linux VM (a **sandbox**) with Claude Code and/or OpenCode agents inside. Control Claude agents from your phone with Claude Code Remote Control and OpenCode agents with the OpenCode desktop app; the agents
+see nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
 
 ## How it works in 30 seconds
-1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Agents run in tmux windows with their own git worktrees.
+1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Agents run in tmux windows with their own git worktrees – Claude Code and OpenCode can run side by side.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
 3. **The agent asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged.
 
@@ -22,8 +22,9 @@ sees nothing of your Mac until you say so: files, SSH access and GitHub access a
 ```mermaid
 flowchart LR
   phone["Phone / claude.ai/code<br/>(Remote Control)"]
+  desktop["OpenCode desktop app"]
   subgraph vm["Sandbox = Lima VM (Linux)"]
-    agent["Claude Code agent"]
+    agent["Claude Code / OpenCode agents"]
     mcp["bergfried-mcp"]
     agent --- mcp
   end
@@ -35,6 +36,7 @@ flowchart LR
     daemon -.->|"only after you approve"| data
   end
   phone <--> agent
+  desktop <-->|"one-time link, local only"| agent
   mcp <-->|"per-sandbox unix socket"| daemon
 ```
 More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

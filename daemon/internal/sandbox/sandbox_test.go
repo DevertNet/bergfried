@@ -27,10 +27,39 @@ func TestValidName(t *testing.T) {
 	}
 }
 
-func TestAgentCmdIsolatesComposeProject(t *testing.T) {
-	c := AgentCmd("shop", "api")
-	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "--remote-control 'shop/api'") {
+func TestAgentCmdPerRuntime(t *testing.T) {
+	c := RuntimeClaude.AgentCmd("shop", "api")
+	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "BERGFRIED_AGENT=shop/api") || !strings.Contains(c, "--remote-control 'shop/api'") {
 		t.Fatal(c)
+	}
+	o := RuntimeOpenCode.AgentCmd("shop", "api")
+	if !strings.Contains(o, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(o, ".opencode/bin/opencode --continue") {
+		t.Fatal(o)
+	}
+	if strings.Contains(o, "BERGFRIED_AGENT") || strings.Contains(o, "--remote-control") {
+		t.Fatalf("OpenCode must not use Claude-only flags: %s", o)
+	}
+}
+
+func TestParseRuntime(t *testing.T) {
+	for in, want := range map[string]Runtime{"": RuntimeClaude, "claude": RuntimeClaude, "opencode": RuntimeOpenCode, "OpenCode": RuntimeOpenCode} {
+		got, err := ParseRuntime(in)
+		if err != nil || got != want {
+			t.Fatalf("%q: %v %v", in, got, err)
+		}
+	}
+	if _, err := ParseRuntime("codex"); err == nil {
+		t.Fatal("unknown runtime must be rejected")
+	}
+}
+
+func TestRuntimeInstallScript(t *testing.T) {
+	s := installOpenCode("2.2.6")
+	if !strings.Contains(s, "opencode.ai/v2/install") || !strings.Contains(s, "--version 2.2.6") || !strings.Contains(s, ".opencode/bin") {
+		t.Fatal(s)
+	}
+	if !strings.Contains(s, `command -v opencode`) {
+		t.Fatal("must be idempotent")
 	}
 }
 
@@ -222,5 +251,28 @@ func TestMigrateHomeRenamesAndLeavesSymlink(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(h2, "sandboxes"), 0o700)
 	if err := MigrateHome(h2); err == nil {
 		t.Fatal("both present: error expected")
+	}
+}
+
+func TestOpenCodePortIsStableAndInRange(t *testing.T) {
+	a, err := openCodePort("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a < openCodePortFirst || a > openCodePortLast {
+		t.Fatalf("port %d outside range", a)
+	}
+	if !portFree(a) {
+		t.Fatalf("port %d is not free", a)
+	}
+}
+
+func TestPairLinkPrefersLoopback(t *testing.T) {
+	out := "\x1b[0m\n  http://192.168.5.15:42123/auth/connect/abc\n  http://127.0.0.1:42123/auth/connect/abc\n"
+	if got := pairLink(out); got != "http://127.0.0.1:42123/auth/connect/abc" {
+		t.Fatalf("pairLink() = %q", got)
+	}
+	if pairLink("no link here") != "" {
+		t.Fatal("no link expected")
 	}
 }

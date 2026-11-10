@@ -46,6 +46,7 @@ var knownSeedHashes = map[string]bool{
 	"2c1ee6d8036bc743130cce0848df97a263124109a94f6272f5b4aaa111d1d2ea": true,
 	"41935cfb0f81e8ce57161411168fd48f7dec0cceb39eadcdc354bf2e5aa96c1f": true,
 	"48d7e50ad3ae31e43c5fe86a7a6294fb75907ec2c9043e52d6d76acc5e2a790c": true,
+	"96e5329da10c7e167456aa1284d9490726e6b1ac7d60cced77317879b9f68ef3": true,
 }
 
 func sumHex(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }

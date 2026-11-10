@@ -1,6 +1,6 @@
 # Working rules for agents in this repo
 
-Project **Bergfried**: Claude Code agents isolated in Lima VMs (Mac; Debian VPS later), with approvals for files/SSH/GitHub.
+Project **Bergfried**: Claude Code and OpenCode agents isolated in Lima VMs (Mac; Debian VPS later), with approvals for files/SSH/GitHub.
 The repository is **English** (docs, code comments, commit messages, app strings via localisation). **Talk to the user in the language they write in** (usually German).
 
 **Read first:** [`README.md`](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (conventions, decisions, pitfalls), [`docs/ROADMAP.md`](docs/ROADMAP.md) (what is next), [`docs/SECURITY.md`](docs/SECURITY.md).

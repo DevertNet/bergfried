@@ -15,9 +15,15 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 )
 
-// probeScript runs in the VM and reports login, disk usage and, per agent window, the RC status.
-const probeScript = `export PATH="$HOME/.local/bin:$PATH"
-echo "login=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"
+// probeScript runs in the VM and reports logins, disk usage and, per agent window, its processes
+// and (for Claude) the Remote Control status. need_claude/need_opencode are filled in by check.
+const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
+if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
+if [ %[2]d = 1 ]; then
+  if command -v opencode >/dev/null 2>&1; then
+    echo "login_opencode=$(opencode auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
+  else echo "login_opencode=false"; fi
+fi
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
 if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
@@ -27,24 +33,29 @@ if tmux has-session -t bf 2>/dev/null; then
     dlg=0; echo "$p" | tail -15 | grep -q 'Disconnect this session' && { dlg=1; rc=1; }
     th=0; echo "$p" | grep -qE 'Choose the text style|Press Enter to continue' && th=1
     tty=$(tmux display-message -p -t "bf:$w" '#{pane_tty}' 2>/dev/null)
-    run=0; pid=0
-    cp=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="claude"{print $1; exit}')
-    [ -n "$cp" ] && { run=1; pid=$cp; }
+    cpid=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="claude"{print $1; exit}')
+    opid=$(ps -t "${tty#/dev/}" -o pid=,comm= 2>/dev/null | awk '$2=="opencode"{print $1; exit}')
     idle=0; echo "$p" | grep -q '❯' && ! echo "$p" | grep -q 'esc to interrupt' && [ "$dlg" = 0 ] && idle=1
     ask=0; echo "$p" | grep -q 'Enable Remote Control' && ask=1
     url=$(echo "$p" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_]+' | tail -1)
-    echo "win=$w rc=$rc theme=$th run=$run pid=$pid idle=$idle ask=$ask dlg=$dlg url=$url"
+    echo "win=$w rc=$rc theme=$th idle=$idle ask=$ask dlg=$dlg cpid=$cpid opid=$opid url=$url"
   done
+fi
+if [ %[2]d = 1 ] && command -v opencode >/dev/null 2>&1 && pgrep -x opencode >/dev/null 2>&1; then
+  opencode api GET /api/session 2>/dev/null | jq -r '.data[]? | "oc dir=\(.location.directory) busy=\(.time.busy // 0) idle=\(.time.idle // 0) updated=\(.time.updated // 0) id=\(.id)"' 2>/dev/null || true
 fi`
 
 type AgentState struct {
 	Window, RC, Theme bool
 	Idle, Ask         bool
-	Running           bool // process "claude" runs in the window
-	PID               int  // PID dieses claude-Prozesses (0 = keiner)
-	Dialog            bool // RC dialog ("Disconnect this session") is open
+	Running           bool   // process of the agent's runtime runs in the window
+	PID               int    // PID of that process (0 = none)
+	ClaudePID         int    // parsed from the probe, before the runtime is known
+	OpenCodePID       int    // parsed from the probe, before the runtime is known
+	Runtime           string // "claude" or "opencode"
+	Dialog            bool   // RC dialog ("Disconnect this session") is open
 	URL               string
-	Action            string // "", "activating", "failed", "waiting" – state of the automatic RC activation
+	Action            string // "", "activating", "failed", "waiting", "working" – display state
 }
 
 type rcAction int
@@ -86,11 +97,27 @@ func decideRC(a AgentState, attempts int, sinceLast time.Duration) rcAction {
 }
 
 type SandboxState struct {
-	LoggedIn             *bool
+	ClaudeLoggedIn       *bool // nil = not checked (no Claude agent in this sandbox)
+	OpenCodeLoggedIn     *bool // nil = not checked (no OpenCode agent in this sandbox)
 	GuestUsed, GuestSize int64
 	Agents               map[string]AgentState
+	OpenCode             map[string]openCodeSession // by directory
 	Checked              time.Time
 	Err                  string
+}
+
+// openCodeSession is one session from the local OpenCode server, used for the busy indicator.
+type openCodeSession struct {
+	Dir                 string
+	Busy, Idle, Updated int64
+}
+
+// LoggedIn reports the login state of a runtime (nil when not used).
+func (s SandboxState) LoggedIn(runtime sandbox.Runtime) *bool {
+	if runtime == sandbox.RuntimeOpenCode {
+		return s.OpenCodeLoggedIn
+	}
+	return s.ClaudeLoggedIn
 }
 
 type Monitor struct {
@@ -147,17 +174,20 @@ func (mo *Monitor) applySticky(key string, a AgentState) AgentState {
 }
 
 // MarkRC confirms manually that Remote Control runs in this agent (escape hatch if detection does not see it).
-func (mo *Monitor) MarkRC(sandbox, agent string) error {
-	key := sandbox + "/" + agent
+func (mo *Monitor) MarkRC(name, agent string) error {
+	key := name + "/" + agent
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
-	st := mo.state[sandbox]
+	st := mo.state[name]
 	if st == nil {
 		return fmt.Errorf("sandbox has not been polled yet")
 	}
 	a, ok := st.Agents[agent]
 	if !ok || !a.Running || a.PID == 0 {
-		return fmt.Errorf("Claude is not running in this agent right now")
+		return fmt.Errorf("the agent is not running right now")
+	}
+	if a.Runtime == string(sandbox.RuntimeOpenCode) {
+		return fmt.Errorf("Remote Control is only available for Claude agents")
 	}
 	mo.sticky[key] = stickyRC{pid: a.PID, url: a.URL}
 	delete(mo.norc, key)
@@ -209,9 +239,9 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 	cp := *s
 	cp.Agents = map[string]AgentState{}
 	for k, v := range s.Agents {
-		if !v.RC {
+		if v.Runtime == string(sandbox.RuntimeClaude) && !v.RC {
 			v.Action = mo.actions[name+"/"+k]
-			// Running but neither idle nor active: Claude is probably waiting for input.
+			// A running Claude agent that is neither idle nor active is probably waiting for input.
 			if v.Action == "" && v.Running && !v.Idle && mo.norc[name+"/"+k] >= 8 {
 				v.Action = "waiting"
 			}
@@ -231,11 +261,22 @@ func (mo *Monitor) Poke(name string) {
 }
 
 func (s *SandboxState) stable() bool {
-	if s.LoggedIn == nil || !*s.LoggedIn {
+	needClaude, needOpenCode := false, false
+	for _, a := range s.Agents {
+		if a.Runtime == string(sandbox.RuntimeOpenCode) {
+			needOpenCode = true
+		} else {
+			needClaude = true
+		}
+	}
+	if needClaude && (s.ClaudeLoggedIn == nil || !*s.ClaudeLoggedIn) {
+		return false
+	}
+	if needOpenCode && (s.OpenCodeLoggedIn == nil || !*s.OpenCodeLoggedIn) {
 		return false
 	}
 	for _, a := range s.Agents {
-		if !a.RC {
+		if a.Runtime == string(sandbox.RuntimeClaude) && !a.RC {
 			return false
 		}
 	}
@@ -243,18 +284,41 @@ func (s *SandboxState) stable() bool {
 }
 
 func parseProbe(out string) SandboxState {
-	st := SandboxState{Agents: map[string]AgentState{}}
+	st := SandboxState{Agents: map[string]AgentState{}, OpenCode: map[string]openCodeSession{}}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
-		case strings.HasPrefix(line, "login="):
-			v := strings.TrimPrefix(line, "login=") == "true"
-			st.LoggedIn = &v
+		case strings.HasPrefix(line, "login_claude="):
+			v := strings.TrimPrefix(line, "login_claude=") == "true"
+			st.ClaudeLoggedIn = &v
+		case strings.HasPrefix(line, "login_opencode="):
+			v := strings.TrimPrefix(line, "login_opencode=") == "true"
+			st.OpenCodeLoggedIn = &v
 		case strings.HasPrefix(line, "disk="):
 			f := strings.Fields(strings.TrimPrefix(line, "disk="))
 			if len(f) == 2 {
 				st.GuestUsed, _ = strconv.ParseInt(f[0], 10, 64)
 				st.GuestSize, _ = strconv.ParseInt(f[1], 10, 64)
+			}
+		case strings.HasPrefix(line, "oc "):
+			oc := openCodeSession{}
+			for _, kv := range strings.Fields(strings.TrimPrefix(line, "oc ")) {
+				k, v, _ := strings.Cut(kv, "=")
+				switch k {
+				case "dir":
+					oc.Dir = v
+				case "busy":
+					oc.Busy, _ = strconv.ParseInt(v, 10, 64)
+				case "idle":
+					oc.Idle, _ = strconv.ParseInt(v, 10, 64)
+				case "updated":
+					oc.Updated, _ = strconv.ParseInt(v, 10, 64)
+				}
+			}
+			if oc.Dir != "" {
+				if old, ok := st.OpenCode[oc.Dir]; !ok || oc.Updated > old.Updated {
+					st.OpenCode[oc.Dir] = oc
+				}
 			}
 		case strings.HasPrefix(line, "win="):
 			a := AgentState{Window: true}
@@ -268,10 +332,10 @@ func parseProbe(out string) SandboxState {
 					a.RC = v == "1"
 				case "theme":
 					a.Theme = v == "1"
-				case "run":
-					a.Running = v == "1"
-				case "pid":
-					a.PID, _ = strconv.Atoi(v)
+				case "cpid":
+					a.ClaudePID, _ = strconv.Atoi(v)
+				case "opid":
+					a.OpenCodePID, _ = strconv.Atoi(v)
 				case "dlg":
 					a.Dialog = v == "1"
 				case "idle":
@@ -293,14 +357,28 @@ func parseProbe(out string) SandboxState {
 func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	out, err := mo.M.L.Shell(cctx, vm, "bash", "-c", probeScript)
+	registered, _ := mo.M.S.ListAgents(name)
+	hasClaude, hasOpenCode := false, false
+	runtimes := map[string]sandbox.Runtime{}
+	for _, a := range registered {
+		rt, _ := sandbox.ParseRuntime(a.Runtime)
+		runtimes[a.Name] = rt
+		if rt == sandbox.RuntimeOpenCode {
+			hasOpenCode = true
+		} else {
+			hasClaude = true
+		}
+	}
+	// Before the first agent exists we still need the Claude login state to decide about seeding "main".
+	script := fmt.Sprintf(probeScript, boolInt(hasClaude || len(registered) == 0), boolInt(hasOpenCode))
+	out, err := mo.M.L.Shell(cctx, vm, "bash", "-c", script)
 	mo.mu.Lock()
 	prev := mo.state[name]
 	if err != nil {
 		// While booting the poll necessarily fails: report only after several failures.
 		mo.failures[name]++
 		if prev == nil {
-			prev = &SandboxState{Agents: map[string]AgentState{}}
+			prev = &SandboxState{Agents: map[string]AgentState{}, OpenCode: map[string]openCodeSession{}}
 			mo.state[name] = prev
 		}
 		prev.Checked = time.Now()
@@ -320,7 +398,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		go func() {
 			ictx, icancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer icancel()
-			if err := mo.M.InstallMCP(ictx, vm, name); err != nil {
+			if err := mo.M.InstallHelpers(ictx, vm, name, hasOpenCode); err != nil {
 				fmt.Fprintln(os.Stderr, "updating VM", name, ":", err)
 				mo.mu.Lock()
 				delete(mo.installed, name)
@@ -333,20 +411,42 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
 	// Only registered agents count (no tmux default window "bash"/"shell"); missing windows count as "no window".
-	registered, _ := mo.M.S.ListAgents(name)
-	regSet := map[string]bool{}
-	for _, a := range registered {
-		regSet[a.Name] = true
-	}
 	for w := range st.Agents {
-		if !regSet[w] {
+		if _, ok := runtimes[w]; !ok {
 			delete(st.Agents, w)
 		}
 	}
-	// Older sandboxes without an agent get the first agent "main" once.
+	// The probe reports both processes; pick the one that belongs to the agent's runtime.
+	for w, a := range st.Agents {
+		rt := runtimes[w]
+		a.Runtime = string(rt)
+		if rt == sandbox.RuntimeOpenCode {
+			a.Running, a.PID = a.OpenCodePID > 0, a.OpenCodePID
+			// Remote Control and its screen markers are Claude-only.
+			a.RC, a.Theme, a.Ask, a.Dialog, a.Idle, a.URL = false, false, false, false, false, ""
+		} else {
+			a.Running, a.PID = a.ClaudePID > 0, a.ClaudePID
+			a = mo.applySticky(name+"/"+w, a)
+		}
+		st.Agents[w] = a
+	}
+	// OpenCode activity: the local server knows busy/idle per session directory.
+	for dir, oc := range st.OpenCode {
+		for w := range st.Agents {
+			if !strings.HasSuffix(dir, "/work/"+w) {
+				continue
+			}
+			a := st.Agents[w]
+			if a.Runtime == string(sandbox.RuntimeOpenCode) && oc.Busy > oc.Idle {
+				a.Action = "working"
+				st.Agents[w] = a
+			}
+		}
+	}
+	// Older sandboxes without an agent get the first agent "main" once (Claude, as before).
 	if !mo.M.S.Seeded(name) {
-		if len(registered) == 0 && st.LoggedIn != nil {
-			if err := mo.M.AgentAdd(cctx, name, "main"); err != nil {
+		if len(registered) == 0 && (st.ClaudeLoggedIn != nil || st.OpenCodeLoggedIn != nil) {
+			if err := mo.M.AgentAdd(cctx, name, "main", sandbox.RuntimeClaude); err != nil {
 				fmt.Fprintln(os.Stderr, "Erster Agent:", err)
 			} else {
 				_ = mo.M.S.Audit("daemon", "agent.auto_main", name, "main", "sandbox had no agent")
@@ -354,32 +454,40 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		}
 		_ = mo.M.S.SetSeeded(name)
 	}
-	for w, a := range st.Agents {
-		st.Agents[w] = mo.applySticky(name+"/"+w, a)
-	}
-	var wasLoggedIn *bool
+	var wasClaude, wasOpenCode *bool
 	if prev != nil {
-		wasLoggedIn = prev.LoggedIn
+		wasClaude, wasOpenCode = prev.ClaudeLoggedIn, prev.OpenCodeLoggedIn
 	}
 	mo.state[name] = &st
 	mo.mu.Unlock()
 
-	if st.LoggedIn == nil || !*st.LoggedIn {
-		return
-	}
-	// Login just detected: restart agents so they run with login and Remote Control.
-	if wasLoggedIn != nil && !*wasLoggedIn {
-		ags, _ := mo.M.S.ListAgents(name)
-		for _, a := range ags {
-			if err := mo.M.RestartAgent(cctx, name, a.Name); err != nil {
-				fmt.Fprintln(os.Stderr, "restart after login:", err)
-			}
+	// A login that has just completed: restart only the agents of that runtime.
+	restarted := false
+	if loginJustCompleted(st.ClaudeLoggedIn, wasClaude) {
+		if n, err := mo.M.RestartRuntimeAgents(cctx, name, sandbox.RuntimeClaude); err != nil {
+			fmt.Fprintln(os.Stderr, "restart after Claude login:", err)
+		} else {
+			_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("runtime=claude agents=%d", n))
+			restarted = true
 		}
-		_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("agents=%d", len(ags)))
+	}
+	if loginJustCompleted(st.OpenCodeLoggedIn, wasOpenCode) {
+		mo.M.ReloadOpenCode(cctx, vm)
+		if n, err := mo.M.RestartRuntimeAgents(cctx, name, sandbox.RuntimeOpenCode); err != nil {
+			fmt.Fprintln(os.Stderr, "restart after OpenCode login:", err)
+		} else {
+			_ = mo.M.S.Audit("daemon", "agent.restart_after_login", name, "", fmt.Sprintf("runtime=opencode agents=%d", n))
+			restarted = true
+		}
+	}
+	if restarted {
 		mo.Poke(name)
 		return
 	}
 	for w, a := range st.Agents {
+		if a.Runtime != string(sandbox.RuntimeClaude) {
+			continue // Remote Control automation is Claude-only
+		}
 		key := name + "/" + w
 		// Open RC dialog (e.g. from an earlier /remote-control): close with Escape – never Enter (the preselection could be "Disconnect").
 		if a.Dialog {
@@ -435,6 +543,17 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			_ = mo.M.S.Audit("daemon", "agent.rc_enable", name, w, detail)
 		}
 	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func loginJustCompleted(now, was *bool) bool {
+	return now != nil && *now && was != nil && !*was
 }
 
 func (mo *Monitor) Run(ctx context.Context) {

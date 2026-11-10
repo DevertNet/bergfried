@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
@@ -18,8 +21,27 @@ import (
 
 type app struct{ c pb.SandboxAPIClient }
 
+var agentRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
+
+// agentID finds the agent that uses this MCP server. Claude Code is started with
+// BERGFRIED_AGENT. OpenCode's shared server starts one MCP process per project directory,
+// so the working directory (~/work/<agent>) is the reliable source there.
+func agentID() string {
+	if wd, err := os.Getwd(); err == nil {
+		if home, err := os.UserHomeDir(); err == nil {
+			if rel, err := filepath.Rel(filepath.Join(home, "work"), wd); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+				name := strings.Split(rel, string(filepath.Separator))[0]
+				if agentRe.MatchString(name) {
+					return name
+				}
+			}
+		}
+	}
+	return os.Getenv("BERGFRIED_AGENT")
+}
+
 func (a *app) ctx(ctx context.Context) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "x-bergfried-agent", os.Getenv("BERGFRIED_AGENT"))
+	return metadata.AppendToOutgoingContext(ctx, "x-bergfried-agent", agentID())
 }
 
 type Entry struct {

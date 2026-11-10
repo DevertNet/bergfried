@@ -286,3 +286,29 @@
 "Passphrase of this key" = "Passphrase dieses Schlüssels";
 "This key is not loaded in your ssh-agent. Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again." = "Dieser Schlüssel ist nicht in deinem ssh-agent geladen. Bergfried entschlüsselt ihn aus seiner Datei in ~/.ssh und hält ihn nur bis zum Ende dieses Grants (Ablauf oder Widerruf) im Speicher. Er wird nicht in deinen ssh-agent geladen, nirgends gespeichert, und die Passphrase wird nicht gespeichert. Ein neuer Grant braucht die Passphrase erneut.";
 "Copy output" = "Ausgabe kopieren";
+
+"%@ signed in" = "%@ angemeldet";
+"%@ not signed in – sign in now" = "%@ nicht angemeldet – jetzt anmelden";
+"Checking %@ status …" = "%@-Status wird geprüft …";
+"waiting for OpenCode login" = "wartet auf OpenCode-Anmeldung";
+"OpenCode is working …" = "OpenCode arbeitet …";
+"OpenCode runs" = "OpenCode läuft";
+"%@: agent window" = "%@: Agent-Fenster";
+"Done. The agents of this runtime restart automatically (status in the app)." = "Fertig. Die Agents dieser Laufzeit starten automatisch neu (Status in der App).";
+"Preparing the connection …" = "Verbindung wird vorbereitet …";
+"Connect desktop app …" = "Desktop-App verbinden …";
+"Sign in to Claude …" = "Bei Claude anmelden …";
+"Sign in to OpenCode …" = "Bei OpenCode anmelden …";
+"Agent" = "Agent";
+"Claude Code" = "Claude Code";
+"OpenCode" = "OpenCode";
+"The first agent (\"main\"). More agents can use the other runtime later." = "Der erste Agent („main“). Weitere Agents können später die andere Laufzeit nutzen.";
+"Each agent gets a tmux window, its own git worktree and uses the selected runtime. Claude and OpenCode can run side by side." = "Jeder Agent bekommt ein tmux-Fenster, einen eigenen Git-Worktree und nutzt die gewählte Laufzeit. Claude und OpenCode können parallel laufen.";
+"The tmux window with the agent is terminated (Claude: together with its Remote Control session)." = "Das tmux-Fenster des Agents wird beendet (bei Claude zusammen mit seiner Remote-Control-Sitzung).";
+"Connect the OpenCode desktop app" = "OpenCode-Desktop-App verbinden";
+"1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. All OpenCode agents of this sandbox appear as projects." = "1. Kopiere den einmaligen Link unten (5 Minuten gültig).\n2. Wähle in der Desktop-App „Server hinzufügen“ und füge den Link ein.\n3. Alle OpenCode-Agents dieser Sandbox erscheinen als Projekte.";
+"The link only works on this Mac and cannot be used from the internet or your local network. If it expired, close this window and connect again." = "Der Link funktioniert nur auf diesem Mac, nicht aus dem Internet oder dem lokalen Netzwerk. Wenn er abgelaufen ist, schließe dieses Fenster und verbinde erneut.";
+"Open in browser" = "Im Browser öffnen";
+"Done" = "Fertig";
+
+"OpenCode is not running – please restart" = "OpenCode läuft nicht – bitte neu starten";
