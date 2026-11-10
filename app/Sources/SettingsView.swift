@@ -279,7 +279,7 @@ struct SettingsView: View {
                     Text(s.indexReady ? L("ready") : (s.indexWaiting == true ? L("waiting for your confirmation") : L("being built …")))
                 }
             }
-            Text("The file-name index is rebuilt from the blocklist. Contents are never indexed; agents only get a file after you approve a request.")
+            Text("The file-name index is rebuilt from the blocklist. Contents are never indexed; assistants only get a file after you approve a request.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
 
@@ -297,7 +297,7 @@ struct SettingsView: View {
         }
 
         SettingsCard("Data paths") {
-            Text("VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further agents as worktrees ~/work/<agent>\nDaemon data (DB, blocklist, template): ~/.bergfried")
+            Text("VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further worktrees ~/work/<worktree>\nDaemon data (DB, blocklist, template): ~/.bergfried")
                 .font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -346,12 +346,12 @@ struct SettingsView: View {
         }
 
         SettingsCard("GitHub") {
-            Text("The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the agent's request (\"Requests\" tab), and it lives in the VM. There is no global setting here.")
+            Text("The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
 
         SettingsCard("SSH grants") {
-            Text("During a grant an agent could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config).")
+            Text("During a grant an assistant could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config).")
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
         }
     }

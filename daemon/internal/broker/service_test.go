@@ -59,7 +59,7 @@ func TestRequestAllowedCreatesGrantAndExpiryCleansUp(t *testing.T) {
 		t.Fatalf("%v %v", res, err)
 	}
 	gs, _ := f.b.St.ListGrants(true, f.now)
-	if len(gs) != 1 || gs[0].Host != "example.com" || gs[0].HostKeys[0] != hostFP || gs[0].Agent != "main" {
+	if len(gs) != 1 || gs[0].Host != "example.com" || gs[0].HostKeys[0] != hostFP || gs[0].Worktree != "main" {
 		t.Fatalf("%+v", gs)
 	}
 	if h.applied == 0 {
@@ -228,7 +228,7 @@ func TestAttemptCreatesRequestDedupesAndCoolsDown(t *testing.T) {
 	}
 	waitFor(t, "open request", func() bool { return pending() == 1 })
 	rs, _ := f.b.St.ListRequests(true, 5)
-	if rs[0].Agent != "terminal" || !strings.Contains(rs[0].Reason, "connection attempt") {
+	if rs[0].Worktree != "terminal" || !strings.Contains(rs[0].Reason, "connection attempt") {
 		t.Fatalf("%+v", rs[0])
 	}
 	// second attempt: no second request

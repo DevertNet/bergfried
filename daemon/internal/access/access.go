@@ -46,8 +46,8 @@ func New(s *store.Store, ix *index.Index, dataDir string, a Asker) *Service {
 	return &Service{S: s, Ix: ix, DataDir: dataDir, Asker: a, Timeout: 10 * time.Minute, waiters: map[int64]chan decision{}}
 }
 
-func (v *Service) audit(event, sandbox, agent, detail string) {
-	if err := v.S.Audit("daemon", event, sandbox, agent, detail); err != nil {
+func (v *Service) audit(event, sandbox, worktree, detail string) {
+	if err := v.S.Audit("daemon", event, sandbox, worktree, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
@@ -86,21 +86,21 @@ func measure(abs string, isDir bool, size int64, ix *index.Index, relBase string
 }
 
 // Request handles request_file (folder=false) and request_folder (folder=true).
-func (v *Service) Request(ctx context.Context, sandbox, agent string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
+func (v *Service) Request(ctx context.Context, sandbox, worktree string, folder bool, relPath, reason string) (*pb.AccessResult, error) {
 	kind := "file"
 	if folder {
 		kind = "folder"
 	}
 	reason = sanitize(reason, 500)
-	agent = sanitize(agent, 64)
+	worktree = sanitize(worktree, 64)
 	abs, rel, err := v.Ix.Resolve(relPath)
 	if err != nil {
 		if errors.Is(err, index.ErrBlocked) {
-			id, _ := v.S.AddRequest(store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
-			v.audit("request.blocked", sandbox, agent, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
+			id, _ := v.S.AddRequest(store.Request{Sandbox: sandbox, Worktree: worktree, Kind: kind, Path: sanitize(relPath, 300), Reason: reason, Status: "blocked"})
+			v.audit("request.blocked", sandbox, worktree, fmt.Sprintf("id=%d %s %s", id, kind, sanitize(relPath, 300)))
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_BLOCKED, Message: "Path is on the blocklist and will not be shared."}, nil
 		}
-		v.audit("request.invalid", sandbox, agent, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
+		v.audit("request.invalid", sandbox, worktree, fmt.Sprintf("%s %s: %v", kind, sanitize(relPath, 300), err))
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Path invalid or does not exist."}, nil
 	}
 	info, err := os.Lstat(abs)
@@ -111,7 +111,7 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Path is " + map[bool]string{true: "a folder (use request_folder)", false: "not a regular file (use request_file)"}[info.IsDir()]}, nil
 	}
 	b, n := measure(abs, info.IsDir(), info.Size(), v.Ix, rel)
-	req := store.Request{Sandbox: sandbox, Agent: agent, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
+	req := store.Request{Sandbox: sandbox, Worktree: worktree, Kind: kind, Path: rel, Reason: reason, Status: "pending", Bytes: b, Files: n}
 	id, err := v.S.AddRequest(req)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 	v.waiters[id] = ch
 	v.mu.Unlock()
 	defer func() { v.mu.Lock(); delete(v.waiters, id); v.mu.Unlock() }()
-	v.audit("request.created", sandbox, agent, fmt.Sprintf("id=%d %s %s bytes=%d files=%d", id, kind, rel, b, n))
+	v.audit("request.created", sandbox, worktree, fmt.Sprintf("id=%d %s %s bytes=%d files=%d", id, kind, rel, b, n))
 	if v.Asker != nil {
 		v.Asker.Ask(req)
 	}
@@ -139,26 +139,26 @@ func (v *Service) Request(ctx context.Context, sandbox, agent string, folder boo
 		}
 		dst, err := v.copyOut(sandbox, rel, abs, info.IsDir())
 		if err != nil {
-			v.audit("request.copy_failed", sandbox, agent, fmt.Sprintf("id=%d %v", id, err))
+			v.audit("request.copy_failed", sandbox, worktree, fmt.Sprintf("id=%d %v", id, err))
 			return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_DENIED, Message: "Kopieren fehlgeschlagen: " + err.Error()}, nil
 		}
-		v.audit("request.copied", sandbox, agent, fmt.Sprintf("id=%d -> %s", id, dst))
+		v.audit("request.copied", sandbox, worktree, fmt.Sprintf("id=%d -> %s", id, dst))
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, VmPath: dst, Message: "Approved and copied."}, nil
 	case <-timer.C:
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
-			v.audit("request.expired", sandbox, agent, fmt.Sprintf("id=%d", id))
+			v.audit("request.expired", sandbox, worktree, fmt.Sprintf("id=%d", id))
 		}
 		return &pb.AccessResult{Verdict: pb.Verdict_VERDICT_EXPIRED, Message: "No answer, request expired."}, nil
 	case <-ctx.Done():
 		if ok, _ := v.S.SetRequestStatus(id, "expired"); ok {
-			v.audit("request.cancelled", sandbox, agent, fmt.Sprintf("id=%d", id))
+			v.audit("request.cancelled", sandbox, worktree, fmt.Sprintf("id=%d", id))
 		}
 		return nil, ctx.Err()
 	}
 }
 
 // Decide decides an open request. Large requests need confirmLarge. note is optional and
-// returned to the agent when the request is denied (or allowed).
+// returned to the requester when the request is denied (or allowed).
 func (v *Service) Decide(id int64, allow, confirmLarge bool, note string) (string, error) {
 	r, err := v.S.GetRequest(id)
 	if err != nil {
@@ -174,7 +174,7 @@ func (v *Service) Decide(id int64, allow, confirmLarge bool, note string) (strin
 	ch, ok := v.waiters[id]
 	v.mu.Unlock()
 	if !ok {
-		return "", fmt.Errorf("request %d is no longer waiting (agent gave up)", id)
+		return "", fmt.Errorf("request %d is no longer waiting (the requester gave up)", id)
 	}
 	note = strings.TrimSpace(sanitize(note, 500))
 	status := "denied"
@@ -184,7 +184,7 @@ func (v *Service) Decide(id int64, allow, confirmLarge bool, note string) (strin
 	if ok, err := v.S.SetRequestStatus(id, status); err != nil || !ok {
 		return "", fmt.Errorf("request %d is no longer open", id)
 	}
-	v.audit("request."+status, r.Sandbox, r.Agent, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
+	v.audit("request."+status, r.Sandbox, r.Worktree, fmt.Sprintf("id=%d large_confirmed=%v", id, confirmLarge))
 	ch <- decision{allow: allow, note: note}
 	return status, nil
 }
@@ -251,7 +251,7 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// sanitize: strip control characters, limit length. Agent text is display data only.
+// sanitize: strip control characters, limit length. Assistant text is display data only.
 func sanitize(s string, max int) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 32 && r != '\n' || r == 127 {

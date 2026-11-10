@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -45,37 +44,109 @@ func openCodePort(name string) (int, error) {
 	return 0, fmt.Errorf("no free local port for the OpenCode connection")
 }
 
-// PairOpenCode prepares the local OpenCode server for the desktop app and returns a one-time
-// pairing link. It never exposes the server to the internet (no --remote).
+// ensureOpenCodePort returns the sandbox's stable port, assigning one on first use.
+func (m *Manager) ensureOpenCodePort(sandbox string, current int) (int, error) {
+	if current != 0 {
+		return current, nil
+	}
+	port, err := openCodePort(sandbox)
+	if err != nil {
+		return 0, err
+	}
+	if err := m.S.SetOpenCodePort(sandbox, port); err != nil {
+		return 0, err
+	}
+	return port, nil
+}
+
+// OpenCodeStart installs (if needed) and starts the sandbox-level OpenCode service. There is one
+// service per sandbox, not one per worktree: the desktop app uses the worktrees as projects.
+func (m *Manager) OpenCodeStart(ctx context.Context, sandbox string) error {
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return err
+	}
+	// Configures (or updates) the MCP server for OpenCode and installs the CLI if needed.
+	if err := m.InstallHelpers(ctx, s.VM, sandbox, true); err != nil {
+		return err
+	}
+	port, err := m.ensureOpenCodePort(sandbox, s.OpenCodePort)
+	if err != nil {
+		return err
+	}
+	if err := m.startOpenCodeService(ctx, s.VM, port); err != nil {
+		return err
+	}
+	if err := m.S.SetOpenCode(sandbox, true); err != nil {
+		return err
+	}
+	m.audit("opencode.start", sandbox, "", fmt.Sprintf("port=%d", port))
+	return nil
+}
+
+// startOpenCodeService runs the setup script that pins the port and (re)starts the service.
+func (m *Manager) startOpenCodeService(ctx context.Context, vm string, port int) error {
+	out, err := m.L.ShellStdin(ctx, vm, strings.NewReader(openCodePairSetupScript(port)), "bash", "-s")
+	if err != nil {
+		return fmt.Errorf("OpenCode service: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// resumeOpenCode starts the service after a sandbox start if the user had started it before.
+func (m *Manager) resumeOpenCode(ctx context.Context, vm, sandbox string) error {
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return err
+	}
+	if !s.OpenCode {
+		return nil
+	}
+	if err := m.InstallOpenCode(ctx, vm); err != nil {
+		return err
+	}
+	port, err := m.ensureOpenCodePort(sandbox, s.OpenCodePort)
+	if err != nil {
+		return err
+	}
+	return m.startOpenCodeService(ctx, vm, port)
+}
+
+// OpenCodeStop stops the sandbox-level OpenCode service. Installed versions and sessions remain.
+func (m *Manager) OpenCodeStop(ctx context.Context, sandbox string) error {
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return err
+	}
+	script := `OC="$HOME/.opencode/bin/opencode"; [ -x "$OC" ] || exit 0; "$OC" service stop >/dev/null 2>&1 || true`
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-lc", script); err != nil {
+		return err
+	}
+	if err := m.S.SetOpenCode(sandbox, false); err != nil {
+		return err
+	}
+	m.audit("opencode.stop", sandbox, "", "")
+	return nil
+}
+
+// PairOpenCode starts the local OpenCode server if needed and returns a one-time pairing link for
+// the desktop app. It never exposes the server to the internet (no --remote).
 func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, error) {
 	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return "", err
 	}
-	// The desktop connection is a property of the sandbox, not of an agent: OpenCode can be
-	// started and used here without adding an agent or a new worktree.
-	if err := m.InstallHelpers(ctx, s.VM, sandbox, true); err != nil {
+	if err := m.OpenCodeStart(ctx, sandbox); err != nil {
+		return "", err
+	}
+	s, err = m.S.GetSandbox(sandbox)
+	if err != nil {
 		return "", err
 	}
 	port := s.OpenCodePort
-	if port == 0 || !portFree(port) {
-		port, err = openCodePort(sandbox)
-		if err != nil {
-			return "", err
-		}
-	}
-	// Make the server reachable for Lima and keep the port stable across restarts.
-	setup := openCodePairSetupScript(port)
-	out, err := m.L.ShellStdin(ctx, s.VM, strings.NewReader(setup), "bash", "-s")
-	if err != nil {
-		return "", fmt.Errorf("OpenCode server: %w", err)
-	}
-	if err := m.S.SetOpenCodePort(sandbox, port); err != nil {
-		return "", err
-	}
 	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	out, err = m.L.Shell(cctx, s.VM, "bash", "-lc", `"$HOME/.opencode/bin/opencode" pair`)
+	out, err := m.L.Shell(cctx, s.VM, "bash", "-lc", `"$HOME/.opencode/bin/opencode" pair`)
 	if err != nil {
 		return "", fmt.Errorf("opencode pair: %w", err)
 	}
@@ -86,20 +157,11 @@ func (m *Manager) PairOpenCode(ctx context.Context, sandbox string) (string, err
 	if !linkUsesPort(link, port) {
 		return "", fmt.Errorf("opencode pair returned a link on the wrong port (expected %d): %s", port, link)
 	}
-	m.audit("sandbox.pair", sandbox, "", fmt.Sprintf("port=%d", port))
-	// The service restart dropped the TUI connections. Reopen the windows in the background so
-	// the one-time link is returned immediately; sessions continue on the server either way.
-	go func() {
-		rctx, rcancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer rcancel()
-		if _, err := m.RestartRuntimeAgents(rctx, sandbox, RuntimeOpenCode); err != nil {
-			fmt.Fprintln(os.Stderr, "OpenCode pairing: restart agents:", err)
-		}
-	}()
+	m.audit("opencode.pair", sandbox, "", fmt.Sprintf("port=%d", port))
 	return link, nil
 }
 
-// openCodePairSetupScript configures the shared server before pairing. It always restarts the
+// openCodePairSetupScript configures and restarts the shared server. It always restarts the
 // service: the config may already name the right port while the running service still sits on
 // the old default port (that was exactly how a 49374 link appeared).
 func openCodePairSetupScript(port int) string {
@@ -135,26 +197,6 @@ func pairLink(out string) string {
 		}
 	}
 	return first
-}
-
-// RestartRuntimeAgents restarts all agents of one runtime, e.g. after its login was completed.
-func (m *Manager) RestartRuntimeAgents(ctx context.Context, sandbox string, runtime Runtime) (int, error) {
-	ags, err := m.S.ListAgents(sandbox)
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, a := range ags {
-		rt, err := ParseRuntime(a.Runtime)
-		if err != nil || rt != runtime {
-			continue
-		}
-		if err := m.RestartAgent(ctx, sandbox, a.Name); err != nil {
-			return n, err
-		}
-		n++
-	}
-	return n, nil
 }
 
 // ReloadOpenCode makes a running OpenCode server pick up new credentials/config.

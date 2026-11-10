@@ -17,7 +17,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ```
 
 ## Branches, CI and builds
-- Work on `agent/<topic>` branches; `ci.yml` runs Go tests, `scripts/check-strings.py` (German translations) and a macOS app build on **every** branch and pull request.
+- Work on `worktree/<topic>` branches; `ci.yml` runs Go tests, `scripts/check-strings.py` (German translations) and a macOS app build on **every** branch and pull request.
 - Merge into **`dev`** (pull request, CI green) to publish a dev pre-release (`dev-release.yml`); merge `dev` into `main` and tag `vX.Y.Z` for a stable release — **stable releases only on the explicit request of the maintainer** (agents too: `scripts/pr.sh merge <n> --user-approved` into `main` and `scripts/release.sh vX.Y.Z --user-approved` refuse without that flag).
 - `scripts/pr.sh open <base> "<title>"` / `scripts/pr.sh merge <n>` (merges only with green CI) and `scripts/release.sh vX.Y.Z --user-approved [--dry-run]` (tags a green, up-to-date `main`) do the pull-request and release steps with plain curl + the token.
 - `scripts/ci-status.sh [branch]` shows the latest runs and the end of a failed job's log with plain `curl` + the token from `~/.git-credentials` (works without `gh`; sandboxes also have `gh`).
@@ -66,17 +66,17 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Unix socket paths** are limited to ~104 characters.
 - **Notification permission:** never quit or restart the app while the macOS prompt is open — that counts as "denied" and macOS never asks again (only System Settings or a new bundle id help). Current bundle id: `de.einfach123.bergfried`.
 - **Terminal start** goes through a `.command` file + `open -a` (AppleScript for iTerm failed silently without automation rights).
-- **tmux default window** (`bash`/`shell`) is not an agent; the monitor only looks at registered agents. "Is the runtime running?" is detected with `ps -t <tty>` and the runtime process name (`claude` or `opencode`); `pane_current_command` wrongly shows `bash`. A window with an agent name can be left over from an earlier attempt with the other runtime: `ensureWindow` checks the pane process and recreates it, and the monitor repairs a wrong-runtime window once per daemon start (`agent.runtime_repaired`).
+- **tmux default window** (`bash`/`shell`) is not a worktree; the monitor only looks at registered worktrees. "Is Claude running?" is detected with `ps -t <tty>` and the process name `claude`; `pane_current_command` wrongly shows `bash`. A window with a worktree name can be left over from an old OpenCode TUI or a manual start: `ensureWindow` checks the pane process and recreates it, and `Start` kills windows of worktrees with `claude=0`.
 - **Race in tests:** right after `create` the sandbox socket is briefly not open; an `ssh` in that second triggers no request.
 - **Docker Go builds:** `make build` builds `bergfriedd` for darwin/arm64 and `bergfried-mcp` for linux/arm64 (a VPS host would need linux/amd64).
 - **Empty lists as JSON `null`** break Swift decoding (`Detail.Normalize`).
 - **Secret redaction:** names like `DB_PASSWORD` slipped past `\b` before "password" (after `_` there is no word boundary).
 - **OpenSSH protocol names** such as `session-bind@openssh.com` must never be touched by renames.
 - **Renaming "session" → "sandbox"** once broke exactly that; the fix and a test exist.
-- **OpenCode is not in apt:** `apt install opencode` does not exist in Debian. The daemon removes leftovers of earlier attempts and runs the official installer **in the VM** from a script file (not as a shell argument), logging every step to `/tmp/opencode-install.log`. It always installs the latest version to `~/.opencode/bin/opencode`; older VMs get it on demand when the first OpenCode agent is added.
-- **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_AGENT` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the agent from its working directory (`~/work/<agent>`) and only falls back to the environment variable.
+- **OpenCode is not in apt:** `apt install opencode` does not exist in Debian. The daemon removes leftovers of earlier attempts and runs the official installer **in the VM** from a script file (not as a shell argument), logging every step to `/tmp/opencode-install.log`. It always installs the latest version to `~/.opencode/bin/opencode`; older VMs get it on demand when the OpenCode service is started (Connect or Start service).
+- **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_WORKTREE` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the worktree from its working directory (`~/work/<worktree>`) and only falls back to the environment variable.
 - **OpenCode desktop connection:** the server must listen on `0.0.0.0` with a stable per-sandbox port; Lima forwards ports bound to `0.0.0.0` to `127.0.0.1` on the Mac with the same number. Changing the port breaks the saved desktop connection, so it is stored in the database. Before pairing the daemon **restarts** the shared service (the config can already name the right port while the running process is stale) and rejects a link that does not use the allocated port.
-- **OpenCode pairing is per VM**, not per agent: one link covers all OpenCode agents of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
+- **OpenCode pairing is per VM**, not per worktree: one link covers all worktrees of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
 
 ## Documentation
 Documentation is part of every change, not an afterthought:
@@ -91,5 +91,5 @@ Update the relevant file in the same commit/PR. Do not leave stale screenshots o
 ## Remote Control detection (monitor)
 - The banner "/remote-control is active" appears at the **start** of the output and scrolls away. The monitor reads the whole tmux scrollback (`history-limit 20000`) and remembers active RC **per claude PID** (`stickyRC`): the same process still running means RC is active.
 - `/remote-control` while RC is active **opens a dialog** ("This session is available in the Claude mobile app …", with "Disconnect this session"). The monitor treats it as "RC active" and closes it with **Escape** (never Enter).
-  Escape hatch in the app: agent menu → "Remote Control is running – mark as active".
+  Escape hatch in the app: worktree menu → "Remote Control is running – mark as active".
 - A new claude PID (restart) resets the counters and "cannot activate".

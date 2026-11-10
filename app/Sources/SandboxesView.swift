@@ -4,7 +4,7 @@ import AppKit
 struct SandboxesView: View {
     @EnvironmentObject var model: AppModel
     @Local private var showCreate = false
-    @Local private var addAgentFor: SandboxInfo?
+    @Local private var addWorktreeFor: SandboxInfo?
     @Local private var deleteFor: SandboxInfo?
     @Local private var forceDeleteMsg: String?
     @Local private var forceDeleteFor: SandboxInfo?
@@ -76,7 +76,7 @@ struct SandboxesView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
                         }
                         ForEach(model.sandboxes.sorted { $0.name < $1.name }) { s in
-                            SandboxCard(s: s, addAgent: { addAgentFor = s }, delete: { deleteFor = s })
+                            SandboxCard(s: s, addWorktree: { addWorktreeFor = s }, delete: { deleteFor = s })
                         }
                     }.padding(16)
                 }
@@ -85,7 +85,7 @@ struct SandboxesView: View {
         }
         .toolbar { Button { showCreate = true } label: { Label("New sandbox", systemImage: "plus") } }
         .sheet(isPresented: $showCreate) { CreateSandboxSheet() }
-        .sheet(item: $addAgentFor) { s in AddAgentSheet(sandbox: s) }
+        .sheet(item: $addWorktreeFor) { s in AddWorktreeSheet(sandbox: s) }
         .confirmationDialog(L("Delete sandbox \"%@\"?", deleteFor?.name ?? ""), isPresented: Binding(get: { deleteFor != nil }, set: { if !$0 { deleteFor = nil } })) {
             Button("Delete", role: .destructive) {
                 if let s = deleteFor { Task { await delete(s, force: false) } }
@@ -108,7 +108,7 @@ struct SandboxesView: View {
 struct SandboxCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
-    let addAgent: () -> Void
+    let addWorktree: () -> Void
     let delete: () -> Void
     @Local private var pairLink: String? = nil
     @Local private var pairing = false
@@ -126,9 +126,9 @@ struct SandboxCard: View {
                 Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
-            runtimeSection
+            servicesSection
             Divider()
-            agentsSection
+            worktreesSection
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -171,47 +171,51 @@ struct SandboxCard: View {
         }.font(.caption).foregroundStyle(.secondary)
     }
 
-    var runtimeSection: some View {
+    var servicesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L("Runtimes").uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                RuntimeStatusCard(name: "Claude Code", letter: "C", tint: .purple,
-                                  installed: s.claudeInstalled, signedIn: s.claudeLoggedIn,
-                                  used: s.usesClaude, running: s.running, note: nil,
-                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "claude")) })
-                RuntimeStatusCard(name: "OpenCode", letter: "O", tint: .blue,
-                                  installed: s.opencodeInstalled, signedIn: s.opencodeLoggedIn,
-                                  used: s.usesOpenCode, running: s.running,
-                                  serviceRunning: s.opencodeRunning,
-                                  note: L("Connect installs it if needed"),
-                                  signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
-                                  connect: { pair() }, connecting: pairing)
+            HStack(alignment: .top, spacing: 12) {
+                ClaudeStatusCard(s: s,
+                                 signIn: { report(Terminal.login(vm: s.vm, runtime: "claude")) })
+                OpenCodeStatusCard(s: s,
+                                   signIn: { report(Terminal.login(vm: s.vm, runtime: "opencode")) },
+                                   connect: { pair() }, connecting: pairing,
+                                   start: { openCode(true) }, stop: { openCode(false) })
             }
         }
     }
 
-    var agentsSection: some View {
+    func openCode(_ start: Bool) {
+        let kind = start ? "opencode-start" : "opencode-stop"
+        let step = start ? L("Starting the OpenCode service …") : L("Stopping the OpenCode service …")
+        let path = start ? "/v1/opencode/start" : "/v1/opencode/stop"
+        Task { report(await model.runJob("\(kind)-\(s.name)", step, path, NameBody(name: s.name))) }
+    }
+
+    var worktreesSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(L("Agents").uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
-                Text("\(s.agents.count)").font(.caption).foregroundStyle(.secondary)
+                Text(L("Worktrees").uppercased()).font(.caption.bold()).foregroundStyle(.secondary)
+                Text("\(s.worktrees.count)").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
-            if s.agents.isEmpty {
-                Text("No agents yet").font(.caption).foregroundStyle(.secondary)
+            Text("A worktree is a folder with code. OpenCode opens these folders as projects.")
+                .font(.caption2).foregroundStyle(.secondary)
+            if s.worktrees.isEmpty {
+                Text("No worktrees yet").font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 10) {
-                    Text(L("Agent").uppercased()).frame(width: 130, alignment: .leading)
-                    Text(L("Runtime").uppercased()).frame(width: 100, alignment: .leading)
-                    Text(L("Status").uppercased()).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L("Worktree").uppercased()).frame(width: 170, alignment: .leading)
+                    Text(L("Worktree").uppercased()).frame(width: 240, alignment: .leading)
+                    Text("Claude").frame(maxWidth: .infinity, alignment: .leading)
                     Text(L("Actions").uppercased()).frame(width: 220, alignment: .trailing)
                 }.font(.caption2).foregroundStyle(.secondary)
-                ForEach(Array(s.agents.enumerated()), id: \.element.name) { i, a in
+                ForEach(Array(s.worktrees.enumerated()), id: \.element.name) { i, w in
                     if i > 0 { Divider() }
-                    AgentRow(s: s, a: a)
+                    WorktreeRow(s: s, w: w)
                 }
             }
+            Text("Claude and OpenCode can use the same worktree, but not at the same time on the same files. Use separate worktrees for parallel work.")
+                .font(.caption2).foregroundStyle(.secondary).padding(.top, 2)
         }
     }
 
@@ -224,14 +228,14 @@ struct SandboxCard: View {
     @ViewBuilder var actions: some View {
         if s.running {
             Button("Stop") { Task { report(await model.runJob("stop-\(s.name)", L("Stopping …"), "/v1/sandboxes/stop", NameBody(name: s.name))) } }
-            Button("Agent +", action: addAgent)
+            Button("Worktree +", action: addWorktree)
             Menu {
                 Button(L("Shell in the VM (%@)", Terminal.appName)) { report(Terminal.shell(vm: s.vm)) }
                 Button("Copy SSH command") {
                     if let c = Terminal.sshCommand(vm: s.vm) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(c, forType: .string) }
                 }
                 Divider()
-                if s.usesClaude {
+                if s.claudeInstalled != false {
                     Button("Sign in to Claude …") { report(Terminal.login(vm: s.vm, runtime: "claude")) }
                 }
                 if s.opencodeInstalled != false {
@@ -263,73 +267,49 @@ struct SandboxCard: View {
     func report(_ e: String?) { if let e { model.setBanner(e) } }
 }
 
-struct RuntimeStatusCard: View {
-    let name: String
+struct RuntimeIcon: View {
     let letter: String
     let tint: Color
-    let installed: Bool?
-    let signedIn: Bool?
-    let used: Bool
-    let running: Bool
-    var serviceRunning: Bool? = nil
-    let note: String?
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.12)).frame(width: 34, height: 34)
+            Text(letter).font(.headline).foregroundStyle(tint)
+        }
+    }
+}
+
+struct ClaudeStatusCard: View {
+    let s: SandboxInfo
     let signIn: () -> Void
-    var connect: (() -> Void)? = nil
-    var connecting: Bool = false
 
     var status: (String, Color) {
-        if !running { return (L("Not checked – start the sandbox"), Color.secondary) }
-        switch installed {
-        case .some(false):
-            return (L("not installed"), Color.secondary)
+        if !s.running { return (L("not checked – start the sandbox"), .secondary) }
+        switch s.claudeInstalled {
+        case .some(false): return (L("not installed"), .secondary)
         case .some(true):
-            if !used {
-                if serviceRunning == true {
-                    switch signedIn {
-                    case .some(true): return (L("installed · running · signed in"), .green)
-                    case .some(false): return (L("installed · running · not signed in"), .orange)
-                    default: return (L("installed · running"), .green)
-                    }
-                }
-                switch signedIn {
-                case .some(true): return (L("installed · signed in · no agent"), .green)
-                case .some(false): return (L("installed · not signed in · no agent"), .orange)
-                default: return (L("installed · no agent of this runtime"), Color.secondary)
-                }
-            }
-            switch signedIn {
+            switch s.claudeLoggedIn {
             case .some(true): return (L("installed · signed in"), .green)
             case .some(false): return (L("installed · not signed in"), .orange)
-            default: return (L("installed · status unknown"), Color.secondary)
+            default: return (L("installed"), .secondary)
             }
-        default:
-            return (L("checking …"), Color.secondary)
+        default: return (L("checking …"), .secondary)
         }
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.12)).frame(width: 34, height: 34)
-                Text(letter).font(.headline).foregroundStyle(tint)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.callout.weight(.semibold))
+        HStack(alignment: .top, spacing: 10) {
+            RuntimeIcon(letter: "C", tint: .purple)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Claude Code").font(.callout.weight(.semibold))
                 Text(status.0).font(.caption).foregroundStyle(status.1)
-                if let note, installed == false, running {
-                    Text(note).font(.caption2).foregroundStyle(.secondary)
-                }
+                Text("Runs per worktree. Start it in the worktree list below.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text("Remote Control is available for every running Claude.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            if running, installed == true, signedIn != true, (used || connect != nil) {
+            if s.running, s.claudeInstalled == true, s.claudeLoggedIn != true {
                 Button("Sign in", action: signIn).controlSize(.small)
-            }
-            if let connect, running {
-                if connecting {
-                    ProgressView().controlSize(.small).help(L("Preparing the connection …"))
-                } else {
-                    Button("Connect", action: connect).controlSize(.small)
-                }
             }
         }
         .padding(10)
@@ -339,14 +319,76 @@ struct RuntimeStatusCard: View {
     }
 }
 
-struct RuntimeChip: View {
-    let isOpenCode: Bool
+struct OpenCodeStatusCard: View {
+    let s: SandboxInfo
+    let signIn: () -> Void
+    let connect: () -> Void
+    let connecting: Bool
+    let start: () -> Void
+    let stop: () -> Void
+
+    var installedStatus: (String, Color) {
+        if !s.running { return (L("not checked – start the sandbox"), .secondary) }
+        switch s.opencodeInstalled {
+        case .some(false): return (L("not installed – Connect installs it"), .secondary)
+        case .some(true):
+            switch s.opencodeLoggedIn {
+            case .some(true): return (L("installed · signed in"), .green)
+            case .some(false): return (L("installed · not signed in"), .orange)
+            default: return (L("installed"), .secondary)
+            }
+        default: return (L("checking …"), .secondary)
+        }
+    }
+
+    var serviceRunning: Bool { s.opencodeRunning == true }
+
     var body: some View {
-        Text(isOpenCode ? "OpenCode" : "Claude")
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .foregroundStyle(isOpenCode ? Color.blue : Color.purple)
-            .background((isOpenCode ? Color.blue : Color.purple).opacity(0.12), in: Capsule())
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                RuntimeIcon(letter: "O", tint: .blue)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("OpenCode").font(.callout.weight(.semibold))
+                        if s.running {
+                            Circle().fill(serviceRunning ? .green : Color.secondary).frame(width: 6, height: 6)
+                            Text(serviceRunning ? L("service running") : L("service stopped"))
+                                .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary)
+                        }
+                    }
+                    Text(installedStatus.0).font(.caption).foregroundStyle(installedStatus.1)
+                    Text("One service for the whole sandbox. Sessions live in the desktop app.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Text("OpenCode opens the worktrees as projects; Claude is not required.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if s.running, s.opencodeInstalled == true, s.opencodeLoggedIn != true {
+                    Button("Sign in", action: signIn).controlSize(.small)
+                }
+            }
+            if s.running {
+                HStack(spacing: 8) {
+                    Spacer()
+                    if connecting {
+                        ProgressView().controlSize(.small).help(L("Preparing the connection …"))
+                    } else {
+                        Button("Connect desktop", action: connect).controlSize(.small)
+                    }
+                    if s.opencodeInstalled != false {
+                        if serviceRunning {
+                            Button("Stop service", action: stop).controlSize(.small)
+                        } else {
+                            Button("Start service", action: start).controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
     }
 }
 
@@ -365,7 +407,7 @@ struct PairSheet: View {
                     ProgressView().controlSize(.small)
                     Text(L("Preparing the connection …")).font(.callout)
                 }
-                Text("The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; running agent sessions continue.")
+                Text("The OpenCode service is restarted on this sandbox's own port and a one-time link is created. This can take a few seconds; sessions in the desktop app continue.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
@@ -381,7 +423,7 @@ struct PairSheet: View {
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
             } else if let link {
-                Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; a Bergfried agent is not required.")
+                Text("1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; Claude is not required.")
                     .font(.callout).fixedSize(horizontal: false, vertical: true)
                 Text(link)
                     .font(.caption.monospaced())
@@ -421,120 +463,131 @@ struct PairSheet: View {
     }
 }
 
-struct AgentRow: View {
+struct WorktreeRow: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
-    let a: AgentInfo
+    let w: WorktreeInfo
     @Local private var removeOpen = false
     @Local private var forceMsg: String?
 
+    var running: Bool { w.running == true }
+
     var state: (color: Color, text: String) {
-        if !s.running { return (.gray, L("Stopped")) }
-        if a.isOpenCode {
-            if a.rcAction == "conflict" { return (.red, L("Runtime conflict – restart the daemon")) }
-            if !a.window && sandboxBusy { return (.orange, L("starting …")) }
-            if s.opencodeLoggedIn == false { return (.orange, L("waiting for OpenCode login")) }
-            if a.rcAction == "working" { return (.blue, L("OpenCode is working …")) }
-            if !a.window { return (.gray, L("no tmux window")) }
-            if a.running == false { return (.orange, L("OpenCode is not running – please restart")) }
-            return (.green, L("OpenCode runs"))
+        if !s.running { return (.gray, L("Sandbox stopped")) }
+        if running {
+            if w.rc { return (.green, L("Claude runs · Remote Control active")) }
+            if w.rcAction == "failed" { return (.red, L("RC cannot be activated – please restart")) }
+            if w.rcAction == "activating" { return (.orange, L("activating Remote Control …")) }
+            if w.rcAction == "waiting" { return (.orange, L("Claude is probably waiting for input – open %@", Terminal.appName)) }
+            return (.orange, L("Claude runs · Remote Control starting …"))
         }
-        if a.rc { return (.green, L("Remote Control active")) }
-        if !a.window && sandboxBusy { return (.orange, L("starting …")) }
-        if s.claudeLoggedIn == false { return (.orange, L("waiting for Claude login")) }
-        if a.rcAction == "failed" { return (.red, L("RC cannot be activated – please restart")) }
-        if a.rcAction == "activating" { return (.orange, L("activating Remote Control …")) }
-        if a.rcAction == "waiting" { return (.orange, L("Claude is probably waiting for input – open tmux")) }
-        if !a.window { return (.gray, L("no tmux window")) }
-        return (.orange, L("Remote Control starting …"))
+        if sandboxBusy { return (.orange, L("starting …")) }
+        return (.gray, L("not started"))
     }
 
-    var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(a.name)") })?.value }
-    /// A job is running for the sandbox (create, start, add agent …).
+    var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(w.name)") })?.value }
+    /// A job is running for the sandbox (create, start, add worktree …).
     var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Circle().fill(state.color).frame(width: 8, height: 8)
-                Text(a.name).font(.callout.bold()).lineLimit(1)
-            }.frame(width: 130, alignment: .leading)
-            RuntimeChip(isOpenCode: a.isOpenCode).frame(width: 100, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Circle().fill(state.color).frame(width: 8, height: 8)
+                    Text(w.name).font(.callout.bold()).lineLimit(1)
+                }
+                Text("~/work/\(w.name)").font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+            }.frame(width: 240, alignment: .leading)
             Text(state.text).font(.caption).foregroundStyle(state.color)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(state.text)
-            Text(a.worktree).font(.caption.monospaced()).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle)
-                .frame(width: 170, alignment: .leading)
-            agentActions.frame(width: 220, alignment: .trailing)
+            actions.frame(width: 220, alignment: .trailing)
         }
         .padding(.vertical, 6)
-        .sheet(isPresented: $removeOpen) { RemoveAgentSheet(s: s, a: a, onForce: { msg in forceMsg = msg }) }
-        .alert("Unsaved work in the agent directory", isPresented: Binding(get: { forceMsg != nil }, set: { if !$0 { forceMsg = nil } })) {
+        .sheet(isPresented: $removeOpen) { RemoveWorktreeSheet(s: s, w: w, onForce: { msg in forceMsg = msg }) }
+        .alert("Unsaved work in the worktree", isPresented: Binding(get: { forceMsg != nil }, set: { if !$0 { forceMsg = nil } })) {
             Button("Delete anyway", role: .destructive) { Task { await remove(deleteDir: true, force: true) } }
             Button("Cancel", role: .cancel) {}
         } message: { Text(forceMsg ?? "") }
     }
 
-    @ViewBuilder var agentActions: some View {
+    @ViewBuilder var actions: some View {
         if let b = busy {
             ProgressView().controlSize(.small)
             Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         } else {
             HStack(spacing: 8) {
-                Button { if let e = Terminal.attach(vm: s.vm, agent: a.name) { model.setBanner(e) } } label: { Label(L("%@: agent window", Terminal.appName), systemImage: "terminal") }
-                    .controlSize(.small).disabled(!s.running || !a.window)
-                    .help(L("Opens this agent's tmux window in %@", Terminal.appName))
+                if running {
+                    Button("Stop Claude") { claude(start: false) }.controlSize(.small).disabled(!s.running)
+                } else {
+                    Button("Start Claude") { claude(start: true) }.controlSize(.small)
+                        .buttonStyle(.borderedProminent).disabled(!s.running)
+                }
+                Button { if let e = Terminal.attach(vm: s.vm, worktree: w.name) { model.setBanner(e) } } label: { Label(Terminal.appName, systemImage: "terminal") }
+                    .controlSize(.small).disabled(!s.running || !w.window)
+                    .help(L("Opens this worktree's Claude window in %@", Terminal.appName))
                 Menu {
-                    if !a.isOpenCode {
-                        if a.rc, !a.rcUrl.isEmpty {
-                            Button("Copy link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(a.rcUrl, forType: .string) }
-                            Divider()
-                        }
-                        if !a.rc {
-                            Button("Remote Control is running – mark as active") {
-                                Task {
-                                    do { try await model.api.post("/v1/agents/rc-ok", AgentBody(sandbox: s.name, agent: a.name)); await model.refresh() }
-                                    catch { model.setBanner(error.localizedDescription) }
-                                }
-                            }.disabled(!s.running || !a.window)
+                    if w.rc, !w.rcUrl.isEmpty {
+                        Button("Copy Remote Control link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.rcUrl, forType: .string) }
+                        Divider()
+                    }
+                    if running, !w.rc {
+                        Button("Remote Control is running – mark as active") {
+                            Task {
+                                do { try await model.api.post("/v1/worktrees/rc-ok", WorktreeBody(sandbox: s.name, worktree: w.name)); await model.refresh() }
+                                catch { model.setBanner(error.localizedDescription) }
+                            }
                         }
                     }
-                    Button("Restart") {
-                        Task { if let e = await model.runJob("restart-\(s.name)-\(a.name)", L("restarting …"), "/v1/agents/restart", AgentBody(sandbox: s.name, agent: a.name)) { model.setBanner(e) } }
-                    }.disabled(!s.running)
+                    if running {
+                        Button("Stop Claude") { claude(start: false) }.disabled(!s.running)
+                    }
+                    Button("Restart Claude") { restart() }.disabled(!s.running || !running)
                     Divider()
-                    Button("Remove …", role: .destructive) { removeOpen = true }.disabled(!s.running)
+                    if w.name != "main" {
+                        Button("Remove worktree …", role: .destructive) { removeOpen = true }.disabled(!s.running)
+                    }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .menuStyle(.borderlessButton).fixedSize()
             }
         }
     }
 
+    func claude(start: Bool) {
+        let kind = start ? "claude-start" : "claude-stop"
+        let step = start ? L("starting Claude …") : L("stopping Claude …")
+        let path = start ? "/v1/worktrees/start" : "/v1/worktrees/stop"
+        Task { if let e = await model.runJob("\(kind)-\(s.name)-\(w.name)", step, path, WorktreeBody(sandbox: s.name, worktree: w.name)) { model.setBanner(e) } }
+    }
+
+    func restart() {
+        Task { if let e = await model.runJob("claude-restart-\(s.name)-\(w.name)", L("restarting Claude …"), "/v1/worktrees/restart", WorktreeBody(sandbox: s.name, worktree: w.name)) { model.setBanner(e) } }
+    }
+
     func remove(deleteDir: Bool, force: Bool) async {
-        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", L("being removed …"), "/v1/agents/remove", AgentRemoveBody(sandbox: s.name, agent: a.name, deleteDir: deleteDir, force: force))
+        let err = await model.runJob("worktreerm-\(s.name)-\(w.name)", L("being removed …"), "/v1/worktrees/remove", WorktreeRemoveBody(sandbox: s.name, worktree: w.name, deleteDir: deleteDir, force: force))
         if let err { model.setBanner(err) }
     }
 }
 
-struct RemoveAgentSheet: View {
+struct RemoveWorktreeSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     let s: SandboxInfo
-    let a: AgentInfo
+    let w: WorktreeInfo
     let onForce: (String) -> Void
     @Local private var deleteDir = false
 
     var body: some View {
         Form {
-            Text(L("Remove agent \"%@\"", a.name)).font(.headline)
-            Text("The tmux window with the agent is terminated (Claude: together with its Remote Control session).").font(.callout)
+            Text(L("Remove worktree \"%@\"", w.name)).font(.headline)
+            Text("Claude is stopped first. The worktree can be removed with or without its directory.").font(.callout)
             Picker("", selection: $deleteDir) {
-                Text(L("Terminate the agent only – the directory %@ is kept", a.worktree)).tag(false)
-                if a.name != "main" { Text(L("Terminate the agent and delete its directory (git worktree including branch agent/%@, Docker stack %@-%@)", a.name, s.name, a.name)).tag(true) }
+                Text(L("Remove the entry only – the directory ~/work/%@ is kept", w.name)).tag(false)
+                Text(L("Remove the entry and delete the directory (git worktree including branch worktree/%@, Docker stack %@-%@)", w.name, s.name, w.name)).tag(true)
             }.pickerStyle(.radioGroup).labelsHidden()
-            if a.name == "main" { Text("The main directory \"main\" is never deleted.").font(.caption).foregroundStyle(.secondary) }
             if deleteDir { Text("Unpushed commits and unsaved changes are checked first.").font(.caption).foregroundStyle(.secondary) }
             HStack {
                 Spacer()
@@ -543,12 +596,12 @@ struct RemoveAgentSheet: View {
                     let dd = deleteDir
                     dismiss()
                     Task {
-                        let err = await model.runJob("agentrm-\(s.name)-\(a.name)", L("being removed …"), "/v1/agents/remove", AgentRemoveBody(sandbox: s.name, agent: a.name, deleteDir: dd, force: false))
+                        let err = await model.runJob("worktreerm-\(s.name)-\(w.name)", L("being removed …"), "/v1/worktrees/remove", WorktreeRemoveBody(sandbox: s.name, worktree: w.name, deleteDir: dd, force: false))
                         if let err { if err.contains("unsaved work") { onForce(err) } else { model.setBanner(err) } }
                     }
                 }.keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 520)
+        }.padding(20).frame(width: 560)
     }
 }
 
@@ -557,7 +610,6 @@ struct CreateSandboxSheet: View {
     @Environment(\.dismiss) var dismiss
     @Local private var name = ""
     @Local private var source = 0            // 0 empty, 1 git repo, 2 folder
-    @Local private var runtime = "claude"    // runtime of the first agent "main"
     @Local private var repo = ""
     @Local private var token = ""
     @Local private var link = ""
@@ -582,14 +634,8 @@ struct CreateSandboxSheet: View {
                 TextField("e.g. shop", text: $name).textFieldStyle(.roundedBorder)
                 Text("a–z, 0–9 and -, at most 24 characters").font(.caption).foregroundStyle(.secondary)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Agent").font(.callout.bold())
-                Picker("Agent", selection: $runtime) {
-                    Text("Claude Code").tag("claude")
-                    Text("OpenCode").tag("opencode")
-                }.pickerStyle(.segmented).labelsHidden()
-                Text("The first agent (\"main\"). More agents can use the other runtime later.").font(.caption).foregroundStyle(.secondary)
-            }
+            Text("The sandbox starts with the worktree \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Code source").font(.callout.bold())
                 Picker("Code source", selection: $source) {
@@ -617,7 +663,7 @@ struct CreateSandboxSheet: View {
                         }
                         if let p = preview { Label(L("%lld files, %@ will be copied", p.files, formatBytes(p.bytes)), systemImage: "doc.on.doc").font(.callout) }
                         if let e = previewError { Label(e, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true) }
-                        LT("The folder is **copied**, not mounted: the VM never sees your home. Not copied: blocklist entries, .env files, keys, symlinks, node_modules and caches. Credentials in .git/config are removed. For git the agent will need a GitHub token later (it asks for it).")
+                        LT("The folder is **copied**, not mounted: the VM never sees your home. Not copied: blocklist entries, .env files, keys, symlinks, node_modules and caches. Credentials in .git/config are removed. For git the assistant will need a GitHub token later (it asks for it).")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(4)
                 }
@@ -630,7 +676,7 @@ struct CreateSandboxSheet: View {
                 Button("Create") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "", runtime: runtime)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
@@ -656,37 +702,28 @@ struct CreateSandboxSheet: View {
     }
 }
 
-struct AddAgentSheet: View {
+struct AddWorktreeSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     let sandbox: SandboxInfo
     @Local private var name = ""
-    @Local private var runtime = "claude"
-    var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil }
+    var valid: Bool { name.range(of: #"^[a-z][a-z0-9-]{0,30}$"#, options: .regularExpression) != nil && name != "main" && !sandbox.worktrees.contains { $0.name == name } }
 
     var body: some View {
         Form {
-            Text(L("New agent in \"%@\"", sandbox.name)).font(.headline)
-            TextField("Agent name", text: $name)
-            Picker("Agent", selection: $runtime) {
-                Text("Claude Code").tag("claude")
-                Text("OpenCode").tag("opencode")
-            }.pickerStyle(.segmented)
-            Text("Each agent gets a tmux window, its own git worktree and uses the selected runtime. Claude and OpenCode can run side by side.").font(.caption).foregroundStyle(.secondary)
+            Text(L("New worktree in \"%@\"", sandbox.name)).font(.headline)
+            TextField("Worktree name", text: $name)
+            Text("A worktree is a folder with code (~/work/<name>). Claude is not started automatically; start it in the worktree list. OpenCode sees the worktree as a project.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Add") {
-                    let n = name, s = sandbox.name, rt = runtime
+                    let n = name, s = sandbox.name
                     dismiss()
-                    Task { if let e = await model.runJob("agent-\(s)", L("Agent %@ is starting …", n), "/v1/agents/add", AgentBody(sandbox: s, agent: n, runtime: rt)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob("worktree-\(s)", L("Worktree %@ is being created …", n), "/v1/worktrees/add", WorktreeBody(sandbox: s, worktree: n)) { model.setBanner(e) } }
                 }.disabled(!valid).keyboardShortcut(.defaultAction)
             }
-        }.padding(20).frame(width: 480)
-            .onAppear {
-                if let main = sandbox.agents.first(where: { $0.name == "main" }), let rt = main.runtime {
-                    runtime = rt
-                }
-            }
+        }.padding(20).frame(width: 500)
     }
 }

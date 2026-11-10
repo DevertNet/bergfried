@@ -30,16 +30,13 @@ struct UpdateInfo: Codable {
     var reason: String?
 }
 
-struct AgentInfo: Codable, Hashable {
+struct WorktreeInfo: Codable, Hashable {
     var name: String
-    var worktree: String
-    var runtime: String?
     var window: Bool
     var running: Bool?
     var rc: Bool
     var rcUrl: String
-    var rcAction: String   // "", "activating", "failed", "waiting", "working"
-    var isOpenCode: Bool { runtime == "opencode" }
+    var rcAction: String   // "", "activating", "failed", "waiting"
 }
 
 struct SandboxInfo: Codable, Identifiable, Hashable {
@@ -52,7 +49,7 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var cpus: Int
     var memory: Int64
     var disk: Int64
-    var agents: [AgentInfo]
+    var worktrees: [WorktreeInfo]
     var activeGrants: Int
     var pendingRequests: Int
     var claudeLoggedIn: Bool?
@@ -68,8 +65,6 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var hasGithubToken: Bool
     var id: String { name }
     var running: Bool { status == "Running" }
-    var usesClaude: Bool { agents.contains { !$0.isOpenCode } }
-    var usesOpenCode: Bool { agents.contains { $0.isOpenCode } }
 }
 
 struct SSHInfo: Codable, Hashable {
@@ -91,7 +86,7 @@ struct GitHubDetail: Codable, Hashable {
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
-    var agent: String
+    var worktree: String
     var kind: String
     var path: String
     var reason: String
@@ -111,7 +106,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
 struct GrantInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
-    var agent: String
+    var worktree: String
     var host: String
     var keyFingerprint: String
     var user: String
@@ -128,9 +123,9 @@ struct AuditEntry: Codable, Identifiable, Hashable {
     var actor: String
     var event: String
     var sandbox: String
-    var agent: String
+    var worktree: String
     var detail: String
-    var id: String { "\(tsUnix)-\(actor)-\(event)-\(sandbox)-\(agent)-\(detail.hashValue)" }
+    var id: String { "\(tsUnix)-\(actor)-\(event)-\(sandbox)-\(worktree)-\(detail.hashValue)" }
 }
 
 struct KeyInfo: Codable, Identifiable, Hashable {
@@ -155,7 +150,7 @@ struct SSHDecideBody: Encodable {
     var minutes: Int
     var keyFingerprint: String
     var user: String
-    var allAgents: Bool
+    var allWorktrees: Bool
     var perConnection: Bool
     var trustUnknownHost: Bool
     var passphrase: String = ""   // only for a key that is not loaded in the agent; never stored
@@ -164,7 +159,7 @@ struct SSHDecideBody: Encodable {
 struct IDBody: Encodable { var id: Int64 }
 struct ChannelBody: Encodable { var channel: String }
 struct ExtendBody: Encodable { var id: Int64; var minutes: Int }
-struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = ""; var runtime: String = "claude" }
+struct NameBody: Encodable { var name: String; var repo: String = ""; var force: Bool = false; var importPath: String = ""; var githubToken: String = ""; }
 struct PathBody: Encodable { var path: String }
 struct ImportPreview: Codable { var files: Int64; var bytes: Int64 }
 struct YAMLBody: Encodable { var yaml: String }
@@ -176,8 +171,8 @@ struct TemplateInfo: Codable {
     var path: String
     var warnings: [String]
 }
-struct AgentBody: Encodable { var sandbox: String; var agent: String; var runtime: String = "claude" }
-struct AgentRemoveBody: Encodable { var sandbox: String; var agent: String; var deleteDir: Bool; var force: Bool }
+struct WorktreeBody: Encodable { var sandbox: String; var worktree: String }
+struct WorktreeRemoveBody: Encodable { var sandbox: String; var worktree: String; var deleteDir: Bool; var force: Bool }
 struct PairLink: Codable { var url: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }

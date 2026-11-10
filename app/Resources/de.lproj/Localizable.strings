@@ -25,7 +25,7 @@
 "Add" = "Hinzufügen";
 "Agent %@ is starting …" = "Agent %@ startet …";
 "Agent name" = "Agent-Name";
-"Agent's reason (unchecked): %@" = "Begründung des Agents (ungeprüft): %@";
+"Assistant's reason (unchecked): %@" = "Begründung des Assistenten (ungeprüft): %@";
 "Allow" = "Erlauben";
 "Allow (default)" = "Erlauben (Standard)";
 "Approve" = "Freigeben";
@@ -94,7 +94,7 @@
 "Filter (sandbox, agent, event, details …)" = "Filter (Sandbox, Agent, Ereignis, Details …)";
 "Folder" = "Ordner";
 "Folder in your home directory that should be copied into the VM" = "Ordner im Home-Verzeichnis, der in die VM kopiert werden soll";
-"For all agents of the sandbox" = "Für alle Agents der Sandbox";
+"For all worktrees of the sandbox" = "Für alle Worktrees der Sandbox";
 "Git repo" = "Git-Repo";
 "GitHub access for %@ / %@" = "GitHub-Zugriff für %@ / %@";
 "GitHub access: %@/%@" = "GitHub-Zugriff: %@/%@";
@@ -119,7 +119,7 @@
 "Last check failed: %@" = "Letzte Prüfung fehlgeschlagen: %@";
 "Last permission request: %@" = "Letzte Berechtigungsanfrage: %@";
 "Name patterns (glob on file names, e.g. .env.*)" = "Namensmuster (Glob auf Dateinamen, z. B. .env.*)";
-"New agent in \"%@\"" = "Neuer Agent in „%@“";
+"New worktree in \"%@\"" = "Neuer Worktree in „%@“";
 "New sandbox" = "Neue Sandbox";
 "New sandboxes are cloned from this VM (seconds). Rebuilding only affects new sandboxes." = "Neue Sandboxes werden aus dieser VM geklont (Sekunden). Neu bauen gilt nur für neue Sandboxes.";
 "No active grants." = "Keine aktiven Freigaben.";
@@ -155,11 +155,11 @@
 "Remote Control is running – mark as active" = "Remote Control läuft – als aktiv markieren";
 "Remote Control starting …" = "Remote Control startet …";
 "Remove" = "Entfernen";
-"Remove agent \"%@\"" = "Agent „%@“ entfernen";
+"Remove worktree \"%@\"" = "Worktree „%@“ entfernen";
 "Remove daemon" = "Daemon entfernen";
 "Remove …" = "Entfernen …";
-"Requested by the agent." = "Vom Agent angefragt.";
-"Requested by the agent: %@" = "Vom Agent angefragt: %@";
+"Requested by the assistant." = "Vom Assistenten angefragt.";
+"Requested by the assistant: %@" = "Vom Assistenten angefragt: %@";
 "Requests" = "Anfragen";
 "Reset to the bundled template" = "Auf mitgelieferte Vorlage zurücksetzen";
 "Restart" = "Neu starten";
@@ -216,7 +216,7 @@
 "Yes, copy %@" = "Ja, %@ kopieren";
 "You are up to date." = "Du bist auf dem neuesten Stand.";
 "activating Remote Control …" = "aktiviere Remote Control …";
-"all agents" = "alle Agents";
+"all worktrees" = "alle Worktrees";
 "allowed" = "erlaubt";
 "a–z, 0–9 and -, at most 24 characters" = "a–z, 0–9 und -, höchstens 24 Zeichen";
 "being built …" = "wird aufgebaut …";
@@ -329,11 +329,11 @@
 "Worktree" = "Worktree";
 "Actions" = "Aktionen";
 "Sign in" = "Anmelden";
-"No agents yet" = "Noch keine Agents";
+"No worktrees yet" = "Noch keine Worktrees";
 "Agents" = "Agents";
 "Not checked – start the sandbox" = "Nicht geprüft – Sandbox starten";
 "not installed" = "nicht installiert";
-"installed · no agent of this runtime" = "installiert · kein Agent dieser Laufzeit";
+"installed · no agent of this runtime" = "installiert · keine Laufzeit aktiv";
 "installed · signed in" = "installiert · angemeldet";
 "installed · not signed in" = "installiert · nicht angemeldet";
 "installed · status unknown" = "installiert · Status unbekannt";
@@ -393,8 +393,8 @@
 "Copy" = "Kopieren";
 
 "Connect installs it if needed" = "Verbinden installiert es bei Bedarf";
-"installed · signed in · no agent" = "installiert · angemeldet · kein Agent";
-"installed · not signed in · no agent" = "installiert · nicht angemeldet · kein Agent";
+"installed · signed in · no agent" = "installiert · angemeldet · kein Worktree aktiv";
+"installed · not signed in · no agent" = "installiert · nicht angemeldet · kein Worktree aktiv";
 "1. Copy the one-time link below (valid for 5 minutes).\n2. In the desktop app choose \"Add server\" and paste the link.\n3. Open the sandbox's worktrees as projects; a Bergfried agent is not required." = "1. Kopiere den einmaligen Link unten (5 Minuten gültig).\n2. Wähle in der Desktop-App „Server hinzufügen“ und füge den Link ein.\n3. Öffne die Worktrees der Sandbox als Projekte; ein Bergfried-Agent ist nicht nötig.";
 
 "Deny request" = "Anfrage ablehnen";
@@ -410,3 +410,56 @@
 
 "Daemon version %@ does not match the app %@. Restart the daemon." = "Daemon-Version %@ passt nicht zur App %@. Daemon neu starten.";
 "The daemon did not report the new version. Check ~/.bergfried/daemon.log." = "Der Daemon hat die neue Version nicht gemeldet. Prüfe ~/.bergfried/daemon.log.";
+
+"Claude is probably waiting for input – open %@" = "Claude wartet vermutlich auf Eingabe – %@ öffnen";
+"Claude runs · Remote Control active" = "Claude läuft · Remote Control aktiv";
+"Claude runs · Remote Control starting …" = "Claude läuft · Remote Control startet …";
+"Done. The status in the app updates automatically." = "Fertig. Der Status in der App aktualisiert sich automatisch.";
+"Opens this worktree's Claude window in %@" = "Öffnet das Claude-Fenster dieses Worktrees in %@";
+"Remove the entry and delete the directory (git worktree including branch worktree/%@, Docker stack %@-%@)" = "Eintrag entfernen und Verzeichnis löschen (Git-Worktree inkl. Branch worktree/%@, Docker-Stack %@-%@)";
+"Remove the entry only – the directory ~/work/%@ is kept" = "Nur den Eintrag entfernen – das Verzeichnis ~/work/%@ bleibt erhalten";
+"Sandbox stopped" = "Sandbox gestoppt";
+"Starting the OpenCode service …" = "OpenCode-Dienst wird gestartet …";
+"Stopping the OpenCode service …" = "OpenCode-Dienst wird gestoppt …";
+"The folder is **copied**, not mounted: the VM never sees your home. Not copied: blocklist entries, .env files, keys, symlinks, node_modules and caches. Credentials in .git/config are removed. For git the assistant will need a GitHub token later (it asks for it)." = "Der Ordner wird **kopiert**, nicht eingebunden: die VM sieht dein Home nie. Nicht kopiert: Blocklist-Einträge, .env-Dateien, Schlüssel, Symlinks, node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Für Git braucht der Assistent später einen GitHub-Token (er fragt danach).";
+"Worktree %@" = "Worktree %@";
+"Worktree %@ is being created …" = "Worktree %@ wird erstellt …";
+"Worktrees" = "Worktrees";
+"installed" = "installiert";
+"not checked – start the sandbox" = "nicht geprüft – Sandbox starten";
+"not installed – Connect installs it" = "nicht installiert – Verbinden installiert es";
+"not started" = "nicht gestartet";
+"restarting Claude …" = "Claude wird neu gestartet …";
+"service running" = "Dienst läuft";
+"service stopped" = "Dienst gestoppt";
+"starting Claude …" = "Claude wird gestartet …";
+"stopping Claude …" = "Claude wird gestoppt …";
+
+"Start Claude" = "Claude starten";
+"Stop Claude" = "Claude stoppen";
+"Restart Claude" = "Claude neu starten";
+"Remove worktree …" = "Worktree entfernen …";
+"Copy Remote Control link" = "Remote-Control-Link kopieren";
+"Worktree +" = "Worktree +";
+"Worktree name" = "Worktree-Name";
+"Start service" = "Dienst starten";
+"Stop service" = "Dienst stoppen";
+"Connect desktop" = "Desktop-App verbinden";
+"A worktree is a folder with code. OpenCode opens these folders as projects." = "Ein Worktree ist ein Ordner mit Code. OpenCode öffnet diese Ordner als Projekte.";
+"Claude and OpenCode can use the same worktree, but not at the same time on the same files. Use separate worktrees for parallel work." = "Claude und OpenCode können denselben Worktree nutzen, aber nicht gleichzeitig an denselben Dateien. Für parallele Arbeit getrennte Worktrees anlegen.";
+"One service for the whole sandbox. Sessions live in the desktop app." = "Ein Dienst für die ganze Sandbox. Sitzungen leben in der Desktop-App.";
+"OpenCode opens the worktrees as projects; Claude is not required." = "OpenCode öffnet die Worktrees als Projekte; Claude ist nicht nötig.";
+"Runs per worktree. Start it in the worktree list below." = "Läuft pro Worktree. Starte Claude in der Worktree-Liste unten.";
+"Remote Control is available for every running Claude." = "Remote Control ist für jedes laufende Claude verfügbar.";
+"Claude is stopped first. The worktree can be removed with or without its directory." = "Claude wird zuerst gestoppt. Der Worktree kann mit oder ohne Verzeichnis entfernt werden.";
+"The sandbox starts with the worktree \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox." = "Die Sandbox startet mit dem Worktree „main“. Claude startet nicht automatisch; OpenCode läuft als Dienst für die ganze Sandbox.";
+"A worktree is a folder with code (~/work/<name>). Claude is not started automatically; start it in the worktree list. OpenCode sees the worktree as a project." = "Ein Worktree ist ein Ordner mit Code (~/work/<name>). Claude startet nicht automatisch; starte es in der Worktree-Liste. OpenCode sieht den Worktree als Projekt.";
+
+"During a grant an assistant could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config)." = "Während einer Freigabe könnte ein Assistent einen eigenen Key in authorized_keys des Ziels eintragen. Für wichtige Server einen eingeschränkten User „claude“ nutzen, dessen authorized_keys root gehört (AuthorizedKeysFile in sshd_config).";
+"Filter (sandbox, worktree, event, details …)" = "Filter (Sandbox, Worktree, Ereignis, Details …)";
+"The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here." = "Das GitHub-Token gehört zur Sandbox: Es wird beim Anlegen einer Sandbox mit Git-Repo abgefragt oder auf Anfrage des Assistenten (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.";
+"The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions." = "Das Token liegt anschließend in der VM; der Assistent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.";
+"VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further worktrees ~/work/<worktree>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Worktrees ~/work/<worktree>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
+"Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Worktree; technisch bleibt die Grenze die Sandbox.";
+"The file-name index is rebuilt from the blocklist. Contents are never indexed; assistants only get a file after you approve a request." = "Der Dateinamen-Index wird anhand der Sperrliste neu aufgebaut. Inhalte werden nie indexiert; Assistenten bekommen eine Datei erst nach deiner Freigabe.";
+"Unsaved work in the worktree" = "Ungesicherte Arbeit im Worktree";

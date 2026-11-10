@@ -52,4 +52,4 @@
 - **`app/build.sh` runs only on macOS:** in a Linux sandbox the app cannot be built (Go can cross-compile the daemon).
 - **The app cannot be looked at from inside the VM** except through the VM's own display window (a macOS guest has one; a Linux guest has none).
 - **Release trust:** the sandbox token needs `Contents: write` on this repository, and a tag `v*` publishes a release that the updater installs. Before this repository goes into a sandbox token, protect it on GitHub (free for public repos): a ruleset restricting `v*` tags and requiring pull requests for `main`, **no bypass for the token's account**, and a `release` environment with a required reviewer in `release.yml`.
-- **Every change to Bergfried's own VM code is risky to try on the same Mac that runs your other sandboxes** (a bug can break your running agents). Test with a separate `BERGFRIED_HOME` and clearly named test sandboxes.
+- **Every change to Bergfried's own VM code is risky to try on the same Mac that runs your other sandboxes** (a bug can break your running assistants). Test with a separate `BERGFRIED_HOME` and clearly named test sandboxes.

@@ -51,7 +51,7 @@ type Decision struct {
 	Allow            bool
 	Minutes          int
 	KeyFP, User      string
-	AllAgents        bool
+	AllWorktrees     bool
 	PerConn          bool
 	TrustUnknownHost bool
 	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
@@ -95,8 +95,8 @@ func NewService(b *Broker, r HostKeyResolver, h VMHooks, a SSHAsker, hc *HostCon
 		waiters: map[int64]*pending{}, open: map[int64]string{}, cool: map[string]time.Time{}, attempt: map[string]*attemptState{}}
 }
 
-func (s *Service) audit(event, sandbox, agent, detail string) {
-	if err := s.B.St.Audit("daemon", event, sandbox, agent, detail); err != nil {
+func (s *Service) audit(event, sandbox, worktree, detail string) {
+	if err := s.B.St.Audit("daemon", event, sandbox, worktree, detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
@@ -111,18 +111,18 @@ func clamp(m int) int {
 	return m
 }
 
-func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user string, minutes int, reason string) (*pb.SSHAccessResult, error) {
+func (s *Service) RequestSSH(ctx context.Context, sandbox, worktree, host, user string, minutes int, reason string) (*pb.SSHAccessResult, error) {
 	deny := func(v pb.Verdict, msg string) (*pb.SSHAccessResult, error) {
 		return &pb.SSHAccessResult{Verdict: v, Message: msg}, nil
 	}
 	if !hostRe.MatchString(host) {
-		s.audit("ssh.request_invalid", sandbox, agent, fmt.Sprintf("host=%q", trunc(host, 100)))
+		s.audit("ssh.request_invalid", sandbox, worktree, fmt.Sprintf("host=%q", trunc(host, 100)))
 		return deny(pb.Verdict_VERDICT_DENIED, "Invalid host name.")
 	}
 	host = strings.ToLower(host)
 	user = strings.TrimSpace(user)
 	if user != "" && !userRe.MatchString(user) {
-		s.audit("ssh.request_invalid", sandbox, agent, fmt.Sprintf("user=%q", trunc(user, 40)))
+		s.audit("ssh.request_invalid", sandbox, worktree, fmt.Sprintf("user=%q", trunc(user, 40)))
 		return deny(pb.Verdict_VERDICT_DENIED, "Invalid user name (allowed: a-z, 0-9, _ and -, lowercase).")
 	}
 	reason = trunc(strings.Map(func(r rune) rune {
@@ -133,13 +133,13 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 	}, reason), 500)
 	fps, source, err := s.Resolve(ctx, host)
 	if err != nil || len(fps) == 0 {
-		s.audit("ssh.request_nohostkey", sandbox, agent, fmt.Sprintf("host=%s err=%v", host, err))
+		s.audit("ssh.request_nohostkey", sandbox, worktree, fmt.Sprintf("host=%s err=%v", host, err))
 		return deny(pb.Verdict_VERDICT_DENIED, "Host key of the target could not be determined (not in known_hosts, not reachable).")
 	}
 	dk, du := s.Hosts.Default(host)
 	info := SSHInfo{HostKeyFPs: fps, Source: source, DefaultKey: dk, DefaultUser: du, SuggestedMinutes: clamp(minutes), RequestedUser: user}
 	extra, _ := json.Marshal(map[string]any{"fps": fps, "source": source, "user": user})
-	req := store.Request{Sandbox: sandbox, Agent: agent, Kind: "ssh", Path: host, Reason: reason, Status: "pending", Bytes: int64(info.SuggestedMinutes), Extra: string(extra)}
+	req := store.Request{Sandbox: sandbox, Worktree: worktree, Kind: "ssh", Path: host, Reason: reason, Status: "pending", Bytes: int64(info.SuggestedMinutes), Extra: string(extra)}
 	id, err := s.B.St.AddRequest(req)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 	s.waiters[id] = p
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
-	s.audit("ssh.request_created", sandbox, agent, fmt.Sprintf("id=%d host=%s user=%s source=%s hostkeys=%s", id, host, user, source, strings.Join(fps, ",")))
+	s.audit("ssh.request_created", sandbox, worktree, fmt.Sprintf("id=%d host=%s user=%s source=%s hostkeys=%s", id, host, user, source, strings.Join(fps, ",")))
 	if s.Asker != nil {
 		s.Asker.AskSSH(req, info)
 	}
@@ -177,12 +177,12 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, agent, host, user str
 		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, Message: msg}, nil
 	case <-timer.C:
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
-			s.audit("ssh.request_expired", sandbox, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ssh.request_expired", sandbox, worktree, fmt.Sprintf("id=%d", id))
 		}
 		return deny(pb.Verdict_VERDICT_EXPIRED, "No answer, request expired.")
 	case <-ctx.Done():
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
-			s.audit("ssh.request_cancelled", sandbox, agent, fmt.Sprintf("id=%d", id))
+			s.audit("ssh.request_cancelled", sandbox, worktree, fmt.Sprintf("id=%d", id))
 		}
 		return nil, ctx.Err()
 	}
@@ -267,13 +267,13 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	p, ok := s.waiters[d.ID]
 	s.mu.Unlock()
 	if !ok {
-		return "", fmt.Errorf("request %d is no longer waiting (agent gave up)", d.ID)
+		return "", fmt.Errorf("request %d is no longer waiting (the requester gave up)", d.ID)
 	}
 	if !d.Allow {
 		if ok, _ := s.B.St.SetRequestStatus(d.ID, "denied"); !ok {
 			return "", errors.New("request no longer open")
 		}
-		s.audit("ssh.request_denied", r.Sandbox, r.Agent, fmt.Sprintf("id=%d", d.ID))
+		s.audit("ssh.request_denied", r.Sandbox, r.Worktree, fmt.Sprintf("id=%d", d.ID))
 		p.ch <- pendingResult{note: cleanNote(d.Note)}
 		return "denied", nil
 	}
@@ -287,7 +287,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if p.info.Source != "known_hosts" && !d.TrustUnknownHost {
 		return "", fmt.Errorf("host key of %s is new (%s) – confirm with --trust-host-key", r.Path, strings.Join(p.info.HostKeyFPs, ", "))
 	}
-	// Precedence: user input, then the agent's request, then the host default.
+	// Precedence: user input, then the requested user, then the host default.
 	user := d.User
 	if user == "" {
 		user = p.info.RequestedUser
@@ -330,11 +330,11 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if ok, _ := s.B.St.SetRequestStatus(d.ID, "allowed"); !ok {
 		return "", errors.New("request no longer open")
 	}
-	agentName := r.Agent
-	if d.AllAgents {
-		agentName = ""
+	worktreeName := r.Worktree
+	if d.AllWorktrees {
+		worktreeName = ""
 	}
-	g := store.SSHGrant{Sandbox: r.Sandbox, Agent: agentName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
+	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: worktreeName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
 		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute), PerConn: d.PerConn}
 	gid, err := s.B.St.AddGrant(g)
 	if err != nil {
@@ -347,7 +347,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		source = "key file, decrypted in memory until the grant ends (not loaded into the agent, passphrase not stored)"
 	}
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Sandbox, r.Agent, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_agents=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllAgents, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_worktrees=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllWorktrees, d.PerConn))
 	p.ch <- pendingResult{grant: &g, note: cleanNote(d.Note)}
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }
@@ -371,7 +371,7 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 		return err
 	}
 	s.B.DropLocal(id)
-	s.audit("ssh.grant_revoked", g.Sandbox, g.Agent, fmt.Sprintf("grant=%d host=%s", id, g.Host))
+	s.audit("ssh.grant_revoked", g.Sandbox, g.Worktree, fmt.Sprintf("grant=%d host=%s", id, g.Host))
 	s.cleanup(ctx, g.Sandbox)
 	s.mu.Lock()
 	delete(s.open, id)
@@ -409,7 +409,7 @@ func (s *Service) Extend(ctx context.Context, id int64, minutes int) (time.Time,
 	if err := s.B.St.SetGrantExpiry(id, exp); err != nil {
 		return time.Time{}, err
 	}
-	s.audit("ssh.grant_extended", g.Sandbox, g.Agent, fmt.Sprintf("grant=%d until=%s", id, exp.Format(time.RFC3339)))
+	s.audit("ssh.grant_extended", g.Sandbox, g.Worktree, fmt.Sprintf("grant=%d until=%s", id, exp.Format(time.RFC3339)))
 	s.mu.Lock()
 	s.open[id] = g.Sandbox
 	s.mu.Unlock()

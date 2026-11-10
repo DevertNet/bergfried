@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 import AppKit
 
-/// Notifications with action buttons. The agents' text is used for display only.
+/// Notifications with action buttons. The assistants' text is used for display only.
 final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = Notifier()
     private weak var model: AppModel?
@@ -74,16 +74,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         c.sound = .default
         switch r.kind {
         case "ssh":
-            c.title = L("SSH request: %@/%@", r.sandbox, r.agent)
+            c.title = L("SSH request: %@/%@", r.sandbox, r.worktree)
             c.body = L("Access to %@", r.path) + "\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
         case "ghtoken":
-            c.title = L("GitHub access: %@/%@", r.sandbox, r.agent)
+            c.title = L("GitHub access: %@/%@", r.sandbox, r.worktree)
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
         default:
-            c.title = L("File request: %@/%@", r.sandbox, r.agent)
+            c.title = L("File request: %@/%@", r.sandbox, r.worktree)
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
             c.categoryIdentifier = r.large ? "OPEN" : "FILE"
         }
@@ -105,7 +105,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
                 Task { await m.deny(r) }
             case "ssh-allow":
                 if let s = r.ssh, s.source == "known_hosts", !s.defaultKey.isEmpty {
-                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allAgents: false, perConnection: false, trustUnknownHost: false)) }
+                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allWorktrees: false, perConnection: false, trustUnknownHost: false)) }
                 }
             default:
                 m.pane = .requests

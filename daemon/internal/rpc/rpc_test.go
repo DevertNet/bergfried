@@ -29,19 +29,19 @@ func TestListenUnixPerms(t *testing.T) {
 	l2.Close()
 }
 
-func TestAgentHeaderValidated(t *testing.T) {
+func TestWorktreeHeaderValidated(t *testing.T) {
 	mk := func(v string) context.Context {
-		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(AgentHeader, v))
+		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(WorktreeHeader, v))
 	}
-	if agentFrom(mk("shop/main")) != "shop/main" {
+	if worktreeFrom(mk("shop/main")) != "shop/main" {
 		t.Fatal("valid name")
 	}
 	for _, bad := range []string{"Evil\nname", "a b", "../x", "", "x'; rm"} {
-		if agentFrom(mk(bad)) != "unknown" {
+		if worktreeFrom(mk(bad)) != "unknown" {
 			t.Fatalf("%q", bad)
 		}
 	}
-	if agentFrom(context.Background()) != "unknown" {
+	if worktreeFrom(context.Background()) != "unknown" {
 		t.Fatal("without header")
 	}
 }

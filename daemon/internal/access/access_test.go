@@ -159,7 +159,7 @@ func TestLargeNeedsSecondConfirmation(t *testing.T) {
 	}
 }
 
-func TestSanitizeAgentText(t *testing.T) {
+func TestSanitizeAssistantText(t *testing.T) {
 	got := sanitize("a\x00b\x1b[31mc"+strings.Repeat("x", 600), 50)
 	if strings.ContainsAny(got, "\x00\x1b") || len([]rune(got)) > 51 {
 		t.Fatalf("%q", got)
@@ -175,7 +175,7 @@ func (a *denyNoteAsker) Ask(r store.Request) {
 	go func() { _, _ = a.svc.Decide(r.ID, false, false, a.note) }()
 }
 
-func TestDenyNoteReachesAgent(t *testing.T) {
+func TestDenyNoteReachesAssistant(t *testing.T) {
 	svc, _, _ := env(t, true)
 	svc.Asker = &denyNoteAsker{svc: svc, note: "use Documents/b.txt instead"}
 	res, err := svc.Request(context.Background(), "shop", "main", false, "Documents/a.txt", "")

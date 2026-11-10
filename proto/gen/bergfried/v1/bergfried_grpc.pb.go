@@ -33,7 +33,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
-// The agent name is in the gRPC metadata "x-bergfried-agent".
+// The worktree name is in the gRPC metadata "x-bergfried-worktree".
 type SandboxAPIClient interface {
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	SearchFiles(ctx context.Context, in *SearchFilesRequest, opts ...grpc.CallOption) (*SearchFilesResponse, error)
@@ -132,7 +132,7 @@ func (c *sandboxAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTok
 // for forward compatibility.
 //
 // SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
-// The agent name is in the gRPC metadata "x-bergfried-agent".
+// The worktree name is in the gRPC metadata "x-bergfried-worktree".
 type SandboxAPIServer interface {
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	SearchFiles(context.Context, *SearchFilesRequest) (*SearchFilesResponse, error)
