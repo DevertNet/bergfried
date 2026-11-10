@@ -13,10 +13,6 @@ const (
 	RuntimeOpenCode Runtime = "opencode"
 )
 
-// OpenCodeVersion is pinned so that a sandbox keeps a tested version. Users can
-// still change the template or install a newer OpenCode by hand.
-const OpenCodeVersion = "2.2.6"
-
 // ParseRuntime accepts the stored/API value. Empty means Claude (old rows, old app).
 func ParseRuntime(s string) (Runtime, error) {
 	switch Runtime(strings.ToLower(strings.TrimSpace(s))) {
