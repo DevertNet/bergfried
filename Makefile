@@ -9,7 +9,7 @@ DOCKER_GO = docker run --rm \
 .PHONY: build test vet fmt
 build: ## bergfriedd (macOS arm64) und bergfried-mcp (Linux arm64)
 	mkdir -p bin
-	$(DOCKER_GO) sh -c 'GOOS=darwin GOARCH=arm64 go build -ldflags "-X github.com/DevertNet/bergfried/daemon/internal/api.Version=$(VERSION)" -o bin/bergfriedd ./daemon/cmd/bergfriedd && GOOS=linux GOARCH=arm64 go build -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp'
+	$(DOCKER_GO) sh -c 'GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w -buildid= -X github.com/DevertNet/bergfried/daemon/internal/api.Version=$(VERSION)" -o bin/bergfriedd ./daemon/cmd/bergfriedd && GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -buildid=" -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp'
 
 test:
 	$(DOCKER_GO) sh -c 'go test ./...'

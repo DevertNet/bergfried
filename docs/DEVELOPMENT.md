@@ -33,7 +33,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ## Releasing
 Stable releases only on the maintainer's explicit request (see above). Flow: PR `dev` → `main` (`scripts/pr.sh merge <n> --user-approved`), then `scripts/release.sh vX.Y.Z --user-approved` (tags `main`; needs a clean, up-to-date checkout of `main` and green CI). The tag runs `.github/workflows/release.yml` (tests, build, zip, `SHA256SUMS`, GitHub release, no approval gate); the in-app updater picks it up ([UPDATES.md](UPDATES.md)). Choose the version by semver (fix → patch, feature → minor); after a stable release the dev base version moves to the next patch.
 `.github/workflows/ci.yml` runs `go vet`, `go test`, the strings check and the app build on every push to every branch and on pull requests.
-Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`.
+Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/build.sh`. The Go helpers are built with `-trimpath -ldflags "-s -w -buildid="`; `app/build.sh` rebuilds them the same way when `go` is available, so release assets stay small.
 
 ## Conventions
 - Go: one module `github.com/DevertNet/bergfried`; `daemon/internal/*`, `mcp/cmd/bergfried-mcp`, `proto/gen/…` (generated, do not edit).
