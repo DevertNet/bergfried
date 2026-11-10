@@ -10,6 +10,14 @@ struct SandboxesView: View {
     @Local private var forceDeleteFor: SandboxInfo?
     @Local private var baseBannerDismissed = false
 
+    var updateBannerText: String {
+        guard let st = model.status else { return "" }
+        if let size = st.updateSize, size > 0 {
+            return L("Update available: version %@ (%@)", st.updateVersion ?? "", formatBytes(size))
+        }
+        return L("Update available: version %@", st.updateVersion ?? "")
+    }
+
     /// Sandboxes that are being created and are not in the list yet (immediate feedback).
     var creating: [(name: String, step: String)] {
         model.running.compactMap { k, v in
@@ -42,7 +50,7 @@ struct SandboxesView: View {
             }
             if let st = model.status, st.updateAvailable == true {
                 HStack {
-                    Label(L("Update available: version %@", st.updateVersion ?? ""), systemImage: "arrow.down.circle.fill")
+                    Label(updateBannerText, systemImage: "arrow.down.circle.fill")
                     Spacer()
                     Button("Open Settings") { model.pane = .settings }
                 }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.12))
