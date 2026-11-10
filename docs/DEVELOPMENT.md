@@ -26,7 +26,7 @@ export BERGFRIED_HOME=$HOME/.bergfried BERGFRIED_TEMPLATE=$PWD/vm/bergfried.yaml
 ## Logs
 - App: menu item **Diagnostics** (daemon log with start and failure of every action, updater log, Lima's host-agent log per VM; "Copy all"). Long errors in the orange banner are cut: "Show log" opens the full text.
 - Files: `~/.bergfried/daemon.log` (stdout/stderr of the daemon; every job logs `started`, `done` or `FAILED: <full error>`), `~/.bergfried/update/update.log` (swap helper), `~/.lima/bergfried-<name>/ha.stderr.log` (Lima host agent; VM boot problems), and in the VM `/var/log/cloud-init-output.log` (provisioning).
-- **Live output:** while a VM is created, cloned or started (and while the base VM is built) the app shows the latest output line under the progress text; expand it for the last 300 lines ("Copy output"). The lines are limactl's messages (`level=info msg=…` reduced to the message) and, for the first start of a base VM, the new lines of the VM's `/var/log/cloud-init-output.log` (prefix `VM:`, polled every 5 s once SSH works). The daemon keeps them in the job (`GET /v1/jobs/<id>`, field `log`).
+- **Live output:** while a VM is created, cloned or started (and while the base VM is built) the app shows the latest output line under the progress text; expand it for the last 300 lines ("Copy output"). Expanded it follows new lines while you are at the bottom; scrolling up pauses following and shows a "Jump to latest" button (content growth alone does not count as scrolling). The lines are limactl's messages (`level=info msg=…` reduced to the message) and, for the first start of a base VM, the new lines of the VM's `/var/log/cloud-init-output.log` (prefix `VM:`, polled every 5 s once SSH works). The daemon keeps them in the job (`GET /v1/jobs/<id>`, field `log`).
 - A failed base-VM build deletes its half-finished VM, but first saves the error, Lima's host-agent and serial logs and the VM's `cloud-init-output.log` to `~/.bergfried/base-build-failed/<timestamp>.log` (Diagnostics pane → "Last base build failure"). Lima waits 10 minutes by default for a first start; Bergfried passes `--timeout=45m` for base builds.
 - API: `GET /v1/log?source=daemon|update|base|lima[&vm=bergfried-<name>]` returns the last 256 KB (app socket only).
 
@@ -66,7 +66,7 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Unix socket paths** are limited to ~104 characters.
 - **Notification permission:** never quit or restart the app while the macOS prompt is open — that counts as "denied" and macOS never asks again (only System Settings or a new bundle id help). Current bundle id: `de.einfach123.bergfried`.
 - **Terminal start** goes through a `.command` file + `open -a` (AppleScript for iTerm failed silently without automation rights).
-- **tmux default window** (`bash`/`shell`) is not an agent; the monitor only looks at registered agents. "Is Claude running?" is detected with `ps -t <tty>` (`pane_current_command` wrongly shows `bash`).
+- **tmux default window** (`bash`/`shell`) is not an agent; the monitor only looks at registered agents. "Is the runtime running?" is detected with `ps -t <tty>` and the runtime process name (`claude` or `opencode`); `pane_current_command` wrongly shows `bash`.
 - **Race in tests:** right after `create` the sandbox socket is briefly not open; an `ssh` in that second triggers no request.
 - **Docker Go builds:** `make build` builds `bergfriedd` for darwin/arm64 and `bergfried-mcp` for linux/arm64 (a VPS host would need linux/amd64).
 - **Empty lists as JSON `null`** break Swift decoding (`Detail.Normalize`).
@@ -75,8 +75,18 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Renaming "session" → "sandbox"** once broke exactly that; the fix and a test exist.
 - **OpenCode is not in apt:** `apt install opencode` does not exist in Debian. The daemon removes leftovers of earlier attempts and runs the official installer **in the VM** from a script file (not as a shell argument), logging every step to `/tmp/opencode-install.log`. It always installs the latest version to `~/.opencode/bin/opencode`; older VMs get it on demand when the first OpenCode agent is added.
 - **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_AGENT` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the agent from its working directory (`~/work/<agent>`) and only falls back to the environment variable.
-- **OpenCode desktop connection:** the server must listen on `0.0.0.0` with a stable per-sandbox port; Lima forwards ports bound to `0.0.0.0` to `127.0.0.1` on the Mac with the same number. Changing the port breaks the saved desktop connection, so it is stored in the database.
+- **OpenCode desktop connection:** the server must listen on `0.0.0.0` with a stable per-sandbox port; Lima forwards ports bound to `0.0.0.0` to `127.0.0.1` on the Mac with the same number. Changing the port breaks the saved desktop connection, so it is stored in the database. Before pairing the daemon **restarts** the shared service (the config can already name the right port while the running process is stale) and rejects a link that does not use the allocated port.
 - **OpenCode pairing is per VM**, not per agent: one link covers all OpenCode agents of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
+
+## Documentation
+Documentation is part of every change, not an afterthought:
+- `README.md` — what users see first: features, setup, OpenCode desktop connection, release install.
+- `docs/ARCHITECTURE.md` — components, data flow, design decisions.
+- `docs/DEVELOPMENT.md` — build, release flow, conventions, pitfalls.
+- `docs/SECURITY.md`, `docs/UPDATES.md`, `docs/GITHUB.md` — the corresponding contracts.
+- `docs/testing/*.md` — manual test steps; update them when a flow or a label changes.
+- `docs/design/*` — UI mockups/overviews; keep them in sync when the layout changes.
+Update the relevant file in the same commit/PR. Do not leave stale screenshots or feature lists; replace them or mark them clearly as outdated. The rule is also in `CLAUDE.md`.
 
 ## Remote Control detection (monitor)
 - The banner "/remote-control is active" appears at the **start** of the output and scrolls away. The monitor reads the whole tmux scrollback (`history-limit 20000`) and remembers active RC **per claude PID** (`stickyRC`): the same process still running means RC is active.

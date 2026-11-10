@@ -5,6 +5,8 @@ The repository is **English** (docs, code comments, commit messages, app strings
 
 **Read first:** [`README.md`](README.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (conventions, decisions, pitfalls), [`docs/ROADMAP.md`](docs/ROADMAP.md) (what is next), [`docs/SECURITY.md`](docs/SECURITY.md).
 
+**Documentation is part of the change.** Whenever behaviour, UI, CLI flags, settings, file locations, workflows or setup steps change, update `README.md` and the affected `docs/` page (including `docs/testing/`) **in the same commit/PR**. Do not leave stale screenshots, feature lists or instructions; replace them or mark them clearly as outdated. A change is not finished until the docs describe it.
+
 ## Terminology
 An isolated VM with its agents is a **sandbox** — everywhere (app, API `/v1/sandboxes`, code, DB, folder `~/.bergfried/sandboxes`). It was called "session" earlier;
 the word remains only for other programs' things (tmux session `bf`, Claude/Remote Control sessions, OpenSSH's `session-bind@openssh.com` — never rename that).

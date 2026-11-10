@@ -17,7 +17,7 @@ In the agent: "List my files in Documents and fetch <file>".
 
 Blocklist: `~/.bergfried/blocklist.json` (paths relative to home, name patterns). Defaults: `.ssh Library .config .gnupg .aws .kube .docker .netrc .git-credentials .claude .claude.json .bergfried .lima` and `.env .env.* *.keychain *.keychain-db *.kdbx id_rsa id_ed25519 id_ecdsa`. Restart `serve` after editing.
 
-## Calling the MCP server without Claude
+## Calling the MCP server without an agent
 JSON-RPC over stdio inside the VM; the identity is the socket. Example (`initialize`, then `tools/call`; written from the MCP spec, not re-run after the docs rewrite):
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' \
@@ -27,4 +27,4 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
 
 ## Known limits
 - The agent name in dialogs is claimed from inside the VM (same Linux user) — not proof. The **sandbox** comes from the socket.
-- A request waits up to 10 minutes; whether Claude Code waits that long for an MCP tool is unverified.
+- A request waits up to 10 minutes; whether Claude Code or OpenCode wait that long for an MCP tool is unverified.
