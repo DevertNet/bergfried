@@ -51,7 +51,7 @@ sequenceDiagram
   D->>D: audit log entry
 ```
 
-SSH works the same way, but the daemon never hands out a key: it speaks the ssh-agent protocol to the VM and signs **upstream with your real agent**,
+SSH works the same way, but the daemon never hands out a key: it speaks the ssh-agent protocol to the VM and signs **upstream with your real ssh-agent**,
 only while a grant is active (time window, key, target host key).
 
 ## Key design points
@@ -76,10 +76,10 @@ only while a grant is active (time window, key, target host key).
 8. **OpenCode is a sandbox-level service:** one service and one desktop link per sandbox, not one per worktree. It can run without any Claude worktree; the desktop app opens the worktrees as projects.
    It is connected through a one-time local link (`opencode pair`, no internet): the OpenCode server listens on a stable per-sandbox port on `0.0.0.0` and Lima forwards it to `127.0.0.1` on the Mac.
    Before a link is created the daemon restarts the service so it really uses that port (the config may already be right while the running process is stale).
-   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. **Start service / Stop service** in the app control it; connecting installs it on demand if missing. The wanted state is stored per sandbox (`sandboxes.opencode`) and restored after a sandbox start.
+   OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. **Start service / Stop service** in the app control the service; connecting installs it on demand if missing. The wanted state is stored per sandbox (`sandboxes.opencode`) and restored after a sandbox start.
    A tmux window that still runs an old OpenCode TUI or a manual start is killed when the sandbox starts and by the monitor if its worktree has `claude=0` – this is how the migration terminates existing OpenCode TUI windows.
 9. **UI:** the sandbox overview is one alphabetical card list. Each card has the state/actions, a compact metadata line, a Claude card (installed, signed in; status only), an OpenCode card (installed, signed in, service running, Start/Stop service, Connect desktop) and a worktree table with Worktree, Claude state and actions. The separate runtime chips and the runtime column are gone; the RC link stays in the row's ellipsis menu. Settings has a secondary sidebar: General, Updates, Base VM, Notifications, Files & index, Terminal, Advanced (template editor behind Advanced). Base-build output follows new lines while the view is at the bottom.
-9. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
+10. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
 
 ## Data on your Mac
 

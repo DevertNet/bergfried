@@ -20,7 +20,7 @@ export BERGFRIED_TEMPLATE=vm/bergfried.yaml
 - In the VM `mount | grep shared` shows exactly two virtiofs mounts, `in` with `ro`; `ls /Users` shows nothing of your home.
 - `docker ps` works in the VM; no VM Docker socket is forwarded to the Mac.
 - Two sandboxes have different `/etc/machine-id`.
-- OpenCode: `command -v opencode` and `~/.opencode/bin/opencode --version` work; `opencode pair` (or the app Connect button) returns a link on a port in 42000–42999, not 49374.
+- OpenCode: `command -v opencode` and `~/.opencode/bin/opencode --version` work; `opencode pair` (or **Connect desktop** in the app) returns a link on a port in 42000–42999, not 49374.
 - OpenCode is one service (`pgrep -a opencode`) regardless of how many worktrees exist; each project gets its own MCP process.
 
 ## Notes
