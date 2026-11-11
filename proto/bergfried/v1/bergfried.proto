@@ -5,7 +5,7 @@ package bergfried.v1;
 option go_package = "github.com/DevertNet/bergfried/proto/gen/bergfried/v1;bergfriedv1";
 
 // SandboxAPI: VM -> daemon. The sandbox is derived from the socket, never from a field.
-// The worktree name is in the gRPC metadata "x-bergfried-worktree".
+// The folder path is in the gRPC metadata "x-bergfried-folder".
 service SandboxAPI {
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
   rpc SearchFiles(SearchFilesRequest) returns (SearchFilesResponse);
@@ -72,14 +72,14 @@ message DecideSSHRequest {
   int32 minutes = 3;
   string key_fingerprint = 4;   // SHA256:...
   string user = 5;
-  bool all_worktrees = 6;
+  bool all_folders = 6;
   bool per_connection = 7;
   bool trust_unknown_host = 8;  // host key was not in known_hosts
 }
 message Grant {
   int64 id = 1;
   string sandbox = 2;
-  string worktree = 3;   // empty = all worktrees of the sandbox
+  string folder = 3;     // empty = all folders of the sandbox
   string host = 4;
   string key_fingerprint = 5;
   string user = 6;
@@ -140,7 +140,7 @@ message AccessResult {
 message Request {
   int64 id = 1;
   string sandbox = 2;
-  string worktree = 3;
+  string folder = 3;
   string kind = 4;       // file | folder
   string path = 5;
   string reason = 6;

@@ -8,7 +8,7 @@ flowchart LR
   phone["Phone / claude.ai/code<br/>(Remote Control)"]
   desktop["OpenCode desktop app"]
   subgraph vm["Sandbox = Lima VM (Linux)"]
-    claude["Claude per worktree<br/>tmux window + git worktree"]
+    claude["Claude per folder<br/>tmux window"]
     oc["OpenCode service<br/>(one per sandbox)"]
     mcp["bergfried-mcp<br/>(MCP server)"]
     claude --- mcp
@@ -31,7 +31,7 @@ flowchart LR
 | Component | Where | What it does |
 |---|---|---|
 | `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
-| `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, worktrees, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
+| `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, Claude folders, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
 | `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `request_github_token`) plus the `ssh-hook` subcommand. |
 | Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
 | `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
@@ -61,24 +61,24 @@ only while a grant is active (time window, key, target host key).
    it is taken from the bundled template once, and at daemon start it is **replaced by a newer bundled template if you never edited it** (the copy equals the last adopted one, recorded in `seed.sha256`, or a known earlier bundled one; audit event `template.adopt`). An edited copy is kept and the app warns; "Reset template" adopts the bundled one.
 2. **Exactly two mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only) and `shared/out` (read-write). Existing folders are *copied* in (`importer`), never mounted.
 3. **Identity of a sandbox = the socket.** For each running sandbox the daemon listens on `~/.lima/<vm>/sock/bergfried.sock` (gRPC `SandboxAPI`) and `ssh-agent.sock`.
-   Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The *worktree name* is only metadata claimed from inside the VM (same Linux user, not a security boundary), sent in the gRPC header `x-bergfried-worktree`.
-   Claude passes it via `BERGFRIED_WORKTREE`; OpenCode's shared server starts one MCP process per project directory, so `bergfried-mcp` derives the worktree from its working directory (`~/work/<worktree>`) and only falls back to the environment variable.
+   Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The *folder path* is only metadata claimed from inside the VM (same Linux user, not a security boundary), sent in the gRPC header `x-bergfried-folder`.
+   Claude passes it via `BERGFRIED_FOLDER`; OpenCode's shared server starts one MCP process per project directory, so `bergfried-mcp` derives the folder from its working directory (`~/work/<folder>`) and only falls back to the environment variable.
 4. **Files:** the index covers your home **minus the blocklist** (`~/.ssh`, `~/Library`, `~/.config`, `.env*`, keys, …). Requests for blocked paths are refused without asking. Approved files are copied to `shared/in/<sandbox>/…`.
    Building the index makes macOS ask for folder access (again after every update, because the app is ad-hoc signed), so the first build after an install or update waits behind `index.Gate`: the app explains it and the user confirms (`POST /v1/index/start`); the confirmed daemon version is stored in `~/.bergfried/index-ack`. A daemon not started from the app bundle is not gated.
 5. **SSH:** the broker implements the ssh-agent protocol with destination constraints (`session-bind@openssh.com`). It signs only with an active grant **and** a matching target host key (fingerprint recorded at grant time from `known_hosts`/`ssh-keyscan`).
    A root-owned `Match exec` hook in the VM turns a plain `ssh host` into a request; interactive `ssh` waits for your decision.
    Keys that are not in the ssh-agent (passphrase-protected key files in `~/.ssh`) are offered too: the passphrase typed for the grant decrypts the key into the daemon's memory for the length of the grant (`broker/localkeys.go`; see [SECURITY.md](SECURITY.md)).
 6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`, also used to log in `gh`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
-7. **Worktrees and Claude:** a worktree is a folder with code (`~/work/<worktree>`, `main` = `~/work/main`) and a git branch `worktree/<name>`; `COMPOSE_PROJECT_NAME=<sandbox>-<worktree>`.
-   The database stores per worktree whether Claude should run (`worktrees.claude`). Creating a sandbox creates `main` with `claude=0`; creating a worktree only creates the directory. Claude is started explicitly, then runs `claude --continue --remote-control '<sandbox>/<worktree>'` in the worktree's tmux window (tmux session `bf`).
-   The **monitor** polls running VMs (login and installed state, Remote Control status and link per Claude worktree, OpenCode installed/running, disk usage), restarts Claude worktrees after a Claude login,
+7. **Claude works in folders:** a Claude entry is a folder under `~/work` (`main` = `~/work/main`) plus a Claude session. Creating a sandbox creates `main` with Claude stopped; adding a Claude entry only selects an existing folder. Bergfried does **not** create git worktrees or branches.
+   The database stores per entry whether Claude should run. Claude is started explicitly, then runs `cd ~/work/<folder> && claude --continue --remote-control '<sandbox>/<window>'` in a tmux window (tmux session `bf`); `COMPOSE_PROJECT_NAME=<sandbox>-<window>` separates Docker stacks.
+   The **monitor** polls running VMs (login and installed state, Remote Control status and link per Claude entry, OpenCode installed/running, disk usage), restarts Claude entries after a Claude login,
    answers Claude onboarding prompts with Enter and activates Remote Control (confirmation `y`, restart or `/remote-control`, max. 3 attempts).
-8. **OpenCode is a sandbox-level service:** one service and one desktop link per sandbox, not one per worktree. It can run without any Claude worktree; the desktop app opens the worktrees as projects.
+8. **OpenCode is a sandbox-level service:** one service and one desktop link per sandbox, not one per Claude folder. It can run without Claude; the desktop app opens the folders as projects.
    It is connected through a one-time local link (`opencode pair`, no internet): the OpenCode server listens on a stable per-sandbox port on `0.0.0.0` and Lima forwards it to `127.0.0.1` on the Mac.
    Before a link is created the daemon restarts the service so it really uses that port (the config may already be right while the running process is stale).
    OpenCode is installed on demand in older VMs with the official installer (latest version, user-local, no root/apt); leftovers of earlier attempts are removed first and the install log is in `/tmp/opencode-install.log`. **Start service / Stop service** in the app control the service; connecting installs it on demand if missing. The wanted state is stored per sandbox (`sandboxes.opencode`) and restored after a sandbox start.
-   A tmux window that still runs an old OpenCode TUI or a manual start is killed when the sandbox starts and by the monitor if its worktree has `claude=0` – this is how the migration terminates existing OpenCode TUI windows.
-9. **UI:** the sandbox overview is one alphabetical card list. Each card has the state/actions, a compact metadata line, a Claude card (installed, signed in; status only), an OpenCode card (installed, signed in, service running, Start/Stop service, Connect desktop) and a worktree table with Worktree, Claude state and actions. The separate runtime chips and the runtime column are gone; the RC link stays in the row's ellipsis menu. Settings has a secondary sidebar: General, Updates, Base VM, Notifications, Files & index, Terminal, Advanced (template editor behind Advanced). Base-build output follows new lines while the view is at the bottom.
+   A tmux window that still runs an old OpenCode TUI or a manual start is killed when the sandbox starts and by the monitor if its entry has Claude stopped – this is how the migration terminates existing OpenCode TUI windows.
+9. **UI:** the sandbox overview is one alphabetical card list. Each card has the state/actions, a compact metadata line, a Claude card (installed, signed in, **+ Claude** and the folder list with start/stop actions) and an OpenCode card (installed, signed in, service running, Start/Stop service, Connect desktop). There is no separate worktree table or runtime column; the RC link stays in the row's ellipsis menu. Settings has a secondary sidebar: General, Updates, Base VM, Notifications, Files & index, Terminal, Advanced (template editor behind Advanced). Base-build output follows new lines while the view is at the bottom.
 10. **App ↔ daemon** speak HTTP/JSON over `~/.bergfried/app.sock` (0600). gRPC is used VM ↔ daemon and CLI ↔ daemon. The app is the decision maker; the daemon runs with `--no-dialog`.
 
 ## Data on your Mac

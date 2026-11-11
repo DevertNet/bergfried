@@ -8,10 +8,10 @@ import (
 // claudeCmd builds the shell line for a worktree's Claude window. --continue restores the
 // history; if there is none (new worktree) the fallback starts fresh. OpenCode is a
 // sandbox-level service and does not use this command.
-func claudeCmd(sandbox, worktree string) string {
+func claudeCmd(sandbox, worktree, folder string) string {
 	env := fmt.Sprintf("export COMPOSE_PROJECT_NAME=%s-%s", sandbox, worktree)
 	rc := fmt.Sprintf("--remote-control '%s/%s'", sandbox, worktree)
-	return fmt.Sprintf(`cd ~/work/%[2]s && %[3]s BERGFRIED_WORKTREE=%[1]s/%[2]s && (~/.local/bin/claude --continue %[4]s || exec ~/.local/bin/claude %[4]s)`, sandbox, worktree, env, rc)
+	return fmt.Sprintf(`cd "$HOME/%[3]s" && %[4]s BERGFRIED_FOLDER=%[1]s/%[3]s && (~/.local/bin/claude --continue %[5]s || exec ~/.local/bin/claude %[5]s)`, sandbox, worktree, folder, env, rc)
 }
 
 // installOpenCode is the shell installer for the OpenCode CLI (latest version, user-local,

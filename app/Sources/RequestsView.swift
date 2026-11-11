@@ -60,7 +60,7 @@ struct PendingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: icon)
-                Text("\(r.sandbox) / \(r.worktree)").font(.headline)
+                Text("\(r.sandbox) / \(r.folder)").font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -94,7 +94,7 @@ struct HistoryRow: View {
     var body: some View {
         HStack {
             Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
-            Text("\(r.sandbox)/\(r.worktree)")
+            Text("\(r.sandbox)/\(r.folder)")
             Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(LocalizedStringKey(r.status)).foregroundStyle(color)
@@ -110,7 +110,7 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.worktree.isEmpty ? L("all worktrees") : L("Worktree %@", g.worktree), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
+                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -137,7 +137,7 @@ struct SSHDecisionSheet: View {
     @Local private var key = ""
     @Local private var minutes = 15
     @Local private var user = ""
-    @Local private var allWorktrees = false
+    @Local private var allFolders = false
     @Local private var perConn = false
     @Local private var trust = false
     @Local private var passphrase = ""
@@ -167,7 +167,7 @@ struct SSHDecisionSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L("SSH access for %@/%@", r.sandbox, r.worktree)).font(.title3.bold())
+                    Text(L("SSH access for %@/%@", r.sandbox, r.folder)).font(.title3.bold())
                     LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -243,8 +243,8 @@ struct SSHDecisionSheet: View {
                     }
 
                     section("Options") {
-                        Toggle("For all worktrees of the sandbox", isOn: $allWorktrees)
-                        Text("Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox.")
+                        Toggle("For all folders of the sandbox", isOn: $allFolders)
+                        Text("Without the checkmark the grant applies to this folder for display only; technically the boundary is the sandbox.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
                     }
@@ -273,14 +273,14 @@ struct SSHDecisionSheet: View {
                 Button("Deny", role: .destructive) {
                     passphrase = ""
                     let n = note
-                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allWorktrees: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
+                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allFolders: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
                 }
                 Button("Approve") {
                     let pw = passphrase
                     passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
                     let n = note
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allWorktrees: allWorktrees, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allFolders: allFolders, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
@@ -308,7 +308,7 @@ struct DenyRequestSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L("Deny request")).font(.title3.bold())
-            Text("\(r.sandbox) / \(r.worktree)").font(.callout).foregroundStyle(.secondary)
+            Text("\(r.sandbox) / \(r.folder)").font(.callout).foregroundStyle(.secondary)
             Text("Optional note for the assistant: why denied, what to do instead.").font(.callout)
             TextEditor(text: $note)
                 .font(.callout)
@@ -337,17 +337,16 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("GitHub access for %@ / %@", r.sandbox, r.worktree)).font(.headline)
+            Text(L("GitHub access for %@ / %@", r.sandbox, r.folder)).font(.headline)
             if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
                 LT("The sandbox already has a token. It only needs the repo: on GitHub open Settings → Developer settings → Fine-grained tokens, open the token **bergfried-%@**, \"Edit\", add the repo under \"Repository access\" and save. The token value stays the same.", r.sandbox).font(.callout)
                 Button("Open the token list on GitHub …") { if let u = URL(string: "https://github.com/settings/personal-access-tokens") { NSWorkspace.shared.open(u) } }
-                Text("Then \"Check access\" – or paste a new token if you prefer to create a new one:").font(.caption).foregroundStyle(.secondary)
+                Text("Then click \"Check access\". No new token is needed – the existing token only needs the additional repository.").font(.caption).foregroundStyle(.secondary)
             } else {
                 GitHubTokenSteps(link: d?.link ?? "", hint: d?.hint ?? "", token: $token)
             }
-            if hasToken { SecureField("Optional: paste a new token", text: $token).textFieldStyle(.roundedBorder) }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Note for the assistant if you deny (optional)").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $denyNote).font(.callout).frame(height: 54)
@@ -358,7 +357,7 @@ struct GitHubTokenSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Deny", role: .destructive) { Task { await model.deny(r, note: denyNote); dismiss() } }
-                Button(hasToken && token.isEmpty ? "Check access" : "Check and save") {
+                Button(hasToken ? "Check access" : "Check and save") {
                     busy = true
                     Task {
                         let e = await model.decideGitHub(id: r.id, token: token)

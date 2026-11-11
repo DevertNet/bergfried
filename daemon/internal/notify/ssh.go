@@ -64,7 +64,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 	if user == "" {
 		user = info.DefaultUser
 	}
-	text := fmt.Sprintf("Sandbox \"%s\" / worktree \"%s\" wants SSH access to %s (user: %s).%s\n\nReason (from the assistant, unchecked):\n%s", r.Sandbox, r.Worktree, r.Path, user, warn, r.Reason)
+	text := fmt.Sprintf("Sandbox \"%s\" / folder \"%s\" wants SSH access to %s (user: %s).%s\n\nReason (from the assistant, unchecked):\n%s", r.Sandbox, r.Worktree, r.Path, user, warn, r.Reason)
 	if !ask(text, "Ablehnen", "Weiter …") {
 		no()
 		return
@@ -110,7 +110,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		no()
 		return
 	}
-	scope, ok := choose("Scope of the grant:", "This worktree only (display/audit)", []string{"This worktree only (display/audit)", "All worktrees of the sandbox"})
+	scope, ok := choose("Scope of the grant:", "This folder only (display/audit)", []string{"This folder only (display/audit)", "All folders of the sandbox"})
 	if !ok {
 		no()
 		return
@@ -121,7 +121,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		return
 	}
 	_, err = d.Decide(broker.Decision{ID: r.ID, Allow: true, Minutes: minutes, KeyFP: byLabel[kl], User: user,
-		AllWorktrees: strings.HasPrefix(scope, "Alle"), PerConn: strings.HasPrefix(mode, "Jede"), TrustUnknownHost: info.Source != "known_hosts"})
+		AllFolders: strings.HasPrefix(scope, "Alle"), PerConn: strings.HasPrefix(mode, "Jede"), TrustUnknownHost: info.Source != "known_hosts"})
 	if err != nil {
 		d.log("SSH-Dialog #%d: %v", r.ID, err)
 	}

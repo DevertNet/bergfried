@@ -129,8 +129,9 @@ func decode(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
-type worktreeJ struct {
+type claudeJ struct {
 	Name     string `json:"name"`
+	Folder   string `json:"folder"`
 	Window   bool   `json:"window"`
 	Running  bool   `json:"running"`
 	RC       bool   `json:"rc"`
@@ -139,29 +140,29 @@ type worktreeJ struct {
 }
 
 type sandboxJ struct {
-	Name              string      `json:"name"`
-	VM                string      `json:"vm"`
-	Status            string      `json:"status"`
-	Repo              string      `json:"repo"`
-	TemplateVersion   int         `json:"template_version"`
-	Created           int64       `json:"created_unix"`
-	CPUs              int         `json:"cpus"`
-	Memory            int64       `json:"memory"`
-	Disk              int64       `json:"disk"`
-	Worktrees         []worktreeJ `json:"worktrees"`
-	ClaudeLoggedIn    *bool       `json:"claude_logged_in"`
-	OpenCodeLoggedIn  *bool       `json:"opencode_logged_in"`
-	ClaudeInstalled   *bool       `json:"claude_installed"`
-	OpenCodeInstalled *bool       `json:"opencode_installed"`
-	OpenCodeRunning   *bool       `json:"opencode_running"`
-	OpenCodePort      int         `json:"opencode_port"`
-	HostDiskUsed      int64       `json:"host_disk_used"`
-	GuestDiskUsed     int64       `json:"guest_disk_used"`
-	GuestDiskSize     int64       `json:"guest_disk_size"`
-	ProbeError        string      `json:"probe_error,omitempty"`
-	ActiveGrants      int         `json:"active_grants"`
-	Pending           int         `json:"pending_requests"`
-	HasToken          bool        `json:"has_github_token"`
+	Name              string    `json:"name"`
+	VM                string    `json:"vm"`
+	Status            string    `json:"status"`
+	Repo              string    `json:"repo"`
+	TemplateVersion   int       `json:"template_version"`
+	Created           int64     `json:"created_unix"`
+	CPUs              int       `json:"cpus"`
+	Memory            int64     `json:"memory"`
+	Disk              int64     `json:"disk"`
+	ClaudeSessions    []claudeJ `json:"claude_sessions"`
+	ClaudeLoggedIn    *bool     `json:"claude_logged_in"`
+	OpenCodeLoggedIn  *bool     `json:"opencode_logged_in"`
+	ClaudeInstalled   *bool     `json:"claude_installed"`
+	OpenCodeInstalled *bool     `json:"opencode_installed"`
+	OpenCodeRunning   *bool     `json:"opencode_running"`
+	OpenCodePort      int       `json:"opencode_port"`
+	HostDiskUsed      int64     `json:"host_disk_used"`
+	GuestDiskUsed     int64     `json:"guest_disk_used"`
+	GuestDiskSize     int64     `json:"guest_disk_size"`
+	ProbeError        string    `json:"probe_error,omitempty"`
+	ActiveGrants      int       `json:"active_grants"`
+	Pending           int       `json:"pending_requests"`
+	HasToken          bool      `json:"has_github_token"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -172,24 +173,24 @@ type sshInfoJ struct {
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
-	ID       int64           `json:"id"`
-	Sandbox  string          `json:"sandbox"`
-	Worktree string          `json:"worktree"`
-	Kind     string          `json:"kind"`
-	Path     string          `json:"path"`
-	Reason   string          `json:"reason"`
-	Status   string          `json:"status"`
-	Created  int64           `json:"created_unix"`
-	Bytes    int64           `json:"bytes"`
-	Files    int64           `json:"files"`
-	Large    bool            `json:"large"`
-	SSH      *sshInfoJ       `json:"ssh,omitempty"`
-	GitHub   *ghtoken.Detail `json:"github,omitempty"`
+	ID      int64           `json:"id"`
+	Sandbox string          `json:"sandbox"`
+	Folder  string          `json:"folder"`
+	Kind    string          `json:"kind"`
+	Path    string          `json:"path"`
+	Reason  string          `json:"reason"`
+	Status  string          `json:"status"`
+	Created int64           `json:"created_unix"`
+	Bytes   int64           `json:"bytes"`
+	Files   int64           `json:"files"`
+	Large   bool            `json:"large"`
+	SSH     *sshInfoJ       `json:"ssh,omitempty"`
+	GitHub  *ghtoken.Detail `json:"github,omitempty"`
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
 	Sandbox    string   `json:"sandbox"`
-	Worktree   string   `json:"worktree"`
+	Folder     string   `json:"folder"`
 	Host       string   `json:"host"`
 	Key        string   `json:"key_fingerprint"`
 	User       string   `json:"user"`
@@ -200,12 +201,12 @@ type grantJ struct {
 	HostKeyFPs []string `json:"host_key_fingerprints"`
 }
 type auditJ struct {
-	TS       int64  `json:"ts_unix"`
-	Actor    string `json:"actor"`
-	Event    string `json:"event"`
-	Sandbox  string `json:"sandbox"`
-	Worktree string `json:"worktree"`
-	Detail   string `json:"detail"`
+	TS      int64  `json:"ts_unix"`
+	Actor   string `json:"actor"`
+	Event   string `json:"event"`
+	Sandbox string `json:"sandbox"`
+	Folder  string `json:"folder"`
+	Detail  string `json:"detail"`
 }
 
 func (s *Server) Handler() http.Handler {
@@ -217,12 +218,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/stop", s.simple("sandbox.stop", func(ctx context.Context, n string, _ bool) error { return s.M.Stop(ctx, n) }))
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/sandboxes/pair", s.pair)
-	mux.HandleFunc("POST /v1/worktrees/add", s.worktreeAdd)
-	mux.HandleFunc("POST /v1/worktrees/start", s.worktreeStart)
-	mux.HandleFunc("POST /v1/worktrees/stop", s.worktreeStop)
-	mux.HandleFunc("POST /v1/worktrees/restart", s.worktreeRestart)
-	mux.HandleFunc("POST /v1/worktrees/remove", s.worktreeRemove)
-	mux.HandleFunc("POST /v1/worktrees/rc-ok", s.worktreeRCOK)
+	mux.HandleFunc("GET /v1/claude/folders", s.claudeFolders)
+	mux.HandleFunc("POST /v1/claude/start", s.claudeStart)
+	mux.HandleFunc("POST /v1/claude/stop", s.claudeStop)
+	mux.HandleFunc("POST /v1/claude/restart", s.claudeRestart)
+	mux.HandleFunc("POST /v1/claude/remove", s.claudeRemove)
+	mux.HandleFunc("POST /v1/claude/rc-ok", s.claudeRCOK)
 	mux.HandleFunc("POST /v1/opencode/start", s.simple("opencode.start", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStart(ctx, n) }))
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
@@ -316,7 +317,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	pend, _ := s.M.S.ListRequests(true, 500)
 	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", Worktrees: []worktreeJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", ClaudeSessions: []claudeJ{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
@@ -339,7 +340,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		wts, _ := s.M.S.ListWorktrees(x.Name)
 		for _, w := range wts {
 			ws := ps.Worktrees[w.Name]
-			j.Worktrees = append(j.Worktrees, worktreeJ{Name: w.Name, Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action})
+			j.ClaudeSessions = append(j.ClaudeSessions, claudeJ{Name: w.Name, Folder: sandbox.FolderOf(w.Path), Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action})
 		}
 		for _, g := range grants {
 			if g.Sandbox == x.Name {
@@ -357,13 +358,13 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 }
 
 type nameReq struct {
-	Name     string `json:"name"`
-	Repo     string `json:"repo"`
-	Force    bool   `json:"force"`
-	Import   string `json:"import_path"`
-	Token    string `json:"github_token"`
-	Sandbox  string `json:"sandbox"`
-	Worktree string `json:"worktree"`
+	Name    string `json:"name"`
+	Repo    string `json:"repo"`
+	Force   bool   `json:"force"`
+	Import  string `json:"import_path"`
+	Token   string `json:"github_token"`
+	Sandbox string `json:"sandbox"`
+	Folder  string `json:"folder"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -413,53 +414,76 @@ func (s *Server) simple(kind string, f func(context.Context, string, bool) error
 	}
 }
 
-func (s *Server) worktreeAdd(w http.ResponseWriter, r *http.Request) {
+func (s *Server) claudeFolders(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("sandbox")
+	if sandbox.ValidName(name) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	folders, err := s.M.ClaudeFolders(r.Context(), name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	out := []map[string]string{}
+	for _, f := range folders {
+		out = append(out, map[string]string{"folder": f.Path, "label": f.Label})
+	}
+	writeJSON(w, 200, map[string]any{"folders": out})
+}
+
+func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {
+	s.claudeAction(w, r, "claude.start", func(ctx context.Context, sandbox, folder string) error {
+		return s.M.ClaudeStart(ctx, sandbox, folder)
+	})
+}
+
+func (s *Server) claudeStop(w http.ResponseWriter, r *http.Request) {
+	s.claudeAction(w, r, "claude.stop", func(ctx context.Context, sandbox, folder string) error {
+		return s.M.ClaudeStop(ctx, sandbox, folder)
+	})
+}
+
+func (s *Server) claudeRestart(w http.ResponseWriter, r *http.Request) {
+	s.claudeAction(w, r, "claude.restart", func(ctx context.Context, sandbox, folder string) error {
+		return s.M.ClaudeRestart(ctx, sandbox, folder)
+	})
+}
+
+func (s *Server) claudeAction(w http.ResponseWriter, r *http.Request, kind string, f func(context.Context, string, string) error) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
-		fail(w, 400, fmt.Errorf("invalid name"))
-		return
-	}
-	writeJSON(w, 202, s.jobFor("worktree.add", q.Sandbox, func(ctx context.Context) error { return s.M.WorktreeAdd(ctx, q.Sandbox, q.Worktree) }))
-}
-
-func (s *Server) worktreeStart(w http.ResponseWriter, r *http.Request) {
-	s.worktreeAction(w, r, "worktree.claude_start", func(ctx context.Context, sandbox, worktree string) error {
-		return s.M.WorktreeStartClaude(ctx, sandbox, worktree)
-	})
-}
-
-func (s *Server) worktreeStop(w http.ResponseWriter, r *http.Request) {
-	s.worktreeAction(w, r, "worktree.claude_stop", func(ctx context.Context, sandbox, worktree string) error {
-		return s.M.WorktreeStopClaude(ctx, sandbox, worktree)
-	})
-}
-
-func (s *Server) worktreeRestart(w http.ResponseWriter, r *http.Request) {
-	s.worktreeAction(w, r, "worktree.restart", func(ctx context.Context, sandbox, worktree string) error {
-		return s.M.WorktreeRestartClaude(ctx, sandbox, worktree)
-	})
-}
-
-// worktreeAction runs a Claude action and resets the monitor's automatic RC state.
-func (s *Server) worktreeAction(w http.ResponseWriter, r *http.Request, kind string, f func(context.Context, string, string) error) {
-	var q nameReq
-	if err := decode(r, &q); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
-		fail(w, 400, fmt.Errorf("invalid name"))
+	if sandbox.ValidName(q.Sandbox) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
 		return
 	}
 	writeJSON(w, 202, s.jobFor(kind, q.Sandbox, func(ctx context.Context) error {
-		err := f(ctx, q.Sandbox, q.Worktree)
+		err := f(ctx, q.Sandbox, q.Folder)
 		if s.Mon != nil {
-			s.Mon.ResetWorktree(q.Sandbox, q.Worktree)
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
 			s.Mon.Poke(q.Sandbox)
+		}
+		return err
+	}))
+}
+
+func (s *Server) claudeRemove(w http.ResponseWriter, r *http.Request) {
+	var q nameReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if sandbox.ValidName(q.Sandbox) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	writeJSON(w, 202, s.jobFor("claude.remove", q.Sandbox, func(ctx context.Context) error {
+		err := s.M.ClaudeRemove(ctx, q.Sandbox, q.Folder)
+		if err == nil && s.Mon != nil {
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
 		}
 		return err
 	}))
@@ -556,47 +580,28 @@ func (s *Server) githubLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"url": ghtoken.Link(name), "hint": ghtoken.Hint})
 }
 
-// worktreeRCOK: the user confirms that Remote Control is running (resets "cannot be activated").
-func (s *Server) worktreeRCOK(w http.ResponseWriter, r *http.Request) {
+// claudeRCOK: the user confirms that Remote Control is running (resets "cannot be activated").
+func (s *Server) claudeRCOK(w http.ResponseWriter, r *http.Request) {
 	var q nameReq
 	if err := decode(r, &q); err != nil {
 		fail(w, 400, err)
 		return
 	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil || s.Mon == nil {
+	if sandbox.ValidName(q.Sandbox) != nil || s.Mon == nil {
 		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
-	if err := s.Mon.MarkRC(q.Sandbox, q.Worktree); err != nil {
+	name, err := s.M.ClaudeName(q.Sandbox, q.Folder)
+	if err != nil {
 		fail(w, 409, err)
 		return
 	}
-	_ = s.M.S.Audit("app", "worktree.rc_confirmed", q.Sandbox, q.Worktree, "confirmed active by the user")
+	if err := s.Mon.MarkRC(q.Sandbox, name); err != nil {
+		fail(w, 409, err)
+		return
+	}
+	_ = s.M.S.Audit("app", "claude.rc_confirmed", q.Sandbox, q.Folder, "confirmed active by the user")
 	writeJSON(w, 200, map[string]string{"message": "ok"})
-}
-
-func (s *Server) worktreeRemove(w http.ResponseWriter, r *http.Request) {
-	var q struct {
-		Sandbox   string `json:"sandbox"`
-		Worktree  string `json:"worktree"`
-		DeleteDir bool   `json:"delete_dir"`
-		Force     bool   `json:"force"`
-	}
-	if err := decode(r, &q); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	if sandbox.ValidName(q.Sandbox) != nil || sandbox.ValidName(q.Worktree) != nil {
-		fail(w, 400, fmt.Errorf("invalid name"))
-		return
-	}
-	writeJSON(w, 202, s.jobFor("worktree.remove", q.Sandbox, func(ctx context.Context) error {
-		err := s.M.WorktreeRemove(ctx, q.Sandbox, q.Worktree, q.DeleteDir, q.Force)
-		if err == nil && s.Mon != nil {
-			s.Mon.ResetWorktree(q.Sandbox, q.Worktree)
-		}
-		return err
-	}))
 }
 
 func (s *Server) baseBuild(w http.ResponseWriter, r *http.Request) {
@@ -729,7 +734,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []requestJ{}
 	for _, q := range rs {
-		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Worktree: q.Worktree, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
+		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Folder: q.Worktree, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
 			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
 		switch q.Kind {
 		case "ghtoken":
@@ -774,7 +779,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		Minutes          int    `json:"minutes"`
 		Key              string `json:"key_fingerprint"`
 		User             string `json:"user"`
-		AllWorktrees     bool   `json:"all_worktrees"`
+		AllFolders       bool   `json:"all_folders"`
 		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
 		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
@@ -785,7 +790,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllWorktrees: q.AllWorktrees, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
+		AllFolders: q.AllFolders, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
 	if err != nil {
 		fail(w, 409, err)
 		return
@@ -901,9 +906,9 @@ func (s *Server) auditCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "sandbox", "worktree", "details"})
+	_ = cw.Write([]string{"zeit", "akteur", "ereignis", "sandbox", "ordner", "details"})
 	for _, e := range out {
-		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Sandbox), csvSafe(e.Worktree), csvSafe(e.Detail)})
+		_ = cw.Write([]string{time.Unix(e.TS, 0).Format(time.RFC3339), csvSafe(e.Actor), csvSafe(e.Event), csvSafe(e.Sandbox), csvSafe(e.Folder), csvSafe(e.Detail)})
 	}
 	cw.Flush()
 }

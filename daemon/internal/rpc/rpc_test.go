@@ -29,19 +29,19 @@ func TestListenUnixPerms(t *testing.T) {
 	l2.Close()
 }
 
-func TestWorktreeHeaderValidated(t *testing.T) {
+func TestFolderHeaderValidated(t *testing.T) {
 	mk := func(v string) context.Context {
-		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(WorktreeHeader, v))
+		return metadata.NewIncomingContext(context.Background(), metadata.Pairs(FolderHeader, v))
 	}
-	if worktreeFrom(mk("shop/main")) != "shop/main" {
+	if folderFrom(mk("shop/main")) != "shop/main" {
 		t.Fatal("valid name")
 	}
 	for _, bad := range []string{"Evil\nname", "a b", "../x", "", "x'; rm"} {
-		if worktreeFrom(mk(bad)) != "unknown" {
+		if folderFrom(mk(bad)) != "unknown" {
 			t.Fatalf("%q", bad)
 		}
 	}
-	if worktreeFrom(context.Background()) != "unknown" {
+	if folderFrom(context.Background()) != "unknown" {
 		t.Fatal("without header")
 	}
 }
