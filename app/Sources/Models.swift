@@ -176,7 +176,9 @@ struct ClaudeBody: Encodable { var sandbox: String; var folder: String }
 struct ClaudeRemoveBody: Encodable { var sandbox: String; var folder: String }
 struct PairLink: Codable { var url: String }
 struct FolderEntry: Codable, Hashable { var folder: String; var label: String }
-struct FoldersResponse: Codable { var folders: [FolderEntry] }
+struct FolderBrowseResponse: Codable { var path: String; var parent: String; var folders: [FolderEntry] }
+struct NewFolderBody: Encodable { var sandbox: String; var parent: String; var name: String }
+struct NewFolderResult: Codable { var path: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 

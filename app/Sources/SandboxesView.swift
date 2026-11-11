@@ -242,7 +242,7 @@ struct ClaudeServiceCard: View {
                     Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small)
                 }
                 if canAdd {
-                    Button { showStart = true } label: { Label("+  Claude", systemImage: "plus") }
+                    Button { showStart = true } label: { Label("Claude", systemImage: "plus") }
                         .controlSize(.small).buttonStyle(.borderedProminent)
                 }
             }
@@ -544,6 +544,7 @@ struct StartClaudeSheet: View {
     @Local private var custom = ""
     @Local private var loading = true
     @Local private var loadError: String?
+    @Local private var showBrowser = false
 
     var chosen: String {
         let c = custom.trimmingCharacters(in: .whitespaces)
@@ -591,7 +592,12 @@ struct StartClaudeSheet: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("Other folder")).font(.caption.bold()).foregroundStyle(.secondary)
-                TextField("~/work/…", text: $custom).textFieldStyle(.roundedBorder)
+                HStack(spacing: 8) {
+                    TextField("~/work/…", text: $custom).textFieldStyle(.roundedBorder)
+                    Button(L("Browse …")) { showBrowser = true }.controlSize(.regular)
+                }
+                Text(L("Opens the folder browser; you can also create a folder there."))
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Text(L("Claude continues the last session in this folder if there is one. The folder remains when the entry is removed."))
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -607,13 +613,148 @@ struct StartClaudeSheet: View {
             }
         }
         .padding(20).frame(width: 560)
+        .sheet(isPresented: $showBrowser) {
+            FolderBrowserSheet(sandbox: sandbox, startPath: custom.isEmpty ? "work" : custom) { folder in
+                custom = folder
+                selected = nil
+            }
+        }
         .task {
             do {
-                let r: FoldersResponse = try await model.api.get("/v1/claude/folders?sandbox=\(sandbox.name)")
+                let r: FolderBrowseResponse = try await model.api.get("/v1/claude/browse?sandbox=\(sandbox.name)&path=work")
                 folders = r.folders
                 selected = r.folders.first?.folder
             } catch { loadError = error.localizedDescription }
             loading = false
+        }
+    }
+}
+
+struct FolderBrowserSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let sandbox: SandboxInfo
+    let startPath: String
+    let onChoose: (String) -> Void
+
+    @Local private var path = "work"
+    @Local private var parent = ""
+    @Local private var folders: [FolderEntry] = []
+    @Local private var loading = true
+    @Local private var loadError: String?
+    @Local private var showHidden = false
+    @Local private var creating = false
+    @Local private var newName = ""
+    @Local private var createError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L("Choose folder")).font(.title3.bold())
+            Text(L("Sandbox %@", sandbox.name)).font(.callout).foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                breadcrumb
+                Spacer()
+                if path != "work" {
+                    Button(L("Back")) { load(parent) }.controlSize(.small)
+                }
+            }
+
+            if loading {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(L("Loading folders …")).font(.caption).foregroundStyle(.secondary) }
+            } else if folders.isEmpty {
+                Text(L("No subfolders here.")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(folders, id: \.folder) { f in
+                            Button { load(f.folder) } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "folder").foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(f.label).font(.callout.weight(.semibold))
+                                        Text("~/"+f.folder).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }.frame(maxHeight: 220)
+            }
+
+            Toggle(L("Show hidden folders"), isOn: $showHidden)
+                .onChange(of: showHidden) { _, _ in load(path) }
+
+            if creating {
+                HStack(spacing: 8) {
+                    TextField(L("Folder name"), text: $newName).textFieldStyle(.roundedBorder)
+                    Button(L("Create")) { createFolder() }.disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button(L("Cancel")) { creating = false; createError = nil }.controlSize(.small)
+                }
+                if let createError { Text(createError).foregroundStyle(.red).font(.caption) }
+            } else {
+                Button { creating = true; createError = nil } label: { Label(L("New folder"), systemImage: "folder.badge.plus") }
+                    .controlSize(.small)
+            }
+
+            if let loadError { Text(loadError).foregroundStyle(.red).font(.caption).textSelection(.enabled) }
+            Text(L("Only folders under ~/work are shown. Files are hidden."))
+                .font(.caption2).foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+                Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L("Choose this folder")) {
+                    onChoose(path)
+                    dismiss()
+                }.buttonStyle(.borderedProminent).disabled(path == "work")
+            }
+        }
+        .padding(20).frame(width: 600)
+        .task { load(startPath) }
+    }
+
+    var breadcrumb: some View {
+        let parts = path.split(separator: "/").map(String.init)
+        return HStack(spacing: 4) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { i, part in
+                if i > 0 { Text("›").foregroundStyle(.tertiary) }
+                Button("~/" + parts.prefix(i + 1).joined(separator: "/")) {
+                    load(parts.prefix(i + 1).joined(separator: "/"))
+                }.buttonStyle(.plain).font(.caption)
+            }
+        }
+    }
+
+    func load(_ newPath: String) {
+        path = newPath
+        loading = true
+        loadError = nil
+        Task {
+            do {
+                let hidden = showHidden ? "1" : "0"
+                let r: FolderBrowseResponse = try await model.api.get("/v1/claude/browse?sandbox=\(sandbox.name)&path=\(newPath)&hidden=\(hidden)")
+                path = r.path
+                parent = r.parent
+                folders = r.folders
+            } catch { loadError = error.localizedDescription }
+            loading = false
+        }
+    }
+
+    func createFolder() {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        Task {
+            do {
+                let r: NewFolderResult = try await model.api.send("POST", "/v1/claude/mkdir", NewFolderBody(sandbox: sandbox.name, parent: path, name: name), as: NewFolderResult.self)
+                newName = ""; creating = false; createError = nil
+                load(r.path)
+            } catch { createError = error.localizedDescription }
         }
     }
 }

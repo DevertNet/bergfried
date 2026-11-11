@@ -710,17 +710,32 @@ type Folder struct {
 
 var folderRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
-// normalizeFolder accepts "~/work/x" or "work/x" and keeps it relative to home.
-func normalizeFolder(in string) (string, error) {
+// normalizeDir accepts "~/work", "work", "~/work/x" or "work/x" and keeps it relative to home.
+func normalizeDir(in string) (string, error) {
 	f := strings.TrimSpace(in)
 	f = strings.TrimPrefix(f, "~/")
 	f = strings.TrimPrefix(f, "/home/"+currentUser()+"/")
 	f = strings.TrimSuffix(f, "/")
-	if f == "" || f == "work" || !strings.HasPrefix(f, "work/") {
+	if f == "work" {
+		return f, nil
+	}
+	if f == "" || !strings.HasPrefix(f, "work/") {
 		return "", fmt.Errorf("folder must be inside ~/work")
 	}
 	if strings.Contains(f, "..") || strings.Contains(f, "\x00") || !folderRe.MatchString(f) {
 		return "", fmt.Errorf("invalid folder %q", in)
+	}
+	return f, nil
+}
+
+// normalizeFolder is normalizeDir for a Claude working folder (not ~/work itself).
+func normalizeFolder(in string) (string, error) {
+	f, err := normalizeDir(in)
+	if err != nil {
+		return "", err
+	}
+	if f == "work" {
+		return "", fmt.Errorf("choose a folder below ~/work")
 	}
 	return f, nil
 }
@@ -843,6 +858,79 @@ func (m *Manager) claudeSession(sandbox, folder string) (store.Worktree, bool, e
 		}
 	}
 	return store.Worktree{}, false, nil
+}
+
+// BrowseResult is one level of the folder browser.
+type BrowseResult struct {
+	Path    string
+	Parent  string
+	Folders []Folder
+}
+
+var newFolderRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// ClaudeBrowse lists the immediate subfolders of a folder under ~/work.
+func (m *Manager) ClaudeBrowse(ctx context.Context, sandbox, folder string, showHidden bool) (BrowseResult, error) {
+	folder, err := normalizeDir(folder)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	script := fmt.Sprintf(`d="$HOME/%s"; [ -d "$d" ] || exit 3
+find "$d" -mindepth 1 -maxdepth 1 -type d -printf '%%f\n' 2>/dev/null | LC_ALL=C sort`, folder)
+	out, err := m.L.Shell(ctx, s.VM, "bash", "-c", script)
+	if err != nil {
+		return BrowseResult{}, fmt.Errorf("folder %s is not available in the VM: %w", folderDisplay(folder), err)
+	}
+	var folders []Folder
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || (!showHidden && strings.HasPrefix(name, ".")) {
+			continue
+		}
+		child := folder + "/" + name
+		if _, err := normalizeDir(child); err != nil {
+			continue
+		}
+		folders = append(folders, Folder{Path: child, Label: name})
+	}
+	parent := ""
+	if folder != "work" {
+		if i := strings.LastIndex(folder, "/"); i > 0 {
+			parent = folder[:i]
+		}
+	}
+	return BrowseResult{Path: folder, Parent: parent, Folders: folders}, nil
+}
+
+// ClaudeMkdir creates a folder inside the current folder under ~/work (one level only).
+func (m *Manager) ClaudeMkdir(ctx context.Context, sandbox, parent, name string) (string, error) {
+	parent, err := normalizeDir(parent)
+	if err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "." || name == ".." || !newFolderRe.MatchString(name) {
+		return "", fmt.Errorf("invalid folder name %q", name)
+	}
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return "", err
+	}
+	child := parent + "/" + name
+	script := fmt.Sprintf(`set -e
+d="$HOME/%s"
+[ -d "$d" ] || { echo "parent folder is missing" >&2; exit 3; }
+[ ! -e "$d/%s" ] || { echo "folder already exists" >&2; exit 4; }
+mkdir "$d/%s"`, parent, name, name)
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", script); err != nil {
+		return "", err
+	}
+	m.audit("claude.mkdir", sandbox, child, name)
+	return child, nil
 }
 
 // ClaudeFolders lists directories under ~/work (two levels) plus known Claude folders.

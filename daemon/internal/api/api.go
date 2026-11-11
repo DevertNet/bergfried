@@ -219,6 +219,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/sandboxes/delete", s.simple("sandbox.delete", func(ctx context.Context, n string, f bool) error { return s.M.Delete(ctx, n, f) }))
 	mux.HandleFunc("POST /v1/sandboxes/pair", s.pair)
 	mux.HandleFunc("GET /v1/claude/folders", s.claudeFolders)
+	mux.HandleFunc("GET /v1/claude/browse", s.claudeBrowse)
+	mux.HandleFunc("POST /v1/claude/mkdir", s.claudeMkdir)
 	mux.HandleFunc("POST /v1/claude/start", s.claudeStart)
 	mux.HandleFunc("POST /v1/claude/stop", s.claudeStop)
 	mux.HandleFunc("POST /v1/claude/restart", s.claudeRestart)
@@ -430,6 +432,50 @@ func (s *Server) claudeFolders(w http.ResponseWriter, r *http.Request) {
 		out = append(out, map[string]string{"folder": f.Path, "label": f.Label})
 	}
 	writeJSON(w, 200, map[string]any{"folders": out})
+}
+
+func (s *Server) claudeBrowse(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("sandbox")
+	if sandbox.ValidName(name) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "work"
+	}
+	res, err := s.M.ClaudeBrowse(r.Context(), name, path, r.URL.Query().Get("hidden") == "1")
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	folders := []map[string]string{}
+	for _, f := range res.Folders {
+		folders = append(folders, map[string]string{"folder": f.Path, "label": f.Label})
+	}
+	writeJSON(w, 200, map[string]any{"path": res.Path, "parent": res.Parent, "folders": folders})
+}
+
+func (s *Server) claudeMkdir(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Sandbox string `json:"sandbox"`
+		Parent  string `json:"parent"`
+		Name    string `json:"name"`
+	}
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if sandbox.ValidName(q.Sandbox) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	path, err := s.M.ClaudeMkdir(r.Context(), q.Sandbox, q.Parent, q.Name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"path": path})
 }
 
 func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="900" fill="#F5F5F7"/>
+  <text x="640" y="42" font-family="Inter" font-size="12" fill="#8E8E93" text-anchor="middle">Claude starten → Ordner-Browser (Durchsuchen …)</text>
+
+  <!-- left: Start Claude sheet -->
+  <g filter="url(#shadow)"><rect x="40" y="70" width="560" height="760" rx="14" fill="#FFFFFF"/></g>
+  <text x="68" y="108" font-family="Inter" font-size="20" font-weight="700" fill="#1D1D1F">Claude starten</text>
+  <text x="68" y="129" font-family="Inter" font-size="11.5" fill="#6E6E73">Sandbox shopware-plugins</text>
+
+  <text x="68" y="165" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">Ordner wählen</text>
+  <text x="68" y="183" font-family="Inter" font-size="10.5" fill="#8E8E93">Claude arbeitet direkt in diesem Ordner – ohne Git-Worktree.</text>
+
+  <rect x="68" y="197" width="504" height="50" rx="8" fill="#EEF5FE" stroke="#B9D7FB"/>
+  <circle cx="88" cy="222" r="7" fill="#007AFF"/><circle cx="88" cy="222" r="2.5" fill="#FFFFFF"/>
+  <text x="106" y="219" font-family="Inter" font-size="12.5" font-weight="600" fill="#1D1D1F">main</text>
+  <text x="106" y="235" font-family="Inter" font-size="10" fill="#6E6E73">~/work/main</text>
+  <text x="552" y="226" font-family="Inter" font-size="9.5" fill="#0A64C8" text-anchor="end">zuletzt verwendet</text>
+
+  <rect x="68" y="255" width="504" height="50" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <circle cx="88" cy="280" r="7" fill="none" stroke="#C7C7CC" stroke-width="1.2"/>
+  <text x="106" y="277" font-family="Inter" font-size="12.5" font-weight="600" fill="#1D1D1F">shopware-plugins</text>
+  <text x="106" y="293" font-family="Inter" font-size="10" fill="#6E6E73">~/work/shopware-plugins</text>
+
+  <rect x="68" y="313" width="504" height="50" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <circle cx="88" cy="338" r="7" fill="none" stroke="#C7C7CC" stroke-width="1.2"/>
+  <text x="106" y="335" font-family="Inter" font-size="12.5" font-weight="600" fill="#1D1D1F">theme</text>
+  <text x="106" y="351" font-family="Inter" font-size="10" fill="#6E6E73">~/work/theme</text>
+
+  <text x="68" y="395" font-family="Inter" font-size="10.5" font-weight="600" fill="#6E6E73">Anderer Ordner</text>
+  <rect x="68" y="405" width="374" height="32" rx="6" fill="#FFFFFF" stroke="#DEDEE3"/>
+  <text x="80" y="425" font-family="Inter" font-size="11" fill="#A1A1A6">~/work/…</text>
+  <rect x="450" y="405" width="122" height="32" rx="6" fill="#007AFF"/>
+  <text x="511" y="425" font-family="Inter" font-size="10.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Durchsuchen …</text>
+  <text x="68" y="453" font-family="Inter" font-size="9.5" fill="#8E8E93">Öffnet den Ordner-Browser. Dort kannst du auch neue Ordner anlegen.</text>
+
+  <rect x="68" y="475" width="504" height="72" rx="8" fill="#F7F7F9" stroke="#E5E5EA"/>
+  <text x="82" y="495" font-family="Inter" font-size="10.5" font-weight="600" fill="#1D1D1F">Was passiert beim Start?</text>
+  <text x="82" y="512" font-family="Inter" font-size="10" fill="#6E6E73">Claude wechselt in diesen Ordner und setzt die letzte Sitzung fort, wenn es eine gibt.</text>
+  <text x="82" y="526" font-family="Inter" font-size="10" fill="#6E6E73">Es wird kein Git-Worktree und kein neuer Branch angelegt.</text>
+  <text x="82" y="540" font-family="Inter" font-size="10" fill="#6E6E73">Der Ordner bleibt beim Entfernen des Claude-Eintrags erhalten.</text>
+
+  <rect x="388" y="770" width="90" height="32" rx="7" fill="#F2F2F5" stroke="#DEDEE3"/>
+  <text x="433" y="790" font-family="Inter" font-size="11.5" fill="#3C3C43" text-anchor="middle">Abbrechen</text>
+  <rect x="486" y="770" width="86" height="32" rx="7" fill="#007AFF"/>
+  <text x="529" y="790" font-family="Inter" font-size="11.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Claude starten</text>
+
+  <!-- arrow -->
+  <path d="M604 430 h40" stroke="#8E8E93" stroke-width="1.5"/>
+  <path d="M640 424 l8 6 -8 6" fill="none" stroke="#8E8E93" stroke-width="1.5"/>
+
+  <!-- right: folder browser -->
+  <g filter="url(#shadow)"><rect x="660" y="70" width="580" height="760" rx="14" fill="#FFFFFF"/></g>
+  <text x="688" y="108" font-family="Inter" font-size="20" font-weight="700" fill="#1D1D1F">Ordner wählen</text>
+  <text x="688" y="129" font-family="Inter" font-size="11.5" fill="#6E6E73">Sandbox shopware-plugins</text>
+
+  <!-- breadcrumb -->
+  <rect x="688" y="148" width="64" height="24" rx="6" fill="#F2F2F5"/>
+  <text x="720" y="164" font-family="Inter" font-size="10.5" fill="#3C3C43" text-anchor="middle">~/work</text>
+  <text x="760" y="164" font-family="Inter" font-size="11" fill="#8E8E93">›</text>
+  <rect x="772" y="148" width="122" height="24" rx="6" fill="#EEF5FE"/>
+  <text x="833" y="164" font-family="Inter" font-size="10.5" font-weight="600" fill="#0A64C8" text-anchor="middle">shopware-plugins</text>
+  <rect x="1126" y="148" width="86" height="24" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+  <text x="1169" y="164" font-family="Inter" font-size="10" fill="#3C3C43" text-anchor="middle">Zurück</text>
+
+  <text x="688" y="196" font-family="Inter" font-size="9.5" font-weight="600" fill="#A1A1A6">ORDNER IN ~/WORK/SHOPWARE-PLUGINS</text>
+
+  <!-- folder rows -->
+  <rect x="688" y="208" width="504" height="48" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <g transform="translate(704,222)" fill="none" stroke="#8E8E93" stroke-width="1.2"><path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/></g>
+  <text x="726" y="237" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">src</text>
+  <text x="1172" y="237" font-family="Inter" font-size="13" fill="#8E8E93">›</text>
+
+  <rect x="688" y="262" width="504" height="48" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <g transform="translate(704,276)" fill="none" stroke="#8E8E93" stroke-width="1.2"><path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/></g>
+  <text x="726" y="291" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">tests</text>
+  <text x="1172" y="291" font-family="Inter" font-size="13" fill="#8E8E93">›</text>
+
+  <rect x="688" y="316" width="504" height="48" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <g transform="translate(704,330)" fill="none" stroke="#8E8E93" stroke-width="1.2"><path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/></g>
+  <text x="726" y="345" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">vendor</text>
+  <text x="1172" y="345" font-family="Inter" font-size="13" fill="#8E8E93">›</text>
+
+  <rect x="688" y="370" width="504" height="48" rx="8" fill="#FAFAFC" stroke="#E5E5EA"/>
+  <g transform="translate(704,384)" fill="none" stroke="#8E8E93" stroke-width="1.2"><path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/></g>
+  <text x="726" y="399" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">docs</text>
+  <text x="1172" y="399" font-family="Inter" font-size="13" fill="#8E8E93">›</text>
+
+  <!-- new folder -->
+  <rect x="688" y="440" width="126" height="28" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+  <text x="751" y="458" font-family="Inter" font-size="10.5" fill="#3C3C43" text-anchor="middle">+  Neuer Ordner</text>
+  <rect x="688" y="478" width="330" height="30" rx="6" fill="#FFFFFF" stroke="#DEDEE3"/>
+  <text x="700" y="498" font-family="Inter" font-size="11" fill="#1D1D1F">neuer-ordner</text>
+  <rect x="1026" y="478" width="82" height="30" rx="6" fill="#007AFF"/>
+  <text x="1067" y="497" font-family="Inter" font-size="10.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Erstellen</text>
+  <text x="688" y="527" font-family="Inter" font-size="9.5" fill="#8E8E93">Nur Ordner unter ~/work. Dateien werden nicht angezeigt; versteckte Ordner bleiben aus.</text>
+
+  <!-- selected footer -->
+  <rect x="688" y="550" width="504" height="54" rx="8" fill="#F7F7F9" stroke="#E5E5EA"/>
+  <text x="702" y="570" font-family="Inter" font-size="9.5" font-weight="600" fill="#6E6E73">AUSGEWÄHLTER ORDNER</text>
+  <text x="702" y="590" font-family="Inter" font-size="11" font-weight="600" fill="#1D1D1F">~/work/shopware-plugins</text>
+
+  <text x="688" y="640" font-family="Inter" font-size="10" fill="#8E8E93">Klicke einen Ordner an, um hineinzugehen. „Diesen Ordner wählen“ übernimmt den aktuellen Ordner.</text>
+
+  <rect x="986" y="770" width="90" height="32" rx="7" fill="#F2F2F5" stroke="#DEDEE3"/>
+  <text x="1031" y="790" font-family="Inter" font-size="11.5" fill="#3C3C43" text-anchor="middle">Abbrechen</text>
+  <rect x="1062" y="770" width="130" height="32" rx="7" fill="#007AFF"/>
+  <text x="1127" y="790" font-family="Inter" font-size="11" font-weight="600" fill="#FFFFFF" text-anchor="middle">Diesen Ordner wählen</text>
+
+  <text x="640" y="884" font-family="Inter" font-size="11" fill="#8E8E93" text-anchor="middle">UI-Konzept – Ordner-Browser mit Breadcrumb, Navigation und „Neuer Ordner“</text>
+</svg>
