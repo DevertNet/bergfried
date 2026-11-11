@@ -262,6 +262,32 @@ func TestPairLinkPrefersLoopback(t *testing.T) {
 	}
 }
 
+func TestClaudeBrowseAndMkdir(t *testing.T) {
+	m, f := mgr(t, "src\ntests\n.hidden\n")
+	r, err := m.ClaudeBrowse(context.Background(), "shop", "work", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Path != "work" || len(r.Folders) != 2 || r.Folders[0].Path != "work/src" {
+		t.Fatalf("%+v", r)
+	}
+	f.out = ".hidden\nsrc\n"
+	r, err = m.ClaudeBrowse(context.Background(), "shop", "work", true)
+	if err != nil || len(r.Folders) != 2 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	path, err := m.ClaudeMkdir(context.Background(), "shop", "work", "neuer-ordner")
+	if err != nil || path != "work/neuer-ordner" {
+		t.Fatalf("%q %v", path, err)
+	}
+	if !strings.Contains(strings.Join(f.calls, "\n"), `mkdir "$d/neuer-ordner"`) {
+		t.Fatal("mkdir not called")
+	}
+	if _, err := m.ClaudeMkdir(context.Background(), "shop", "work", "a b"); err == nil {
+		t.Fatal("invalid name must fail")
+	}
+}
+
 func TestWindowScriptStartsClaude(t *testing.T) {
 	s := windowScript("shop", "api", "work/api")
 	for _, want := range []string{

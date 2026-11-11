@@ -496,3 +496,13 @@
 "Then click \"Check access\". No new token is needed – the existing token only needs the additional repository." = "Dann „Zugriff prüfen“ klicken. Es wird kein neuer Token benötigt – dem bestehenden Token muss nur das zusätzliche Repository hinzugefügt werden.";
 "The sandbox starts with the folder \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox." = "Die Sandbox startet mit dem Ordner „main“. Claude startet nicht automatisch; OpenCode läuft als Dienst für die ganze Sandbox.";
 "VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further folders ~/work/<folder>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Ordner ~/work/<folder>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
+
+"Back" = "Zurück";
+"Browse …" = "Durchsuchen …";
+"Choose this folder" = "Diesen Ordner wählen";
+"Folder name" = "Ordnername";
+"New folder" = "Neuer Ordner";
+"No subfolders here." = "Keine Unterordner vorhanden.";
+"Only folders under ~/work are shown. Files are hidden." = "Es werden nur Ordner unter ~/work angezeigt. Dateien sind ausgeblendet.";
+"Opens the folder browser; you can also create a folder there." = "Öffnet den Ordner-Browser; dort kannst du auch einen Ordner anlegen.";
+"Show hidden folders" = "Versteckte Ordner anzeigen";
