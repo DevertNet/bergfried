@@ -377,8 +377,8 @@ func guidance(outDir string) string {
 }
 
 // InstallHelpers copies bergfried-mcp into the VM, registers it for Claude and (optionally) OpenCode and writes the
-// hint text (idempotent). Claude is always configured (it exists in every image); OpenCode is installed and configured
-// only when the sandbox-level OpenCode service is used, so old VMs are not touched unnecessarily.
+// hint text (idempotent). Claude is configured when it is installed (custom images may only have OpenCode); OpenCode
+// is installed and configured only when the sandbox-level OpenCode service is used, so old VMs are not touched unnecessarily.
 func (m *Manager) InstallHelpers(ctx context.Context, vm, sandboxName string, withOpenCode bool) error {
 	bin := McpBin()
 	if _, err := os.Stat(bin); err != nil {
@@ -394,7 +394,9 @@ func (m *Manager) InstallHelpers(ctx context.Context, vm, sandboxName string, wi
 		// Mixed sandboxes: a neutral name fits Claude and OpenCode.
 		gitName = "Bergfried"
 	}
-	_, err := m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
+	// The script goes through stdin: it is large (base64 hint text) and a failure must not dump
+	// the whole script as the error message in the app.
+	script := fmt.Sprintf(`set -e
 mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp.new && mv -f ~/.local/bin/bergfried-mcp.new ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
 printf %%s '%s' | base64 -d > ~/.claude/bergfried.md
 grep -qs '^@~/.claude/bergfried.md' ~/.claude/CLAUDE.md || printf '@~/.claude/bergfried.md\n' >> ~/.claude/CLAUDE.md
@@ -407,10 +409,13 @@ git config --global --get user.name >/dev/null 2>&1 || git config --global user.
 git config --global --get user.email >/dev/null 2>&1 || git config --global user.email 'bergfried-%s@users.noreply.invalid'
 git config --global --get init.defaultBranch >/dev/null 2>&1 || git config --global init.defaultBranch main
 export PATH="$HOME/.local/bin:$PATH"
-claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
-claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64, gitName, sandboxName, sandboxName))
-	if err != nil {
-		return err
+# Custom images may have OpenCode but no Claude: do not make OpenCode setup depend on Claude.
+if command -v claude >/dev/null 2>&1; then
+  claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
+  claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"
+fi`, b64, gitName, sandboxName, sandboxName)
+	if _, err := m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s"); err != nil {
+		return fmt.Errorf("setting up the sandbox helpers: %w", err)
 	}
 	if !withOpenCode {
 		return nil
@@ -419,7 +424,7 @@ claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/ber
 		return err
 	}
 	agentsMd := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
-	script := fmt.Sprintf(`set -e
+	ocScript := fmt.Sprintf(`set -e
 mkdir -p ~/.config/opencode
 f=~/.config/opencode/opencode.json
 [ -f "$f" ] || { [ -f ~/.config/opencode/opencode.jsonc ] && f=~/.config/opencode/opencode.jsonc; }
@@ -432,7 +437,7 @@ else
   "$HOME/.opencode/bin/opencode" mcp add bergfried --global -- "$HOME/.local/bin/bergfried-mcp" >/dev/null 2>&1 || true
 fi
 printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd)
-	_, err = m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s")
+	_, err := m.L.ShellStdin(ctx, vm, strings.NewReader(ocScript), "bash", "-s")
 	return err
 }
 
