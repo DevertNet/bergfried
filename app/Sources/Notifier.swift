@@ -74,16 +74,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         c.sound = .default
         switch r.kind {
         case "ssh":
-            c.title = L("SSH request: %@/%@", r.sandbox, r.worktree)
+            c.title = L("SSH request: %@/%@", r.sandbox, r.folder)
             c.body = L("Access to %@", r.path) + "\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
         case "ghtoken":
-            c.title = L("GitHub access: %@/%@", r.sandbox, r.worktree)
+            c.title = L("GitHub access: %@/%@", r.sandbox, r.folder)
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
         default:
-            c.title = L("File request: %@/%@", r.sandbox, r.worktree)
+            c.title = L("File request: %@/%@", r.sandbox, r.folder)
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
             c.categoryIdentifier = r.large ? "OPEN" : "FILE"
         }
@@ -105,7 +105,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
                 Task { await m.deny(r) }
             case "ssh-allow":
                 if let s = r.ssh, s.source == "known_hosts", !s.defaultKey.isEmpty {
-                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allWorktrees: false, perConnection: false, trustUnknownHost: false)) }
+                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allFolders: false, perConnection: false, trustUnknownHost: false)) }
                 }
             default:
                 m.pane = .requests

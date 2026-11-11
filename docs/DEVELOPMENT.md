@@ -66,7 +66,7 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Unix socket paths** are limited to ~104 characters.
 - **Notification permission:** never quit or restart the app while the macOS prompt is open — that counts as "denied" and macOS never asks again (only System Settings or a new bundle id help). Current bundle id: `de.einfach123.bergfried`.
 - **Terminal start** goes through a `.command` file + `open -a` (AppleScript for iTerm failed silently without automation rights).
-- **tmux default window** (`bash`/`shell`) is not a worktree; the monitor only looks at registered worktrees. "Is Claude running?" is detected with `ps -t <tty>` and the process name `claude`; `pane_current_command` wrongly shows `bash`. A window with a worktree name can be left over from an old OpenCode TUI or a manual start: `ensureWindow` checks the pane process and recreates it, and `Start` kills windows of worktrees with `claude=0`.
+- **tmux default window** (`bash`/`shell`) is not a Claude entry; the monitor only looks at registered Claude folders. "Is Claude running?" is detected with `ps -t <tty>` and the process name `claude`; `pane_current_command` wrongly shows `bash`. A window with an entry name can be left over from an old OpenCode TUI or a manual start: `ensureWindow` checks the pane process and recreates it, and `Start` kills windows of entries where Claude is stopped.
 - **Race in tests:** right after `create` the sandbox socket is briefly not open; an `ssh` in that second triggers no request.
 - **Docker Go builds:** `make build` builds `bergfriedd` for darwin/arm64 and `bergfried-mcp` for linux/arm64 (a VPS host would need linux/amd64).
 - **Empty lists as JSON `null`** break Swift decoding (`Detail.Normalize`).
@@ -74,9 +74,9 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **OpenSSH protocol names** such as `session-bind@openssh.com` must never be touched by renames.
 - **Renaming "session" → "sandbox"** once broke exactly that; the fix and a test exist.
 - **OpenCode is not in apt:** `apt install opencode` does not exist in Debian. The daemon removes leftovers of earlier attempts and runs the official installer **in the VM** from a script file (not as a shell argument), logging every step to `/tmp/opencode-install.log`. It always installs the latest version to `~/.opencode/bin/opencode`; older VMs get it on demand when the OpenCode service is started (Connect or Start service).
-- **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_WORKTREE` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the worktree from its working directory (`~/work/<worktree>`) and only falls back to the environment variable.
+- **OpenCode's shared server** starts local MCP servers itself, one per project directory. `BERGFRIED_FOLDER` from the tmux window does not reach them reliably, so `bergfried-mcp` derives the folder from its working directory (`~/work/<folder>`) and only falls back to the environment variable.
 - **OpenCode desktop connection:** the server must listen on `0.0.0.0` with a stable per-sandbox port; Lima forwards ports bound to `0.0.0.0` to `127.0.0.1` on the Mac with the same number. Changing the port breaks the saved desktop connection, so it is stored in the database. Before pairing the daemon **restarts** the shared service (the config can already name the right port while the running process is stale) and rejects a link that does not use the allocated port.
-- **OpenCode pairing is per VM**, not per worktree: one link covers all worktrees of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
+- **OpenCode pairing is per VM**, not per Claude folder: one link covers all folders of a sandbox (they appear as separate projects). `opencode pair --remote` is deliberately not used (no internet exposure).
 
 ## Documentation
 Documentation is part of every change, not an afterthought:
@@ -91,5 +91,5 @@ Update the relevant file in the same commit/PR. Do not leave stale screenshots o
 ## Remote Control detection (monitor)
 - The banner "/remote-control is active" appears at the **start** of the output and scrolls away. The monitor reads the whole tmux scrollback (`history-limit 20000`) and remembers active RC **per claude PID** (`stickyRC`): the same process still running means RC is active.
 - `/remote-control` while RC is active **opens a dialog** ("This session is available in the Claude mobile app …", with "Disconnect this session"). The monitor treats it as "RC active" and closes it with **Escape** (never Enter).
-  Escape hatch in the app: worktree menu → "Remote Control is running – mark as active".
+  Escape hatch in the app: Claude row menu → "Remote Control is running – mark as active".
 - A new claude PID (restart) resets the counters and "cannot activate".

@@ -95,11 +95,11 @@ struct MenuContent: View {
         else if model.requests.isEmpty { Text("No open requests") }
         ForEach(model.requests.prefix(6)) { r in
             if r.kind == "ssh" {
-                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.worktree, r.path)) { open() }
+                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.folder, r.path)) { open() }
             } else if r.kind == "ghtoken" {
-                Button("GitHub \(r.sandbox)/\(r.worktree): \(r.path) …") { open() }
+                Button("GitHub \(r.sandbox)/\(r.folder): \(r.path) …") { open() }
             } else {
-                Menu("\(r.sandbox)/\(r.worktree): ~/\(r.path)") {
+                Menu("\(r.sandbox)/\(r.folder): ~/\(r.path)") {
                     Button("Allow") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
                     Button("Deny") { Task { await model.decideFile(r, allow: false) } }
                 }

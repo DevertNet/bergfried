@@ -297,7 +297,7 @@ struct SettingsView: View {
         }
 
         SettingsCard("Data paths") {
-            Text("VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further worktrees ~/work/<worktree>\nDaemon data (DB, blocklist, template): ~/.bergfried")
+            Text("VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further folders ~/work/<folder>\nDaemon data (DB, blocklist, template): ~/.bergfried")
                 .font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -8,10 +8,10 @@ The repository is **English** (docs, code comments, commit messages, app strings
 **Documentation is part of the change.** Whenever behaviour, UI, CLI flags, settings, file locations, workflows or setup steps change, update `README.md` and the affected `docs/` page (including `docs/testing/`) **in the same commit/PR**. Do not leave stale screenshots, feature lists or instructions; replace them or mark them clearly as outdated. A change is not finished until the docs describe it.
 
 ## Terminology
-An isolated VM with its worktrees is a **sandbox** — everywhere (app, API `/v1/sandboxes`, code, DB, folder `~/.bergfried/sandboxes`). It was called "session" earlier;
+An isolated VM with its Claude folders is a **sandbox** — everywhere (app, API `/v1/sandboxes`, code, DB, folder `~/.bergfried/sandboxes`). It was called "session" earlier;
 the word remains only for other programs' things (tmux session `bf`, Claude/Remote Control sessions, OpenSSH's `session-bind@openssh.com` — never rename that).
-A **worktree** is a folder with code (`~/work/<name>`, git branch `worktree/<name>`). **Claude** runs per worktree (start/stop in the app); **OpenCode** is one service per sandbox.
-Use "assistant" for the AI in prose; do not call the worktree entity an "agent" (old DB columns/branches `agent/*` are migration input only).
+A **Claude folder** is a directory under `~/work`. **Claude** runs per folder (start/stop and folder choice in the app); **OpenCode** is one service per sandbox. Bergfried does not create git worktrees or branches for Claude.
+Use "assistant" for the AI in prose; the product never calls the entity an "agent" or "worktree" (old DB columns/branches are migration input only).
 
 ## How to work
 - **Plan first** for larger changes: show the plan (files, commands, tests) briefly and ask if something is unclear.

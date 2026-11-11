@@ -47,6 +47,7 @@ fi`
 
 // WorktreeState is the Claude state of one worktree.
 type WorktreeState struct {
+	Folder  string
 	Window  bool
 	RC      bool
 	Theme   bool
@@ -206,14 +207,23 @@ func (mo *Monitor) Poke2(name string) {
 	}
 }
 
-// ResetWorktree resets a worktree's automatic RC activation (e.g. after a manual restart).
-func (mo *Monitor) ResetWorktree(sandbox, worktree string) {
-	k := sandbox + "/" + worktree
+// ResetClaude resets a Claude folder's automatic RC activation (e.g. after a manual restart).
+func (mo *Monitor) ResetClaude(sandbox, folder string) {
 	mo.mu.Lock()
-	delete(mo.norc, k)
-	delete(mo.attempts, k)
-	delete(mo.last, k)
-	delete(mo.actions, k)
+	st := mo.state[sandbox]
+	if st == nil {
+		mo.mu.Unlock()
+		return
+	}
+	for k, a := range st.Worktrees {
+		if a.Folder == folder {
+			key := sandbox + "/" + k
+			delete(mo.norc, key)
+			delete(mo.attempts, key)
+			delete(mo.last, key)
+			delete(mo.actions, key)
+		}
+	}
 	mo.mu.Unlock()
 }
 
@@ -351,6 +361,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		}
 	}
 	for w, a := range st.Worktrees {
+		a.Folder = sandbox.FolderOf(byName[w].Path)
 		a.Running = a.PID > 0
 		a = mo.applySticky(name+"/"+w, a)
 		st.Worktrees[w] = a
@@ -370,7 +381,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	// old OpenCode TUI windows of migrated sandboxes.
 	for w, a := range st.Worktrees {
 		if a.Window && !byName[w].Claude {
-			if err := mo.M.WorktreeStopClaude(cctx, name, w); err != nil {
+			if err := mo.M.ClaudeStop(cctx, name, sandbox.FolderOf(byName[w].Path)); err != nil {
 				fmt.Fprintln(os.Stderr, "stop stale window", w, ":", err)
 			}
 		}
@@ -398,7 +409,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			if err := mo.M.S.AddWorktree(store.Worktree{Sandbox: name, Name: "main", Path: "~/work/main", ComposeProject: name + "-main", Created: time.Now()}); err != nil {
 				fmt.Fprintln(os.Stderr, "first worktree:", err)
 			} else {
-				_ = mo.M.S.Audit("daemon", "worktree.auto_main", name, "main", "sandbox had no worktree")
+				_ = mo.M.S.Audit("daemon", "claude.auto_main", name, "main", "sandbox had no worktree")
 			}
 		}
 		_ = mo.M.S.SetSeeded(name)
@@ -414,13 +425,13 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			if _, running := st.Worktrees[w.Name]; !running {
 				continue
 			}
-			if err := mo.M.WorktreeRestartClaude(cctx, name, w.Name); err != nil {
+			if err := mo.M.ClaudeRestart(cctx, name, sandbox.FolderOf(w.Path)); err != nil {
 				fmt.Fprintln(os.Stderr, "restart after Claude login:", err)
 			} else {
 				n++
 			}
 		}
-		_ = mo.M.S.Audit("daemon", "worktree.restart_after_login", name, "", fmt.Sprintf("runtime=claude worktrees=%d", n))
+		_ = mo.M.S.Audit("daemon", "claude.restart_after_login", name, "", fmt.Sprintf("runtime=claude worktrees=%d", n))
 		mo.Poke(name)
 		return
 	}
@@ -470,7 +481,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 		case rcSlash:
 			err = mo.M.TypeLine(cctx, vm, w, "/remote-control")
 		case rcRestart:
-			err = mo.M.WorktreeRestartClaude(cctx, name, w)
+			err = mo.M.ClaudeRestart(cctx, name, sandbox.FolderOf(byName[w].Path))
 		case rcGiveUp:
 			mo.mu.Lock()
 			mo.actions[key] = "failed"
@@ -488,7 +499,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 			if err != nil {
 				detail += ": " + err.Error()
 			}
-			_ = mo.M.S.Audit("daemon", "worktree.rc_enable", name, w, detail)
+			_ = mo.M.S.Audit("daemon", "claude.rc_enable", name, w, detail)
 		}
 	}
 }

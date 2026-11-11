@@ -124,6 +124,7 @@ func (s *Store) renameLegacy() {
 		}
 	}
 	_, _ = s.DB.Exec(`UPDATE audit SET event='worktree.'||substr(event,7) WHERE event LIKE 'agent.%'`)
+	_, _ = s.DB.Exec(`UPDATE audit SET event='claude.'||substr(event,10) WHERE event LIKE 'worktree.%'`)
 }
 
 func (s *Store) migrate() error {

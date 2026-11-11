@@ -75,11 +75,11 @@ enum Terminal {
     }
 
     static let vmRe = #"^(bf|bergfried)-[a-z][a-z0-9-]{0,40}$"#
-    static let worktreeRe = #"^[a-z][a-z0-9-]{0,30}$"#
+    static let windowRe = #"^[a-z][a-z0-9-]{0,30}$"#
 
     /// Opens the chosen terminal app with one line. Instead of AppleScript (needs automation rights and
     /// fails silently) a temporary .command file is started with `open -a`; it deletes itself.
-    /// VM and worktree names are checked strictly. Returns an error message or nil.
+    /// VM and window names are checked strictly. Returns an error message or nil.
     @discardableResult
     static func openLine(_ line: String, waitKey: Bool = false) -> String? {
         let dir = NSHomeDirectory() + "/.bergfried/tmp"
@@ -113,10 +113,10 @@ enum Terminal {
         return openLine("\(limactl) shell \(vm)")
     }
 
-    /// tmux of the VM, straight into this worktree's Claude window.
-    static func attach(vm: String, worktree: String) -> String? {
-        guard checked(vm), worktree.range(of: worktreeRe, options: .regularExpression) != nil else { return L("Invalid name") }
-        return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(worktree) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
+    /// tmux of the VM, straight into this Claude window.
+    static func attach(vm: String, window: String) -> String? {
+        guard checked(vm), window.range(of: windowRe, options: .regularExpression) != nil else { return L("Invalid name") }
+        return openLine("\(limactl) shell \(vm) -- bash -lc 'tmux select-window -t bf:\(window) 2>/dev/null; tmux attach -t bf || tmux new -s bf'")
     }
 
     static func login(vm: String, runtime: String = "claude") -> String? {

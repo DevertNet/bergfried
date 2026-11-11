@@ -111,7 +111,7 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 	if !byName["main"].Claude || byName["oc"].Claude {
 		t.Fatalf("runtime mapping wrong: %+v", wt)
 	}
-	au, _ := s.AuditSearch(10, "worktree.add")
+	au, _ := s.AuditSearch(10, "claude.add")
 	if len(au) != 1 || au[0].Sandbox != "alt" || au[0].Worktree != "main" {
 		t.Fatalf("audit after migration: %+v", au)
 	}

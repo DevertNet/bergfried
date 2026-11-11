@@ -27,13 +27,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const WorktreeHeader = "x-bergfried-worktree"
+const FolderHeader = "x-bergfried-folder"
 
-var worktreeRe = regexp.MustCompile(`^[a-z][a-z0-9/-]{0,63}$`)
+var folderRe = regexp.MustCompile(`^[a-z][a-z0-9/-]{0,200}$`)
 
-func worktreeFrom(ctx context.Context) string {
+func folderFrom(ctx context.Context) string {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if v := md.Get(WorktreeHeader); len(v) > 0 && worktreeRe.MatchString(v[0]) {
+		if v := md.Get(FolderHeader); len(v) > 0 && folderRe.MatchString(v[0]) {
 			return v[0]
 		}
 	}
@@ -76,7 +76,7 @@ func (s *sandboxServer) SSHAttempt(ctx context.Context, r *pb.SSHAttemptRequest)
 }
 
 func (s *sandboxServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubTokenRequest) (*pb.GitHubTokenResult, error) {
-	ok, msg, err := s.gh.Request(ctx, s.sandbox, s.worktree(ctx), r.Repo, r.Reason)
+	ok, msg, err := s.gh.Request(ctx, s.sandbox, s.folder(ctx), r.Repo, r.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -90,16 +90,16 @@ func (s *sandboxServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubToke
 }
 
 func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
-	return s.ssh.RequestSSH(ctx, s.sandbox, s.worktree(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
+	return s.ssh.RequestSSH(ctx, s.sandbox, s.folder(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
-// worktree: name without the "<sandbox>/" prefix that the VM sends along.
-func (s *sandboxServer) worktree(ctx context.Context) string {
-	return strings.TrimPrefix(worktreeFrom(ctx), s.sandbox+"/")
+// folder: name without the "<sandbox>/" prefix that the VM sends along.
+func (s *sandboxServer) folder(ctx context.Context) string {
+	return strings.TrimPrefix(folderFrom(ctx), s.sandbox+"/")
 }
 
 func (s *sandboxServer) audit(ctx context.Context, event, detail string) {
-	if err := s.st.Audit("worktree", event, s.sandbox, s.worktree(ctx), detail); err != nil {
+	if err := s.st.Audit("worktree", event, s.sandbox, s.folder(ctx), detail); err != nil {
 		fmt.Fprintln(os.Stderr, "WARNING: audit log not written:", err)
 	}
 }
@@ -135,11 +135,11 @@ func (s *sandboxServer) SearchFiles(ctx context.Context, r *pb.SearchFilesReques
 }
 
 func (s *sandboxServer) RequestFile(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.sandbox, s.worktree(ctx), false, r.Path, r.Reason)
+	return s.svc.Request(ctx, s.sandbox, s.folder(ctx), false, r.Path, r.Reason)
 }
 
 func (s *sandboxServer) RequestFolder(ctx context.Context, r *pb.AccessRequest) (*pb.AccessResult, error) {
-	return s.svc.Request(ctx, s.sandbox, s.worktree(ctx), true, r.Path, r.Reason)
+	return s.svc.Request(ctx, s.sandbox, s.folder(ctx), true, r.Path, r.Reason)
 }
 
 type adminServer struct {
@@ -153,7 +153,7 @@ func fail(err error) error { return status.Error(codes.FailedPrecondition, err.E
 
 func (a *adminServer) DecideSSH(_ context.Context, r *pb.DecideSSHRequest) (*pb.DecideResponse, error) {
 	msg, err := a.ssh.DecideSSH(broker.Decision{ID: r.Id, Allow: r.Allow, Minutes: int(r.Minutes), KeyFP: r.KeyFingerprint,
-		User: r.User, AllWorktrees: r.AllWorktrees, PerConn: r.PerConnection, TrustUnknownHost: r.TrustUnknownHost})
+		User: r.User, AllFolders: r.AllFolders, PerConn: r.PerConnection, TrustUnknownHost: r.TrustUnknownHost})
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -167,7 +167,7 @@ func (a *adminServer) ListGrants(_ context.Context, r *pb.ListGrantsRequest) (*p
 	}
 	out := &pb.ListGrantsResponse{}
 	for _, g := range gs {
-		out.Grants = append(out.Grants, &pb.Grant{Id: g.ID, Sandbox: g.Sandbox, Worktree: g.Worktree, Host: g.Host, KeyFingerprint: g.KeyFP,
+		out.Grants = append(out.Grants, &pb.Grant{Id: g.ID, Sandbox: g.Sandbox, Folder: g.Worktree, Host: g.Host, KeyFingerprint: g.KeyFP,
 			User: g.User, ExpiresUnix: g.Expires.Unix(), PerConnection: g.PerConn, Revoked: g.Revoked, HostKeyFingerprints: g.HostKeys})
 	}
 	return out, nil
@@ -203,7 +203,7 @@ func (a *adminServer) ListRequests(_ context.Context, r *pb.ListRequestsRequest)
 	}
 	out := &pb.ListRequestsResponse{}
 	for _, x := range rs {
-		out.Requests = append(out.Requests, &pb.Request{Id: x.ID, Sandbox: x.Sandbox, Worktree: x.Worktree, Kind: x.Kind, Path: x.Path,
+		out.Requests = append(out.Requests, &pb.Request{Id: x.ID, Sandbox: x.Sandbox, Folder: x.Worktree, Kind: x.Kind, Path: x.Path,
 			Reason: x.Reason, Status: x.Status, CreatedUnix: x.Created.Unix(), TotalBytes: x.Bytes, TotalFiles: x.Files})
 	}
 	return out, nil
