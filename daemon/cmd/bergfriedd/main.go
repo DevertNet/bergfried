@@ -38,9 +38,9 @@ const usage = `bergfriedd – Bergfried CLI
     create <name> [--repo URL | --import FOLDER]   clone a sandbox from the base VM
   start|stop <name>
     delete <name> [--force]       warns about unpushed commits
-    list                          sandboxes with VM status and worktrees
-    worktree add <sandbox> <worktree>          create a worktree (no Claude)
-    worktree start|stop|restart <sandbox> <worktree>   Claude in a worktree
+    list                          sandboxes with VM status and Claude folders
+    claude list <sandbox>         folders with Claude sessions
+    claude start|stop|restart|remove <sandbox> <folder>   Claude in a folder
     opencode start|stop <sandbox>              the sandbox-wide OpenCode service
     login <sandbox> [claude|opencode]   sign in the assistant CLI in the VM (once per runtime)
     pair <sandbox>                 one-time link for the OpenCode desktop app
@@ -154,21 +154,27 @@ func run(cmd string, args []string) error {
 		return m.Delete(ctx, args[0], *f)
 	case "list":
 		return list(ctx, m)
-	case "worktree":
+	case "claude":
+		if err := need(2); err != nil {
+			return errors.New("nutze: claude list <sandbox> | claude start|stop|restart|remove <sandbox> <folder>")
+		}
+		if args[0] == "list" {
+			return listClaude(ctx, m, args[1])
+		}
 		if err := need(3); err != nil {
-			return errors.New("nutze: worktree add <sandbox> <worktree> | worktree start|stop|restart <sandbox> <worktree>")
+			return errors.New("nutze: claude start|stop|restart|remove <sandbox> <folder>")
 		}
 		switch args[0] {
-		case "add":
-			return m.WorktreeAdd(ctx, args[1], args[2])
 		case "start":
-			return m.WorktreeStartClaude(ctx, args[1], args[2])
+			return m.ClaudeStart(ctx, args[1], args[2])
 		case "stop":
-			return m.WorktreeStopClaude(ctx, args[1], args[2])
+			return m.ClaudeStop(ctx, args[1], args[2])
 		case "restart":
-			return m.WorktreeRestartClaude(ctx, args[1], args[2])
+			return m.ClaudeRestart(ctx, args[1], args[2])
+		case "remove":
+			return m.ClaudeRemove(ctx, args[1], args[2])
 		}
-		return errors.New("nutze: worktree add <sandbox> <worktree> | worktree start|stop|restart <sandbox> <worktree>")
+		return errors.New("nutze: claude start|stop|restart|remove <sandbox> <folder>")
 	case "opencode":
 		if err := need(2); err != nil {
 			return errors.New("nutze: opencode start|stop <sandbox>")
@@ -261,7 +267,7 @@ func list(ctx context.Context, m *sandbox.Manager) error {
 	for _, v := range vms {
 		status[v.Name] = v.Status
 	}
-	fmt.Printf("%-16s %-10s %-4s %s\n", "SANDBOX", "STATUS", "TPL", "WORKTREES")
+	fmt.Printf("%-16s %-10s %-4s %s\n", "SANDBOX", "STATUS", "TPL", "CLAUDE")
 	for _, s := range ss {
 		st := status[s.VM]
 		if st == "" {
@@ -272,12 +278,31 @@ func list(ctx context.Context, m *sandbox.Manager) error {
 		for _, w := range wts {
 			names += w.Name
 			if w.Claude {
-				names += "(claude) "
+				names += "(läuft) "
 			} else {
 				names += " "
 			}
 		}
 		fmt.Printf("%-16s %-10s v%-3d %s\n", s.Name, st, s.TemplateVersion, names)
+	}
+	return nil
+}
+
+func listClaude(ctx context.Context, m *sandbox.Manager, sandboxName string) error {
+	ws, err := m.S.ListWorktrees(sandboxName)
+	if err != nil {
+		return err
+	}
+	if len(ws) == 0 {
+		fmt.Println("no Claude folders")
+		return nil
+	}
+	for _, w := range ws {
+		state := "stopped"
+		if w.Claude {
+			state = "started"
+		}
+		fmt.Printf("%-8s %-10s ~/%s\n", state, w.Name, sandbox.FolderOf(w.Path))
 	}
 	return nil
 }
@@ -436,9 +461,9 @@ func requests(ctx context.Context, home string, args []string) error {
 			return fmt.Errorf("daemon not reachable (is `bergfriedd serve` running?): %w", err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/WORKTREE\tKIND\tPATH\tSIZE\tREASON")
+		fmt.Fprintln(tw, "ID\tSTATUS\tSANDBOX/FOLDER\tKIND\tPATH\tSIZE\tREASON")
 		for _, q := range r.Requests {
-			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d files, %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Worktree, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
+			fmt.Fprintf(tw, "%d\t%s\t%s/%s\t%s\t~/%s\t%d files, %.1f MB\t%s\n", q.Id, q.Status, q.Sandbox, q.Folder, q.Kind, q.Path, q.TotalFiles, float64(q.TotalBytes)/1048576, q.Reason)
 		}
 		return tw.Flush()
 	case "allow", "deny":
@@ -470,7 +495,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 	defer conn.Close()
 	c := pb.NewAdminClient(conn)
 	if len(args) == 0 {
-		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-worktrees] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
+		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-folders] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
 	}
 	num := func(i int) (int64, error) {
 		var n int64
@@ -502,7 +527,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			return unreachable(err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tSANDBOX\tWORKTREE\tHOST\tUSER\tUNTIL\tMODE\tSTATUS")
+		fmt.Fprintln(tw, "ID\tSANDBOX\tFOLDER\tHOST\tUSER\tUNTIL\tMODE\tSTATUS")
 		for _, g := range r.Grants {
 			st := "active"
 			if g.Revoked {
@@ -510,7 +535,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 			} else if time.Unix(g.ExpiresUnix, 0).Before(time.Now()) {
 				st = "expired"
 			}
-			wt := g.Worktree
+			wt := g.Folder
 			if wt == "" {
 				wt = "(all)"
 			}
@@ -530,12 +555,12 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		minutes := fs.Int("minutes", 15, "Dauer")
 		key := fs.String("key", "", "key fingerprint (SHA256:…); otherwise the host default")
 		user := fs.String("user", "", "user on the target (default: claude)")
-		allWt := fs.Bool("all-worktrees", false, "for all worktrees of the sandbox")
+		allWt := fs.Bool("all-folders", false, "for all folders of the sandbox")
 		per := fs.Bool("per-connection", false, "confirm every connection individually")
 		trust := fs.Bool("trust-host-key", false, "confirm a new host key")
 		_ = fs.Parse(args[2:])
 		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
-			User: *user, AllWorktrees: *allWt, PerConnection: *per, TrustUnknownHost: *trust})
+			User: *user, AllFolders: *allWt, PerConnection: *per, TrustUnknownHost: *trust})
 		if err != nil {
 			return err
 		}

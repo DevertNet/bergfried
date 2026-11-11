@@ -38,7 +38,7 @@ func Text(r store.Request) string {
 	if r.Kind == "folder" {
 		what = "the folder"
 	}
-	return fmt.Sprintf("Sandbox \"%s\" / worktree \"%s\" wants %s copied:\n\n~/%s\n(%d file(s), %.1f MB)\n\nReason (from the assistant, unchecked):\n%s",
+	return fmt.Sprintf("Sandbox \"%s\" / folder \"%s\" wants %s copied:\n\n~/%s\n(%d file(s), %.1f MB)\n\nReason (from the assistant, unchecked):\n%s",
 		r.Sandbox, r.Worktree, what, r.Path, r.Files, float64(r.Bytes)/1048576, r.Reason)
 }
 

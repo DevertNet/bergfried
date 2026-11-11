@@ -18,7 +18,7 @@ The permission names *Contents* and *Pull requests* are not explicitly documente
 1. **New sandbox with a git repo:** the dialog shows the link, the hint and a field; the token is required. `Manager.Create` verifies it first (valid, repo reachable), creates the VM, stores the token and clones over HTTPS (`GIT_TERMINAL_PROMPT=0`; `git@…` URLs become `https://github.com/o/r.git`).
 2. **Assistant:** when `git` fails with `permission denied`/`403`/`Repository not found`/`Authentication failed`/`could not read Username`, the assistant calls the MCP tool **`request_github_token`** (`repo=owner/name`). A request card appears in the app:
    - **No token yet:** link, hint, field. The token is verified (`GET /rate_limit`, 401 = invalid) and, if a repo was named, against `GET /repos/{o}/{r}`, then stored and written into the VM.
-   - **Token exists, repo missing:** you extend the repository selection of the existing token on GitHub (token `bergfried-<sandbox>` → Edit → Repository access) and click "Check access". The token value stays the same (**unverified** that GitHub allows this without a new value). If the check fails the request stays open.
+   - **Token exists, repo missing:** no new token is requested. You extend the repository selection of the existing token on GitHub (token `bergfried-<sandbox>` → Edit → Repository access), save, then click **Check access**. The token value stays the same. If the check fails the request stays open.
    - If the token already reaches the repo the daemon answers immediately.
 3. Assistants cannot create GitHub repositories (`gh repo create` fails too: no permission). The guidance tells them to ask you to create the repo yourself.
 

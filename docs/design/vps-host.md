@@ -7,7 +7,7 @@
 ## What exists and is reusable
 - `bergfriedd` is one binary for both hosts (pure Go) — the Makefile only needs `GOOS=linux GOARCH=amd64|arm64`.
 - `internal/api` (HTTP/JSON) is the app's interface and can control a VPS daemon unchanged over a forwarded unix socket.
-- `internal/sandbox` (Lima wrapper, base VM, clones, worktrees, monitor) is host-agnostic except `vmType: vz`/`virtiofs` in `vm/bergfried.yaml`.
+- `internal/sandbox` (Lima wrapper, base VM, clones, Claude folders, monitor) is host-agnostic except `vmType: vz`/`virtiofs` in `vm/bergfried.yaml`.
 - The broker already separates the **upstream** (`List`, `Sign`) from the rest — remote signing attaches there.
 - Index, grants and blocklist live on the Mac and stay there (home and keys never leave the Mac).
 

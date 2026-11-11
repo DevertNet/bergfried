@@ -5,15 +5,15 @@ make build
 ./bin/bergfriedd base build          # template with the second reverse socket and ssh_config.d
 ./bin/bergfriedd serve               # uses your SSH_AUTH_SOCK as upstream (--upstream-agent <socket>)
 ./bin/bergfriedd create shop
-./bin/bergfriedd login shop && ./bin/bergfriedd worktree start shop main
+./bin/bergfriedd login shop && ./bin/bergfriedd claude start shop work/main
 ```
 **Use a test key, ssh-agent and server, never your real ones** (see [DEVELOPMENT.md](../DEVELOPMENT.md)).
 
 In Claude: "I need SSH access to `server.example.com` to check X" → tool `request_ssh`.
 
-1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration, **key**, scope (worktree/all worktrees), mode (silent in the window / every connection).
+1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration, **key**, scope (folder/all folders), mode (silent in the window / every connection).
 2. Without dialog: `serve --no-dialog`, then `requests list` and
-   `ssh allow <id> --minutes 30 [--key SHA256:…] [--user claude] [--all-worktrees] [--per-connection] [--trust-host-key]`.
+   `ssh allow <id> --minutes 30 [--key SHA256:…] [--user claude] [--all-folders] [--per-connection] [--trust-host-key]`.
 3. `ssh keys` (keys of your ssh-agent), `ssh grants [--all]`, `ssh extend <grant> --minutes 60`, `ssh revoke <grant>`.
 
 ## Checks
@@ -26,7 +26,7 @@ In Claude: "I need SSH access to `server.example.com` to check X" → tool `requ
 
 ## Notes
 - **Server side:** during a grant an assistant could add its own key to the target's `authorized_keys`. For important servers use a restricted user whose `authorized_keys` is root-owned (`AuthorizedKeysFile /etc/ssh/authorized_keys/%u`).
-- "Only this worktree" is display and audit only; technically the grant applies to the sandbox (same Linux user).
+- "Only this folder" is display and audit only; technically the grant applies to the sandbox (same Linux user).
 - Broker behaviour (no session-bind → refuse, forwarding → refuse, no writes to the ssh-agent) is covered by tests in `daemon/internal/broker`.
 - The template uses `IdentityAgent /run/user/%i/bergfried-agent.sock` (system-wide); an existing `SSH_AUTH_SOCK` in the VM is not used.
 

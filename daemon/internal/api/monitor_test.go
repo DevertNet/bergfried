@@ -121,7 +121,7 @@ func TestMonitorHoldAndErrorGrace(t *testing.T) {
 	if mo.hold["s"] != 0 {
 		t.Fatal("Release")
 	}
-	mo.ResetWorktree("s", "a")
+	mo.ResetClaude("s", "work/a")
 }
 
 func TestStickyRCSurvivesScrolledOffBanner(t *testing.T) {

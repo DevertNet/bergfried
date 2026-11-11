@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,8 +27,8 @@ func TestValidName(t *testing.T) {
 }
 
 func TestClaudeCmd(t *testing.T) {
-	c := claudeCmd("shop", "api")
-	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "BERGFRIED_WORKTREE=shop/api") || !strings.Contains(c, "--remote-control 'shop/api'") {
+	c := claudeCmd("shop", "api", "work/api")
+	if !strings.Contains(c, "COMPOSE_PROJECT_NAME=shop-api") || !strings.Contains(c, "BERGFRIED_FOLDER=shop/work/api") || !strings.Contains(c, "--remote-control 'shop/api'") || !strings.Contains(c, `cd "$HOME/work/api"`) {
 		t.Fatal(c)
 	}
 	if strings.Contains(c, ".opencode/bin/opencode") {
@@ -131,55 +130,29 @@ func mgr(t *testing.T, out string) (*Manager, *shellFake) {
 	return &Manager{L: lima.Client{R: f}, S: st, Actor: "t"}, f
 }
 
-func TestWorktreeRemoveRules(t *testing.T) {
+func TestClaudeRemoveKeepsFolder(t *testing.T) {
 	m, f := mgr(t, "")
-	if err := m.WorktreeRemove(context.Background(), "shop", "main", true, true); err == nil {
-		t.Fatal("main must never be removed")
-	}
-	if err := m.WorktreeRemove(context.Background(), "shop", "main", false, false); err == nil {
-		t.Fatal("main must not be removed even without deleting the directory")
-	}
-	if wts, _ := m.S.ListWorktrees("shop"); len(wts) != 2 {
-		t.Fatalf("%+v", wts)
-	}
-	if err := m.WorktreeRemove(context.Background(), "shop", "../x", false, false); err == nil {
-		t.Fatal("invalid name")
-	}
-	joined := strings.Join(f.calls, "\n")
-	if strings.Contains(joined, "worktree remove") {
-		t.Fatal("without deleteDir nothing may be deleted")
-	}
-}
-
-func TestWorktreeRemoveDirtyNeedsForce(t *testing.T) {
-	m, f := mgr(t, " M file.go\nabc123 unpushed")
-	err := m.WorktreeRemove(context.Background(), "shop", "api", true, false)
-	var d ErrWorktreeDirty
-	if !errors.As(err, &d) {
-		t.Fatalf("erwartet ErrWorktreeDirty, bekam %v", err)
-	}
-	if ags, _ := m.S.ListWorktrees("shop"); len(ags) != 2 {
-		t.Fatal("the worktree must not be removed while work is unsaved")
-	}
-	for _, c := range f.calls {
-		if strings.Contains(c, "worktree remove") || strings.Contains(c, "kill-window") {
-			t.Fatalf("nothing may happen before the confirmation: %s", c)
-		}
-	}
-	if err := m.WorktreeRemove(context.Background(), "shop", "api", true, true); err != nil {
+	if err := m.ClaudeRemove(context.Background(), "shop", "work/api"); err != nil {
 		t.Fatal(err)
 	}
-	if ags, _ := m.S.ListWorktrees("shop"); len(ags) != 1 {
-		t.Fatal("with force the worktree must be removed")
+	if wts, _ := m.S.ListWorktrees("shop"); len(wts) != 1 {
+		t.Fatalf("%+v", wts)
 	}
-	if !strings.Contains(strings.Join(f.calls, "\n"), "worktree remove") {
-		t.Fatal("worktree must be removed")
+	joined := strings.Join(f.calls, "\n")
+	if !strings.Contains(joined, "kill-window") {
+		t.Fatal("Claude window must be stopped")
+	}
+	if strings.Contains(joined, "worktree remove") || strings.Contains(joined, "rm -rf") {
+		t.Fatalf("the folder must not be deleted: %s", joined)
+	}
+	if err := m.ClaudeRemove(context.Background(), "shop", "work/nope"); err == nil {
+		t.Fatal("unknown folder must fail")
 	}
 }
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_ssh", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
@@ -289,13 +262,41 @@ func TestPairLinkPrefersLoopback(t *testing.T) {
 	}
 }
 
+func TestClaudeBrowseAndMkdir(t *testing.T) {
+	m, f := mgr(t, "src\ntests\n.hidden\n")
+	r, err := m.ClaudeBrowse(context.Background(), "shop", "work", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Path != "work" || len(r.Folders) != 2 || r.Folders[0].Path != "work/src" {
+		t.Fatalf("%+v", r)
+	}
+	f.out = ".hidden\nsrc\n"
+	r, err = m.ClaudeBrowse(context.Background(), "shop", "work", true)
+	if err != nil || len(r.Folders) != 2 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	path, err := m.ClaudeMkdir(context.Background(), "shop", "work", "neuer-ordner")
+	if err != nil || path != "work/neuer-ordner" {
+		t.Fatalf("%q %v", path, err)
+	}
+	if !strings.Contains(strings.Join(f.calls, "\n"), `mkdir "$d/neuer-ordner"`) {
+		t.Fatal("mkdir not called")
+	}
+	if _, err := m.ClaudeMkdir(context.Background(), "shop", "work", "a b"); err == nil {
+		t.Fatal("invalid name must fail")
+	}
+}
+
 func TestWindowScriptStartsClaude(t *testing.T) {
-	s := windowScript("shop", "api")
+	s := windowScript("shop", "api", "work/api")
 	for _, want := range []string{
 		"tmux new-session -d -s bf -n api",
 		"tmux new-window -t bf -n api",
 		"tmux send-keys -t bf:api ",
 		"COMPOSE_PROJECT_NAME=shop-api",
+		"BERGFRIED_FOLDER=shop/work/api",
+		`$HOME/work/api`,
 		"ps -t \"${tty#/dev/}\" -o comm=",
 		"grep -qx claude",
 		"hasTrustDialogAccepted",
@@ -312,18 +313,32 @@ func TestWindowScriptStartsClaude(t *testing.T) {
 	}
 }
 
-func TestWorktreeScriptIsIdempotent(t *testing.T) {
-	s := worktreeScript("octest")
-	for _, want := range []string{
-		`a="octest"`,
-		`d="$HOME/work/$a"`,
-		`if [ ! -d "$d" ]; then`,
-		`git -C ~/work/main worktree add "$d" -b "worktree/$a"`,
-		`git -C ~/work/main worktree add "$d" "worktree/$a"`,
+func TestNormalizeFolder(t *testing.T) {
+	for in, want := range map[string]string{
+		"work/api":              "work/api",
+		"~/work/api":            "work/api",
+		"work/shopware-plugins": "work/shopware-plugins",
+		"work/api/sub":          "work/api/sub",
 	} {
-		if !strings.Contains(s, want) {
-			t.Fatalf("%q missing in\n%s", want, s)
+		got, err := normalizeFolder(in)
+		if err != nil || got != want {
+			t.Fatalf("%q: %q %v", in, got, err)
 		}
+	}
+	for _, bad := range []string{"", "work", "~/Documents", "work/../x", "work/a b", "/etc"} {
+		if _, err := normalizeFolder(bad); err == nil {
+			t.Fatalf("%q must be rejected", bad)
+		}
+	}
+}
+
+func TestWindowName(t *testing.T) {
+	existing := []store.Worktree{{Name: "api"}}
+	if got := windowName("work/api", existing); got != "api-2" {
+		t.Fatalf("got %q", got)
+	}
+	if got := windowName("work/shopware-plugins", nil); got != "shopware-plugins" {
+		t.Fatalf("got %q", got)
 	}
 }
 

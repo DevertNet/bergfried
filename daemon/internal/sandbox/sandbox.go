@@ -1,4 +1,4 @@
-// Package sandbox manages the lifecycle: base VM, one clone per sandbox, worktrees and Claude in tmux.
+// Package sandbox manages the lifecycle: base VM, one clone per sandbox, Claude folders and tmux.
 package sandbox
 
 import (
@@ -350,14 +350,15 @@ func guidance(outDir string) string {
 		"- **Search/list:** tools `list_files` and `search_files` (Bergfried MCP). Names, size, date only; paths relative to home, e.g. `Documents/report.pdf`. " +
 		"Use these tools first and never search for the user's files with `find`/`ls` in the VM.\n" +
 		"- **Fetch content:** `request_file` / `request_folder` with a short, honest reason. On `allowed` a read-only copy appears at `vm_path`. " +
-		"You respect `denied`, `blocked` and `expired` and do not work around them.\n" +
+		"You respect `denied`, `blocked` and `expired` and do not work around them. " +
+		"Prefer `request_folder` when you need several files from the same folder; ask for individual files only when you need just a few (or when the folder is too large).\n" +
 		"- **Servers via SSH:** call `request_ssh` first (host, user if known, minutes, reason). Then use plain `ssh user@host`. " +
 		"There is no access to private keys and no agent forwarding.\n" +
 		"- **Results for the user:** put them in `" + outDir + "` (they appear on the Mac).\n" +
 		"- **Git/GitHub:** use plain `git` over HTTPS (`git clone https://github.com/owner/repo`, `push`, `pull` …). This sandbox's GitHub token is in the VM " +
 		"(`~/.git-credentials`) and only covers the repos the user selected for it. The GitHub CLI `gh` is installed and logged in with that token (e.g. `gh pr create`, `gh pr view`, `gh run list`, `gh run view --log-failed`); if `gh` is missing (older sandbox): `sudo apt-get install -y gh`, then `sed -E 's#https://x-access-token:([^@]+)@.*#\\1#' ~/.git-credentials | gh auth login --with-token`. There are no SSH keys for GitHub. " +
 		"**On `permission denied`, `403`, `Repository not found`, `Authentication failed` or `could not read Username`:** call `request_github_token` with `repo=owner/name` – " +
-		"the user then sets up the token or the access; afterwards repeat the git command. Prefer pushing to `worktree/<name>` branches rather than directly to `main`; " +
+		"the user then sets up the token or the access; afterwards repeat the git command. Prefer feature branches rather than pushing directly to `main`; " +
 		"you cannot change workflow files (`.github/workflows`) with this token. Never print the token and never write it to files, commits, logs or messages. " +
 		"**You do not create new GitHub repos** (neither `gh repo create` nor the API works, the token has no permission for it): if the user asks you to, tell them they must create the repo on GitHub themselves " +
 		"(and then add it to the token's repository selection or give you the URL); then call `request_github_token` with the repo.\n" +
@@ -372,13 +373,13 @@ func guidance(outDir string) string {
 		"- **Installing software:** you are root-capable in a throwaway VM (`sudo`), so install whatever you need yourself with `sudo apt-get install -y <package>` (run `sudo apt-get update` first if the package is not found); " +
 		"pre-installed are `git`, `curl`, `jq`, `tmux`, `make`, `chromium`, `gh`, `git-lfs`, Docker and the assistant CLIs `claude` and `opencode`. Language runtimes can also be installed per project (nvm, pyenv, containers). " +
 		"This only affects this VM. Install from the official Debian repositories where possible and do not run `curl | sh` installers from sources you do not trust.\n" +
-		"- **Project code:** `~/work/main` or `~/work/<worktree>`; Docker, Docker Compose, `make` and Git LFS (`git lfs`, already enabled system-wide) are available. This VM may run Claude Code in a worktree and the OpenCode service side by side.\n" +
+		"- **Project code:** folders under `~/work`, e.g. `~/work/main` or `~/work/<project>`; Docker, Docker Compose, `make` and Git LFS (`git lfs`, already enabled system-wide) are available. Claude Code works in one of these folders; the OpenCode service opens them as projects.\n" +
 		"- Never say \"I have no access to your computer\" before you have tried the Bergfried tools.\n"
 }
 
 // InstallHelpers copies bergfried-mcp into the VM, registers it for Claude and (optionally) OpenCode and writes the
-// hint text (idempotent). Claude is always configured (it exists in every image); OpenCode is installed and configured
-// only when the sandbox-level OpenCode service is used, so old VMs are not touched unnecessarily.
+// hint text (idempotent). Claude is configured when it is installed (custom images may only have OpenCode); OpenCode
+// is installed and configured only when the sandbox-level OpenCode service is used, so old VMs are not touched unnecessarily.
 func (m *Manager) InstallHelpers(ctx context.Context, vm, sandboxName string, withOpenCode bool) error {
 	bin := McpBin()
 	if _, err := os.Stat(bin); err != nil {
@@ -394,7 +395,9 @@ func (m *Manager) InstallHelpers(ctx context.Context, vm, sandboxName string, wi
 		// Mixed sandboxes: a neutral name fits Claude and OpenCode.
 		gitName = "Bergfried"
 	}
-	_, err := m.L.Shell(ctx, vm, "bash", "-lc", fmt.Sprintf(`set -e
+	// The script goes through stdin: it is large (base64 hint text) and a failure must not dump
+	// the whole script as the error message in the app.
+	script := fmt.Sprintf(`set -e
 mkdir -p ~/.local/bin ~/.claude && install -m755 /tmp/bergfried-mcp ~/.local/bin/bergfried-mcp.new && mv -f ~/.local/bin/bergfried-mcp.new ~/.local/bin/bergfried-mcp && rm /tmp/bergfried-mcp
 printf %%s '%s' | base64 -d > ~/.claude/bergfried.md
 grep -qs '^@~/.claude/bergfried.md' ~/.claude/CLAUDE.md || printf '@~/.claude/bergfried.md\n' >> ~/.claude/CLAUDE.md
@@ -407,10 +410,13 @@ git config --global --get user.name >/dev/null 2>&1 || git config --global user.
 git config --global --get user.email >/dev/null 2>&1 || git config --global user.email 'bergfried-%s@users.noreply.invalid'
 git config --global --get init.defaultBranch >/dev/null 2>&1 || git config --global init.defaultBranch main
 export PATH="$HOME/.local/bin:$PATH"
-claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
-claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"`, b64, gitName, sandboxName, sandboxName))
-	if err != nil {
-		return err
+# Custom images may have OpenCode but no Claude: do not make OpenCode setup depend on Claude.
+if command -v claude >/dev/null 2>&1; then
+  claude mcp remove bergfried --scope user >/dev/null 2>&1 || true
+  claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/bergfried-mcp"
+fi`, b64, gitName, sandboxName, sandboxName)
+	if _, err := m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s"); err != nil {
+		return fmt.Errorf("setting up the sandbox helpers: %w", err)
 	}
 	if !withOpenCode {
 		return nil
@@ -419,7 +425,7 @@ claude mcp add --transport stdio --scope user bergfried -- "$HOME/.local/bin/ber
 		return err
 	}
 	agentsMd := base64.StdEncoding.EncodeToString([]byte(guidance(outDir)))
-	script := fmt.Sprintf(`set -e
+	ocScript := fmt.Sprintf(`set -e
 mkdir -p ~/.config/opencode
 f=~/.config/opencode/opencode.json
 [ -f "$f" ] || { [ -f ~/.config/opencode/opencode.jsonc ] && f=~/.config/opencode/opencode.jsonc; }
@@ -432,7 +438,7 @@ else
   "$HOME/.opencode/bin/opencode" mcp add bergfried --global -- "$HOME/.local/bin/bergfried-mcp" >/dev/null 2>&1 || true
 fi
 printf %%s '%s' | base64 -d > ~/.config/opencode/AGENTS.md`, agentsMd)
-	_, err = m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s")
+	_, err := m.L.ShellStdin(ctx, vm, strings.NewReader(ocScript), "bash", "-s")
 	return err
 }
 
@@ -499,7 +505,7 @@ func (m *Manager) importFolder(ctx context.Context, vm, path string) (files, byt
 }
 
 // Create creates the sandbox and its VM. token (optional, fine-grained PAT) is verified first, stored in the VM and
-// used for git clone. The first worktree "main" is created right away; Claude is not started automatically.
+// used for git clone. The first folder "main" is created right away; Claude is not started automatically.
 func (m *Manager) Create(ctx context.Context, name, repo, importPath, token string) error {
 	if err := ValidSandboxName(name); err != nil {
 		return err
@@ -606,10 +612,10 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 		return err
 	}
 	m.audit("sandbox.create", name, "", repo)
-	// The first worktree exists right away. Claude is started on demand, not automatically.
-	_ = m.S.AddWorktree(store.Worktree{Sandbox: name, Name: "main", Path: "~/work/main", ComposeProject: name + "-main", Claude: false, Created: time.Now()})
+	// The first folder exists right away. Claude is started on demand, not automatically.
+	_ = m.S.AddWorktree(store.Worktree{Sandbox: name, Name: "main", Path: "work/main", ComposeProject: name + "-main", Claude: false, Created: time.Now()})
 	_ = m.S.SetSeeded(name)
-	progress(ctx, "Worktree „main“ ist bereit – Claude bei Bedarf starten")
+	progress(ctx, "Ordner „main“ ist bereit – Claude bei Bedarf starten")
 	return nil
 }
 
@@ -622,7 +628,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err := m.L.Start(ctx, s.VM); err != nil {
 		return err
 	}
-	progress(ctx, "Starting helpers and worktrees")
+	progress(ctx, "Starting helpers and Claude entries")
 	worktrees, err := m.S.ListWorktrees(name)
 	if err != nil {
 		return err
@@ -638,14 +644,14 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	// window left over in the other worktrees (an old OpenCode TUI or a manual start) is stopped.
 	for _, w := range worktrees {
 		if w.Claude {
-			if err := m.ensureWindow(ctx, s.VM, name, w.Name); err != nil {
-				return fmt.Errorf("Worktree %s: %w", w.Name, err)
+			if err := m.ensureWindow(ctx, s.VM, name, w.Name, folderOf(w.Path)); err != nil {
+				return fmt.Errorf("Claude in %s: %w", folderDisplay(folderOf(w.Path)), err)
 			}
 		} else if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
-			return fmt.Errorf("Worktree %s: %w", w.Name, err)
+			return fmt.Errorf("Claude in %s: %w", folderDisplay(folderOf(w.Path)), err)
 		}
 	}
-	m.audit("sandbox.start", name, "", fmt.Sprintf("worktrees=%d", len(worktrees)))
+	m.audit("sandbox.start", name, "", fmt.Sprintf("claude=%d", len(worktrees)))
 	return nil
 }
 
@@ -696,10 +702,107 @@ func (m *Manager) Delete(ctx context.Context, name string, force bool) error {
 	return nil
 }
 
-// windowScript builds the shell script that creates a worktree's Claude window and starts it.
-func windowScript(sandbox, worktree string) string {
+// Folder is a directory in the VM that can host a Claude session.
+type Folder struct {
+	Path  string // relative to home, e.g. "work/shopware-plugins"
+	Label string // display path, e.g. "work/shopware-plugins"
+}
+
+var folderRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
+// normalizeDir accepts "~/work", "work", "~/work/x" or "work/x" and keeps it relative to home.
+func normalizeDir(in string) (string, error) {
+	f := strings.TrimSpace(in)
+	f = strings.TrimPrefix(f, "~/")
+	f = strings.TrimPrefix(f, "/home/"+currentUser()+"/")
+	f = strings.TrimSuffix(f, "/")
+	if f == "work" {
+		return f, nil
+	}
+	if f == "" || !strings.HasPrefix(f, "work/") {
+		return "", fmt.Errorf("folder must be inside ~/work")
+	}
+	if strings.Contains(f, "..") || strings.Contains(f, "\x00") || !folderRe.MatchString(f) {
+		return "", fmt.Errorf("invalid folder %q", in)
+	}
+	return f, nil
+}
+
+// normalizeFolder is normalizeDir for a Claude working folder (not ~/work itself).
+func normalizeFolder(in string) (string, error) {
+	f, err := normalizeDir(in)
+	if err != nil {
+		return "", err
+	}
+	if f == "work" {
+		return "", fmt.Errorf("choose a folder below ~/work")
+	}
+	return f, nil
+}
+
+func currentUser() string {
+	u := os.Getenv("USER")
+	if u == "" {
+		u = "leon"
+	}
+	return u
+}
+
+// folderOf converts legacy "~/work/x" paths to "work/x".
+func folderOf(p string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(p), "~/"), "/")
+}
+
+func folderDisplay(folder string) string { return "~/" + folder }
+
+// FolderOf converts a stored legacy path to a relative folder path.
+func FolderOf(p string) string { return folderOf(p) }
+
+func windowName(folder string, existing []store.Worktree) string {
+	base := strings.TrimPrefix(folder, "work/")
+	base = strings.ToLower(base)
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "claude"
+	}
+	if name[0] < 'a' || name[0] > 'z' {
+		name = "c-" + name
+	}
+	if len(name) > 31 {
+		name = strings.TrimRight(name[:31], "-")
+	}
+	taken := map[string]bool{}
+	for _, w := range existing {
+		taken[w.Name] = true
+	}
+	if !taken[name] {
+		return name
+	}
+	for i := 2; ; i++ {
+		suffix := fmt.Sprintf("-%d", i)
+		n := name
+		if len(n)+len(suffix) > 31 {
+			n = strings.TrimRight(n[:31-len(suffix)], "-")
+		}
+		if !taken[n+suffix] {
+			return n + suffix
+		}
+	}
+}
+
+// windowScript builds the shell script that creates a Claude window for a folder and starts it.
+func windowScript(sandbox, worktree, folder string) string {
 	trust := fmt.Sprintf(`f=~/.claude.json; [ -f "$f" ] || echo '{}' > "$f"
-jq --arg d "$HOME/work/%s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`, worktree)
+jq --arg d "$HOME/%s" '.projects[$d].hasTrustDialogAccepted=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"`, folder)
 	return fmt.Sprintf(`set -e
 %[1]s
 if ! tmux has-session -t %[3]s 2>/dev/null; then tmux start-server \; set-option -g history-limit 20000 2>/dev/null; tmux new-session -d -s %[3]s -n %[2]s
@@ -712,122 +815,280 @@ else
   tmux kill-window -t %[3]s:%[2]s 2>/dev/null || true
   if tmux has-session -t %[3]s 2>/dev/null; then tmux new-window -t %[3]s -n %[2]s; else tmux new-session -d -s %[3]s -n %[2]s; fi
 fi
-tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, worktree, tmuxSession, claudeCmd(sandbox, worktree))
+tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, worktree, tmuxSession, claudeCmd(sandbox, worktree, folder))
 }
 
 // ensureWindow creates the tmux session/window if missing and starts Claude in it.
-func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, worktree string) error {
-	_, err := m.L.Shell(ctx, vm, "bash", "-c", windowScript(sandbox, worktree))
+func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, worktree, folder string) error {
+	_, err := m.L.Shell(ctx, vm, "bash", "-c", windowScript(sandbox, worktree, folder))
 	return err
 }
 
-// killWindow stops a worktree's tmux window if it exists.
+// killWindow stops a Claude window if it exists.
 func (m *Manager) killWindow(ctx context.Context, vm, worktree string) error {
 	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux kill-window -t %s:%s 2>/dev/null || true", tmuxSession, worktree))
 	return err
 }
 
-// worktreeScript creates the worktree's directory. It is idempotent so a retry after a failed
-// start does not fail on an existing directory.
-func worktreeScript(worktree string) string {
-	return fmt.Sprintf(`set -e
-a=%[1]q
-d="$HOME/work/$a"
-if [ -d ~/work/main/.git ] && [ "$a" != main ]; then
-  if [ ! -d "$d" ]; then
-    git -C ~/work/main worktree add "$d" -b "worktree/$a" || git -C ~/work/main worktree add "$d" "worktree/$a" || git -C ~/work/main worktree add "$d" "agent/$a"
-  fi
-else
-  mkdir -p "$d"
-fi`, worktree)
+// ClaudeName returns the window name of the session for a folder.
+func (m *Manager) ClaudeName(sandbox, folder string) (string, error) {
+	f, err := normalizeFolder(folder)
+	if err != nil {
+		return "", err
+	}
+	w, ok, err := m.claudeSession(sandbox, f)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("no Claude session for %s", folderDisplay(f))
+	}
+	return w.Name, nil
 }
 
-// WorktreeAdd creates a worktree (directory only). Claude is started explicitly later.
-func (m *Manager) WorktreeAdd(ctx context.Context, sandbox, worktree string) error {
-	if err := ValidName(worktree); err != nil {
-		return err
-	}
-	s, err := m.S.GetSandbox(sandbox)
+// ClaudeSession returns the stored session for a folder.
+func (m *Manager) claudeSession(sandbox, folder string) (store.Worktree, bool, error) {
+	ws, err := m.S.ListWorktrees(sandbox)
 	if err != nil {
-		return err
+		return store.Worktree{}, false, err
 	}
-	if existing, err := m.S.ListWorktrees(sandbox); err == nil {
-		for _, w := range existing {
-			if w.Name == worktree {
-				return fmt.Errorf("worktree %q already exists", worktree)
-			}
+	for _, w := range ws {
+		if folderOf(w.Path) == folder {
+			return w, true, nil
 		}
 	}
-	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", worktreeScript(worktree)); err != nil {
-		return err
-	}
-	if err := m.S.AddWorktree(store.Worktree{Sandbox: sandbox, Name: worktree, Path: "~/work/" + worktree, ComposeProject: sandbox + "-" + worktree, Claude: false, Created: time.Now()}); err != nil {
-		return err
-	}
-	m.audit("worktree.add", sandbox, worktree, "")
-	return nil
+	return store.Worktree{}, false, nil
 }
 
-// WorktreeStartClaude starts the Claude helper in a worktree.
-func (m *Manager) WorktreeStartClaude(ctx context.Context, sandbox, worktree string) error {
-	if err := ValidName(worktree); err != nil {
+// BrowseResult is one level of the folder browser.
+type BrowseResult struct {
+	Path    string
+	Parent  string
+	Folders []Folder
+}
+
+var newFolderRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// ClaudeBrowse lists the immediate subfolders of a folder under ~/work.
+func (m *Manager) ClaudeBrowse(ctx context.Context, sandbox, folder string, showHidden bool) (BrowseResult, error) {
+	folder, err := normalizeDir(folder)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	script := fmt.Sprintf(`d="$HOME/%s"; [ -d "$d" ] || exit 3
+find "$d" -mindepth 1 -maxdepth 1 -type d -printf '%%f\n' 2>/dev/null | LC_ALL=C sort`, folder)
+	out, err := m.L.Shell(ctx, s.VM, "bash", "-c", script)
+	if err != nil {
+		return BrowseResult{}, fmt.Errorf("folder %s is not available in the VM: %w", folderDisplay(folder), err)
+	}
+	var folders []Folder
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || (!showHidden && strings.HasPrefix(name, ".")) {
+			continue
+		}
+		child := folder + "/" + name
+		if _, err := normalizeDir(child); err != nil {
+			continue
+		}
+		folders = append(folders, Folder{Path: child, Label: name})
+	}
+	parent := ""
+	if folder != "work" {
+		if i := strings.LastIndex(folder, "/"); i > 0 {
+			parent = folder[:i]
+		}
+	}
+	return BrowseResult{Path: folder, Parent: parent, Folders: folders}, nil
+}
+
+// ClaudeMkdir creates a folder inside the current folder under ~/work (one level only).
+func (m *Manager) ClaudeMkdir(ctx context.Context, sandbox, parent, name string) (string, error) {
+	parent, err := normalizeDir(parent)
+	if err != nil {
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "." || name == ".." || !newFolderRe.MatchString(name) {
+		return "", fmt.Errorf("invalid folder name %q", name)
+	}
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return "", err
+	}
+	child := parent + "/" + name
+	script := fmt.Sprintf(`set -e
+d="$HOME/%s"
+[ -d "$d" ] || { echo "parent folder is missing" >&2; exit 3; }
+[ ! -e "$d/%s" ] || { echo "folder already exists" >&2; exit 4; }
+mkdir "$d/%s"`, parent, name, name)
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", script); err != nil {
+		return "", err
+	}
+	m.audit("claude.mkdir", sandbox, child, name)
+	return child, nil
+}
+
+// ClaudeFolders lists directories under ~/work (two levels) plus known Claude folders.
+func (m *Manager) ClaudeFolders(ctx context.Context, sandbox string) ([]Folder, error) {
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	script := `cd "$HOME/work" 2>/dev/null || exit 0
+find . -mindepth 1 -maxdepth 2 -type d ! -name node_modules ! -name .git ! -path '*/.git*' -printf '%P\n' 2>/dev/null | sort`
+	out, err := m.L.Shell(ctx, s.VM, "bash", "-c", script)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var folders []Folder
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		f, err := normalizeFolder("work/" + line)
+		if err != nil || seen[f] {
+			continue
+		}
+		seen[f] = true
+		folders = append(folders, Folder{Path: f, Label: strings.TrimPrefix(f, "work/")})
+	}
+	ws, _ := m.S.ListWorktrees(sandbox)
+	for _, w := range ws {
+		f := folderOf(w.Path)
+		if f != "" && !seen[f] {
+			seen[f] = true
+			folders = append(folders, Folder{Path: f, Label: strings.TrimPrefix(f, "work/")})
+		}
+	}
+	return folders, nil
+}
+
+// ClaudeStart starts Claude in an existing folder. It creates no git worktree and no branch.
+func (m *Manager) ClaudeStart(ctx context.Context, sandbox, folder string) error {
+	folder, err := normalizeFolder(folder)
+	if err != nil {
 		return err
 	}
 	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
+	}
+	if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(`test -d "$HOME/%s"`, folder)); err != nil {
+		return fmt.Errorf("folder %s does not exist in the VM", folderDisplay(folder))
 	}
 	if err := m.InstallHelpers(ctx, s.VM, sandbox, false); err != nil {
 		return err
 	}
-	if err := m.ensureWindow(ctx, s.VM, sandbox, worktree); err != nil {
+	w, ok, err := m.claudeSession(sandbox, folder)
+	if err != nil {
 		return err
 	}
-	if err := m.S.SetWorktreeClaude(sandbox, worktree, true); err != nil {
+	if !ok {
+		ws, _ := m.S.ListWorktrees(sandbox)
+		name := windowName(folder, ws)
+		w = store.Worktree{Sandbox: sandbox, Name: name, Path: folder, ComposeProject: sandbox + "-" + name, Created: time.Now()}
+		if err := m.S.AddWorktree(w); err != nil {
+			return err
+		}
+	}
+	if err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder); err != nil {
 		return err
 	}
-	m.audit("worktree.claude_start", sandbox, worktree, "")
+	if err := m.S.SetWorktreeClaude(sandbox, w.Name, true); err != nil {
+		return err
+	}
+	m.audit("claude.start", sandbox, folder, w.Name)
 	return nil
 }
 
-// WorktreeStopClaude stops the Claude helper in a worktree but keeps the worktree.
-func (m *Manager) WorktreeStopClaude(ctx context.Context, sandbox, worktree string) error {
-	if err := ValidName(worktree); err != nil {
+// ClaudeStop stops Claude in a folder but keeps the entry and the folder.
+func (m *Manager) ClaudeStop(ctx context.Context, sandbox, folder string) error {
+	folder, err := normalizeFolder(folder)
+	if err != nil {
 		return err
 	}
 	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
 	}
-	if err := m.killWindow(ctx, s.VM, worktree); err != nil {
+	w, ok, err := m.claudeSession(sandbox, folder)
+	if err != nil {
 		return err
 	}
-	if err := m.S.SetWorktreeClaude(sandbox, worktree, false); err != nil {
+	if !ok {
+		return fmt.Errorf("no Claude session for %s", folderDisplay(folder))
+	}
+	if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
 		return err
 	}
-	m.audit("worktree.claude_stop", sandbox, worktree, "")
+	if err := m.S.SetWorktreeClaude(sandbox, w.Name, false); err != nil {
+		return err
+	}
+	m.audit("claude.stop", sandbox, folder, w.Name)
 	return nil
 }
 
-// WorktreeRestartClaude terminates Claude in a worktree and starts it again with --continue.
-func (m *Manager) WorktreeRestartClaude(ctx context.Context, sandbox, worktree string) error {
-	if err := ValidName(worktree); err != nil {
+// ClaudeRestart stops and restarts Claude in a folder with --continue.
+func (m *Manager) ClaudeRestart(ctx context.Context, sandbox, folder string) error {
+	folder, err := normalizeFolder(folder)
+	if err != nil {
 		return err
 	}
 	s, err := m.S.GetSandbox(sandbox)
 	if err != nil {
 		return err
 	}
-	if err := m.killWindow(ctx, s.VM, worktree); err != nil {
+	w, ok, err := m.claudeSession(sandbox, folder)
+	if err != nil {
 		return err
 	}
-	if err := m.ensureWindow(ctx, s.VM, sandbox, worktree); err != nil {
+	if !ok {
+		return fmt.Errorf("no Claude session for %s", folderDisplay(folder))
+	}
+	if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
 		return err
 	}
-	if err := m.S.SetWorktreeClaude(sandbox, worktree, true); err != nil {
+	if err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder); err != nil {
 		return err
 	}
-	m.audit("worktree.restart", sandbox, worktree, "")
+	if err := m.S.SetWorktreeClaude(sandbox, w.Name, true); err != nil {
+		return err
+	}
+	m.audit("claude.restart", sandbox, folder, w.Name)
+	return nil
+}
+
+// ClaudeRemove stops Claude and removes only the entry; the folder stays untouched.
+func (m *Manager) ClaudeRemove(ctx context.Context, sandbox, folder string) error {
+	folder, err := normalizeFolder(folder)
+	if err != nil {
+		return err
+	}
+	s, err := m.S.GetSandbox(sandbox)
+	if err != nil {
+		return err
+	}
+	w, ok, err := m.claudeSession(sandbox, folder)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("no Claude session for %s", folderDisplay(folder))
+	}
+	if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
+		return err
+	}
+	if err := m.S.DeleteWorktree(sandbox, w.Name); err != nil {
+		return err
+	}
+	m.audit("claude.remove", sandbox, folder, w.Name)
 	return nil
 }
 
@@ -901,78 +1162,6 @@ func (m *Manager) TypeLine(ctx context.Context, vm, worktree, text string) error
 	}
 	_, err := m.L.Shell(ctx, vm, "bash", "-c", fmt.Sprintf("tmux send-keys -t %s:%s -l '%s' && tmux send-keys -t %s:%s Enter", tmuxSession, worktree, text, tmuxSession, worktree))
 	return err
-}
-
-// ErrWorktreeDirty: unsaved work is left in the worktree.
-type ErrWorktreeDirty struct{ Report string }
-
-func (e ErrWorktreeDirty) Error() string {
-	return "unsaved work in the worktree:\n" + e.Report + "\n(discard with \"Delete anyway\")"
-}
-
-const worktreeCheck = `d=~/work/%[1]s
-[ -d "$d" ] || exit 0
-if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
-  # NOTES.md: older sandboxes still have the starter file that Bergfried used to create; it never counts as unsaved work
-  s=$(git -C "$d" status --porcelain -- . ':!NOTES.md' 2>/dev/null)
-  u=$(git -C "$d" log --branches="worktree/%[1]s" --branches="agent/%[1]s" --not --remotes --oneline 2>/dev/null | head -20)
-  [ -z "$s$u" ] || { echo "$s"; echo "$u"; }
-else
-  n=$(find "$d" -type f ! -name NOTES.md 2>/dev/null | head -5)
-  [ -z "$n" ] || echo "$n"
-fi`
-
-const worktreeDelete = `d=~/work/%[1]s
-if [ -d ~/work/main/.git ] && git -C ~/work/main worktree list | grep -q " $d "; then
-  git -C ~/work/main worktree remove --force "$d" || true
-  git -C ~/work/main branch -D "worktree/%[1]s" >/dev/null 2>&1 || true
-  git -C ~/work/main branch -D "agent/%[1]s" >/dev/null 2>&1 || true
-else
-  rm -rf "$d"
-fi
-docker compose -p "%[2]s" down --remove-orphans >/dev/null 2>&1 || true`
-
-// WorktreeRemove stops Claude and deletes the entry. With deleteDir the directory/worktree is
-// deleted as well – after checking for unsaved work (force skips it). "main" is never deleted.
-func (m *Manager) WorktreeRemove(ctx context.Context, sandbox, worktree string, deleteDir, force bool) error {
-	if err := ValidName(worktree); err != nil {
-		return err
-	}
-	s, err := m.S.GetSandbox(sandbox)
-	if err != nil {
-		return err
-	}
-	if worktree == "main" {
-		return fmt.Errorf("the main worktree \"main\" cannot be removed (stop Claude instead)")
-	}
-	if deleteDir && !force {
-		out, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(worktreeCheck, worktree))
-		if err != nil {
-			return fmt.Errorf("check failed (nothing deleted): %w", err)
-		}
-		if r := strings.TrimSpace(string(out)); r != "" {
-			return ErrWorktreeDirty{Report: r}
-		}
-	}
-	if err := m.killWindow(ctx, s.VM, worktree); err != nil {
-		return err
-	}
-	if deleteDir {
-		// OpenCode uses the worktree as a project: drop its sessions as well.
-		cleanup := fmt.Sprintf(`d="$HOME/work/%[1]s"; [ -x "$HOME/.opencode/bin/opencode" ] || exit 0
-"$HOME/.opencode/bin/opencode" session list --format json 2>/dev/null | jq -r --arg d "$d" '.[]? | select(.directory==$d) | .id' | while read -r id; do
-  [ -n "$id" ] && "$HOME/.opencode/bin/opencode" session delete "$id" >/dev/null 2>&1 || true
-done`, worktree)
-		_, _ = m.L.Shell(ctx, s.VM, "bash", "-c", cleanup)
-		if _, err := m.L.Shell(ctx, s.VM, "bash", "-c", fmt.Sprintf(worktreeDelete, worktree, sandbox+"-"+worktree)); err != nil {
-			return err
-		}
-	}
-	if err := m.S.DeleteWorktree(sandbox, worktree); err != nil {
-		return err
-	}
-	m.audit("worktree.remove", sandbox, worktree, fmt.Sprintf("delete_dir=%v force=%v", deleteDir, force))
-	return nil
 }
 
 var allowedKeys = map[string]string{"Escape": "Escape", "Enter": "Enter"}

@@ -30,8 +30,9 @@ struct UpdateInfo: Codable {
     var reason: String?
 }
 
-struct WorktreeInfo: Codable, Hashable {
+struct ClaudeInfo: Codable, Hashable {
     var name: String
+    var folder: String
     var window: Bool
     var running: Bool?
     var rc: Bool
@@ -49,7 +50,7 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var cpus: Int
     var memory: Int64
     var disk: Int64
-    var worktrees: [WorktreeInfo]
+    var claudeSessions: [ClaudeInfo]
     var activeGrants: Int
     var pendingRequests: Int
     var claudeLoggedIn: Bool?
@@ -86,7 +87,7 @@ struct GitHubDetail: Codable, Hashable {
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
-    var worktree: String
+    var folder: String
     var kind: String
     var path: String
     var reason: String
@@ -106,7 +107,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
 struct GrantInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
-    var worktree: String
+    var folder: String
     var host: String
     var keyFingerprint: String
     var user: String
@@ -123,9 +124,9 @@ struct AuditEntry: Codable, Identifiable, Hashable {
     var actor: String
     var event: String
     var sandbox: String
-    var worktree: String
+    var folder: String
     var detail: String
-    var id: String { "\(tsUnix)-\(actor)-\(event)-\(sandbox)-\(worktree)-\(detail.hashValue)" }
+    var id: String { "\(tsUnix)-\(actor)-\(event)-\(sandbox)-\(folder)-\(detail.hashValue)" }
 }
 
 struct KeyInfo: Codable, Identifiable, Hashable {
@@ -150,7 +151,7 @@ struct SSHDecideBody: Encodable {
     var minutes: Int
     var keyFingerprint: String
     var user: String
-    var allWorktrees: Bool
+    var allFolders: Bool
     var perConnection: Bool
     var trustUnknownHost: Bool
     var passphrase: String = ""   // only for a key that is not loaded in the agent; never stored
@@ -171,9 +172,13 @@ struct TemplateInfo: Codable {
     var path: String
     var warnings: [String]
 }
-struct WorktreeBody: Encodable { var sandbox: String; var worktree: String }
-struct WorktreeRemoveBody: Encodable { var sandbox: String; var worktree: String; var deleteDir: Bool; var force: Bool }
+struct ClaudeBody: Encodable { var sandbox: String; var folder: String }
+struct ClaudeRemoveBody: Encodable { var sandbox: String; var folder: String }
 struct PairLink: Codable { var url: String }
+struct FolderEntry: Codable, Hashable { var folder: String; var label: String }
+struct FolderBrowseResponse: Codable { var path: String; var parent: String; var folders: [FolderEntry] }
+struct NewFolderBody: Encodable { var sandbox: String; var parent: String; var name: String }
+struct NewFolderResult: Codable { var path: String }
 
 func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) }
 

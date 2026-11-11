@@ -51,7 +51,7 @@ type Decision struct {
 	Allow            bool
 	Minutes          int
 	KeyFP, User      string
-	AllWorktrees     bool
+	AllFolders       bool
 	PerConn          bool
 	TrustUnknownHost bool
 	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
@@ -331,7 +331,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		return "", errors.New("request no longer open")
 	}
 	worktreeName := r.Worktree
-	if d.AllWorktrees {
+	if d.AllFolders {
 		worktreeName = ""
 	}
 	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: worktreeName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
@@ -347,7 +347,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		source = "key file, decrypted in memory until the grant ends (not loaded into the agent, passphrase not stored)"
 	}
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_worktrees=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllWorktrees, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_folders=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllFolders, d.PerConn))
 	p.ch <- pendingResult{grant: &g, note: cleanNote(d.Note)}
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }

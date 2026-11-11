@@ -444,7 +444,7 @@ type DecideSSHRequest struct {
 	Minutes          int32                  `protobuf:"varint,3,opt,name=minutes,proto3" json:"minutes,omitempty"`
 	KeyFingerprint   string                 `protobuf:"bytes,4,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"` // SHA256:...
 	User             string                 `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
-	AllWorktrees     bool                   `protobuf:"varint,6,opt,name=all_worktrees,json=allWorktrees,proto3" json:"all_worktrees,omitempty"`
+	AllFolders       bool                   `protobuf:"varint,6,opt,name=all_folders,json=allFolders,proto3" json:"all_folders,omitempty"`
 	PerConnection    bool                   `protobuf:"varint,7,opt,name=per_connection,json=perConnection,proto3" json:"per_connection,omitempty"`
 	TrustUnknownHost bool                   `protobuf:"varint,8,opt,name=trust_unknown_host,json=trustUnknownHost,proto3" json:"trust_unknown_host,omitempty"` // host key was not in known_hosts
 	unknownFields    protoimpl.UnknownFields
@@ -516,9 +516,9 @@ func (x *DecideSSHRequest) GetUser() string {
 	return ""
 }
 
-func (x *DecideSSHRequest) GetAllWorktrees() bool {
+func (x *DecideSSHRequest) GetAllFolders() bool {
 	if x != nil {
-		return x.AllWorktrees
+		return x.AllFolders
 	}
 	return false
 }
@@ -541,7 +541,7 @@ type Grant struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	Id                  int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Sandbox             string                 `protobuf:"bytes,2,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
-	Worktree            string                 `protobuf:"bytes,3,opt,name=worktree,proto3" json:"worktree,omitempty"` // empty = all worktrees of the sandbox
+	Folder              string                 `protobuf:"bytes,3,opt,name=folder,proto3" json:"folder,omitempty"` // empty = all folders of the sandbox
 	Host                string                 `protobuf:"bytes,4,opt,name=host,proto3" json:"host,omitempty"`
 	KeyFingerprint      string                 `protobuf:"bytes,5,opt,name=key_fingerprint,json=keyFingerprint,proto3" json:"key_fingerprint,omitempty"`
 	User                string                 `protobuf:"bytes,6,opt,name=user,proto3" json:"user,omitempty"`
@@ -597,9 +597,9 @@ func (x *Grant) GetSandbox() string {
 	return ""
 }
 
-func (x *Grant) GetWorktree() string {
+func (x *Grant) GetFolder() string {
 	if x != nil {
-		return x.Worktree
+		return x.Folder
 	}
 	return ""
 }
@@ -1369,7 +1369,7 @@ type Request struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Sandbox       string                 `protobuf:"bytes,2,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
-	Worktree      string                 `protobuf:"bytes,3,opt,name=worktree,proto3" json:"worktree,omitempty"`
+	Folder        string                 `protobuf:"bytes,3,opt,name=folder,proto3" json:"folder,omitempty"`
 	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"` // file | folder
 	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
 	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
@@ -1425,9 +1425,9 @@ func (x *Request) GetSandbox() string {
 	return ""
 }
 
-func (x *Request) GetWorktree() string {
+func (x *Request) GetFolder() string {
 	if x != nil {
-		return x.Worktree
+		return x.Folder
 	}
 	return ""
 }
@@ -1701,20 +1701,21 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
 	"\fexpires_unix\x18\x03 \x01(\x03R\vexpiresUnix\x12\x12\n" +
-	"\x04user\x18\x04 \x01(\tR\x04user\"\x89\x02\n" +
+	"\x04user\x18\x04 \x01(\tR\x04user\"\x85\x02\n" +
 	"\x10DecideSSHRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05allow\x18\x02 \x01(\bR\x05allow\x12\x18\n" +
 	"\aminutes\x18\x03 \x01(\x05R\aminutes\x12'\n" +
 	"\x0fkey_fingerprint\x18\x04 \x01(\tR\x0ekeyFingerprint\x12\x12\n" +
-	"\x04user\x18\x05 \x01(\tR\x04user\x12#\n" +
-	"\rall_worktrees\x18\x06 \x01(\bR\fallWorktrees\x12%\n" +
+	"\x04user\x18\x05 \x01(\tR\x04user\x12\x1f\n" +
+	"\vall_folders\x18\x06 \x01(\bR\n" +
+	"allFolders\x12%\n" +
 	"\x0eper_connection\x18\a \x01(\bR\rperConnection\x12,\n" +
-	"\x12trust_unknown_host\x18\b \x01(\bR\x10trustUnknownHost\"\xb6\x02\n" +
+	"\x12trust_unknown_host\x18\b \x01(\bR\x10trustUnknownHost\"\xb2\x02\n" +
 	"\x05Grant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
-	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x1a\n" +
-	"\bworktree\x18\x03 \x01(\tR\bworktree\x12\x12\n" +
+	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x16\n" +
+	"\x06folder\x18\x03 \x01(\tR\x06folder\x12\x12\n" +
 	"\x04host\x18\x04 \x01(\tR\x04host\x12'\n" +
 	"\x0fkey_fingerprint\x18\x05 \x01(\tR\x0ekeyFingerprint\x12\x12\n" +
 	"\x04user\x18\x06 \x01(\tR\x04user\x12!\n" +
@@ -1764,11 +1765,11 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\fAccessResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x17\n" +
 	"\avm_path\x18\x02 \x01(\tR\x06vmPath\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\x8c\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\x88\x02\n" +
 	"\aRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
-	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x1a\n" +
-	"\bworktree\x18\x03 \x01(\tR\bworktree\x12\x12\n" +
+	"\asandbox\x18\x02 \x01(\tR\asandbox\x12\x16\n" +
+	"\x06folder\x18\x03 \x01(\tR\x06folder\x12\x12\n" +
 	"\x04kind\x18\x04 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04path\x18\x05 \x01(\tR\x04path\x12\x16\n" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x12\x16\n" +

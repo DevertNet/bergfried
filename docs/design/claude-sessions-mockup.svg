@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <defs>
+    <clipPath id="win"><rect x="40" y="40" width="1200" height="820" rx="18"/></clipPath>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="900" fill="#F5F5F7"/>
+  <g filter="url(#shadow)"><rect x="40" y="40" width="1200" height="820" rx="18" fill="#FFFFFF"/></g>
+
+  <g clip-path="url(#win)">
+    <rect x="40" y="40" width="210" height="820" fill="#ECECEE"/>
+    <line x1="250" y1="40" x2="250" y2="860" stroke="#DCDCE0"/>
+
+    <circle cx="66" cy="66" r="6" fill="#FF5F57"/>
+    <circle cx="86" cy="66" r="6" fill="#FEBC2E"/>
+    <circle cx="106" cy="66" r="6" fill="#28C840"/>
+
+    <path d="M70 112 l10 -6 10 6 v9 c0 7 -5 12 -10 15 c-5 -3 -10 -8 -10 -15 z" fill="#007AFF"/>
+    <text x="98" y="126" font-family="Inter" font-size="15" font-weight="700" fill="#1D1D1F">Bergfried</text>
+
+    <rect x="54" y="158" width="182" height="34" rx="8" fill="#DCE8FA"/>
+    <text x="76" y="180" font-family="Inter" font-size="13" font-weight="600" fill="#0A64C8">Sandboxes</text>
+    <text x="76" y="218" font-family="Inter" font-size="13" fill="#3C3C43">Requests</text>
+    <text x="76" y="256" font-family="Inter" font-size="13" fill="#3C3C43">Audit log</text>
+    <text x="76" y="294" font-family="Inter" font-size="13" fill="#3C3C43">Diagnostics</text>
+    <text x="76" y="332" font-family="Inter" font-size="13" fill="#3C3C43">Settings</text>
+
+    <circle cx="68" cy="788" r="4" fill="#34C759"/>
+    <text x="80" y="792" font-family="Inter" font-size="11" fill="#6E6E73">Daemon running</text>
+    <text x="80" y="810" font-family="Inter" font-size="10.5" fill="#8E8E93">v0.3.0</text>
+
+    <!-- header -->
+    <text x="278" y="112" font-family="Inter" font-size="26" font-weight="700" fill="#1D1D1F">Sandboxes</text>
+    <rect x="1062" y="86" width="148" height="34" rx="8" fill="#007AFF"/>
+    <text x="1136" y="108" font-family="Inter" font-size="12.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">+  New sandbox</text>
+
+    <!-- sandbox card -->
+    <rect x="278" y="140" width="932" height="660" rx="12" fill="#FFFFFF" stroke="#E2E2E7"/>
+    <circle cx="304" cy="170" r="5" fill="#34C759"/>
+    <text x="318" y="176" font-family="Inter" font-size="16" font-weight="700" fill="#1D1D1F">shopware-plugins</text>
+    <text x="466" y="176" font-family="Inter" font-size="11.5" fill="#6E6E73">Running</text>
+
+    <rect x="806" y="156" width="54" height="28" rx="7" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="833" y="174" font-family="Inter" font-size="11.5" fill="#3C3C43" text-anchor="middle">Stop</text>
+    <rect x="868" y="156" width="98" height="28" rx="7" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="917" y="174" font-family="Inter" font-size="11.5" fill="#3C3C43" text-anchor="middle">Shell / SSH</text>
+    <text x="1002" y="176" font-family="Inter" font-size="14" fill="#FF3B30">⌫</text>
+
+    <text x="294" y="202" font-family="Inter" font-size="10.5" fill="#8E8E93">VM bergfried-shopware-plugins  ·  Template r5  ·  4 CPU  ·  6 GB RAM  ·  Disk 12 GB used</text>
+    <line x1="294" y1="218" x2="1194" y2="218" stroke="#EDEDF1"/>
+
+    <!-- services -->
+    <text x="294" y="244" font-family="Inter" font-size="10.5" font-weight="700" fill="#8E8E93" letter-spacing="0.5">DIENSTE</text>
+
+    <!-- Claude card with list -->
+    <rect x="294" y="256" width="900" height="300" rx="9" fill="#FAFAFC" stroke="#E5E5EA"/>
+    <rect x="306" y="268" width="34" height="34" rx="8" fill="#F0E8FB"/>
+    <text x="323" y="290" font-family="Inter" font-size="15" font-weight="700" fill="#8E4EC6" text-anchor="middle">C</text>
+    <text x="352" y="280" font-family="Inter" font-size="12.5" font-weight="600" fill="#1D1D1F">Claude Code</text>
+    <text x="352" y="297" font-family="Inter" font-size="10.5" fill="#34A853">installiert</text>
+    <text x="398" y="297" font-family="Inter" font-size="10.5" fill="#8E8E93">·</text>
+    <text x="408" y="297" font-family="Inter" font-size="10.5" fill="#34A853">angemeldet</text>
+
+    <rect x="1070" y="266" width="100" height="30" rx="7" fill="#007AFF"/>
+    <text x="1120" y="286" font-family="Inter" font-size="11" font-weight="600" fill="#FFFFFF" text-anchor="middle">+  Claude</text>
+
+    <text x="352" y="319" font-family="Inter" font-size="10" fill="#8E8E93">Läuft in dem Ordner, den du pro Sitzung auswählst – kein Git-Worktree, kein neuer Branch.</text>
+    <line x1="306" y1="332" x2="1182" y2="332" stroke="#EDEDF1"/>
+
+    <text x="306" y="352" font-family="Inter" font-size="9.5" font-weight="600" fill="#A1A1A6">ORDNER</text>
+    <text x="680" y="352" font-family="Inter" font-size="9.5" font-weight="600" fill="#A1A1A6">STATUS</text>
+    <text x="1082" y="352" font-family="Inter" font-size="9.5" font-weight="600" fill="#A1A1A6" text-anchor="end">AKTIONEN</text>
+
+    <!-- row main -->
+    <g transform="translate(310,366)" fill="none" stroke="#8E8E93" stroke-width="1.2">
+      <path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/>
+    </g>
+    <text x="330" y="380" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">main</text>
+    <text x="330" y="395" font-family="Inter" font-size="9.5" fill="#8E8E93">~/work/main</text>
+    <text x="680" y="380" font-family="Inter" font-size="10.5" fill="#34A853">Claude läuft · Remote Control aktiv</text>
+    <text x="680" y="395" font-family="Inter" font-size="9.5" fill="#8E8E93">RC-Link im ⋯-Menü</text>
+    <rect x="986" y="364" width="84" height="24" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="1028" y="380" font-family="Inter" font-size="9.5" fill="#3C3C43" text-anchor="middle">Stop Claude</text>
+    <rect x="1082" y="364" width="58" height="24" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="1111" y="380" font-family="Inter" font-size="9.5" fill="#3C3C43" text-anchor="middle">iTerm</text>
+    <text x="1160" y="380" font-family="Inter" font-size="12" fill="#6E6E73">⋯</text>
+    <line x1="306" y1="414" x2="1182" y2="414" stroke="#F1F1F4"/>
+
+    <!-- row plugins -->
+    <g transform="translate(310,426)" fill="none" stroke="#8E8E93" stroke-width="1.2">
+      <path d="M0 3 a2 2 0 0 1 2 -2 h4 l2 2 h5 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 h-11 a2 2 0 0 1 -2 -2 z"/>
+    </g>
+    <text x="330" y="440" font-family="Inter" font-size="12" font-weight="600" fill="#1D1D1F">shopware-plugins</text>
+    <text x="330" y="455" font-family="Inter" font-size="9.5" fill="#8E8E93">~/work/shopware-plugins</text>
+    <text x="680" y="440" font-family="Inter" font-size="10.5" fill="#8E8E93">nicht gestartet</text>
+    <rect x="976" y="424" width="94" height="24" rx="6" fill="#007AFF"/>
+    <text x="1023" y="440" font-family="Inter" font-size="9.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Start Claude</text>
+    <rect x="1082" y="424" width="58" height="24" rx="6" fill="#F7F7F9" stroke="#E5E5EA"/>
+    <text x="1111" y="440" font-family="Inter" font-size="9.5" fill="#B0B0B5" text-anchor="middle">iTerm</text>
+    <text x="1160" y="440" font-family="Inter" font-size="12" fill="#6E6E73">⋯</text>
+
+    <line x1="306" y1="472" x2="1182" y2="472" stroke="#F1F1F4"/>
+    <text x="306" y="496" font-family="Inter" font-size="9.5" fill="#8E8E93">Bestehende Worktrees bleiben als Ordner erhalten – Bergfried legt keine neuen Git-Worktrees an.</text>
+    <text x="306" y="511" font-family="Inter" font-size="9.5" fill="#8E8E93">Beim Entfernen eines Claude-Eintrags bleibt der Ordner erhalten; Claude wird nur gestoppt.</text>
+
+    <!-- OpenCode card -->
+    <rect x="294" y="576" width="900" height="96" rx="9" fill="#FAFAFC" stroke="#E5E5EA"/>
+    <rect x="306" y="588" width="34" height="34" rx="8" fill="#E3F0FB"/>
+    <text x="323" y="610" font-family="Inter" font-size="15" font-weight="700" fill="#0A84FF" text-anchor="middle">O</text>
+    <text x="352" y="600" font-family="Inter" font-size="12.5" font-weight="600" fill="#1D1D1F">OpenCode</text>
+    <circle cx="438" cy="596" r="3.5" fill="#34C759"/>
+    <text x="447" y="600" font-family="Inter" font-size="10.5" fill="#34A853">Dienst läuft</text>
+    <text x="352" y="617" font-family="Inter" font-size="10.5" fill="#34A853">installiert</text>
+    <text x="398" y="617" font-family="Inter" font-size="10.5" fill="#8E8E93">·</text>
+    <text x="408" y="617" font-family="Inter" font-size="10.5" fill="#34A853">angemeldet</text>
+    <text x="352" y="639" font-family="Inter" font-size="10" fill="#8E8E93">Ein Dienst für die ganze Sandbox. Öffnet die Ordner als Projekte in der Desktop-App.</text>
+    <rect x="1058" y="586" width="118" height="28" rx="6" fill="#007AFF"/>
+    <text x="1117" y="604" font-family="Inter" font-size="10.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Connect desktop</text>
+    <rect x="1058" y="622" width="118" height="28" rx="6" fill="#F2F2F5" stroke="#DEDEE3"/>
+    <text x="1117" y="640" font-family="Inter" font-size="10.5" fill="#3C3C43" text-anchor="middle">Stop service</text>
+
+    <!-- footer note -->
+    <rect x="294" y="690" width="900" height="58" rx="9" fill="#F7F7F9" stroke="#E5E5EA"/>
+    <text x="310" y="710" font-family="Inter" font-size="10.5" font-weight="600" fill="#1D1D1F">Claude und OpenCode</text>
+    <text x="310" y="727" font-family="Inter" font-size="10" fill="#6E6E73">Beide können denselben Ordner nutzen, aber nicht gleichzeitig an denselben Dateien. Für parallele Arbeit mehrere Claude-Einträge anlegen.</text>
+    <text x="310" y="741" font-family="Inter" font-size="10" fill="#6E6E73">Ein Claude-Eintrag ist nur ein Ordner mit einer Claude-Sitzung – unabhängig von Git.</text>
+  </g>
+
+  <text x="640" y="884" font-family="Inter" font-size="11" fill="#8E8E93" text-anchor="middle">UI-Konzept – Claude-Liste und „+ Claude“ direkt unter Dienste → Claude</text>
+</svg>

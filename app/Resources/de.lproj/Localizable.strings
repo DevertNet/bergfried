@@ -463,3 +463,46 @@
 "Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Worktree; technisch bleibt die Grenze die Sandbox.";
 "The file-name index is rebuilt from the blocklist. Contents are never indexed; assistants only get a file after you approve a request." = "Der Dateinamen-Index wird anhand der Sperrliste neu aufgebaut. Inhalte werden nie indexiert; Assistenten bekommen eine Datei erst nach deiner Freigabe.";
 "Unsaved work in the worktree" = "Ungesicherte Arbeit im Worktree";
+
+"Activating Remote Control …" = "Remote Control wird aktiviert …";
+"Choose folder" = "Ordner wählen";
+"Claude and OpenCode can use the same folder, but not at the same time on the same files. For parallel work, add several Claude entries with different folders." = "Claude und OpenCode können denselben Ordner nutzen, aber nicht gleichzeitig an denselben Dateien. Für parallele Arbeit mehrere Claude-Einträge mit unterschiedlichen Ordnern anlegen.";
+"Claude continues the last session in this folder if there is one. The folder remains when the entry is removed." = "Claude setzt die letzte Sitzung in diesem Ordner fort, wenn es eine gibt. Der Ordner bleibt beim Entfernen des Eintrags erhalten.";
+"Claude is not installed" = "Claude ist nicht installiert";
+"Claude is not signed in" = "Claude ist nicht angemeldet";
+"Claude is stopped. The folder ~/%@ and its contents remain." = "Claude wird gestoppt. Der Ordner ~/%@ und sein Inhalt bleiben erhalten.";
+"Claude works directly in this folder – no git worktree, no new branch." = "Claude arbeitet direkt in diesem Ordner – ohne Git-Worktree, ohne neuen Branch.";
+"Existing worktrees remain as folders – Bergfried does not create new git worktrees. Removing an entry keeps the folder." = "Bestehende Worktrees bleiben als Ordner erhalten – Bergfried legt keine neuen Git-Worktrees an. Beim Entfernen eines Eintrags bleibt der Ordner erhalten.";
+"Folder %@" = "Ordner %@";
+"Loading folders …" = "Ordner werden geladen …";
+"No Claude sessions yet. Choose “+ Claude” and select a folder." = "Noch keine Claude-Sitzungen. Wähle „+ Claude“ und dann einen Ordner.";
+"No folders under ~/work found. Enter a path below." = "Keine Ordner unter ~/work gefunden. Gib unten einen Pfad ein.";
+"One service for the whole sandbox. Opens the folders as projects in the desktop app." = "Ein Dienst für die ganze Sandbox. Öffnet die Ordner als Projekte in der Desktop-App.";
+"Opens the Claude window for ~/%@ in %@" = "Öffnet das Claude-Fenster für ~/%@ in %@";
+"Other folder" = "Anderer Ordner";
+"Remote Control cannot be activated – please restart" = "Remote Control kann nicht aktiviert werden – bitte neu starten";
+"Remove Claude entry for “%@”?" = "Claude-Eintrag für „%@“ entfernen?";
+"Remove Claude entry …" = "Claude-Eintrag entfernen …";
+"Remove entry" = "Eintrag entfernen";
+"Removing entry …" = "Eintrag wird entfernt …";
+"Restarting Claude …" = "Claude wird neu gestartet …";
+"Runs in the folder you choose for this Claude session – no git worktree, no new branch." = "Läuft in dem Ordner, den du pro Sitzung auswählst – kein Git-Worktree, kein neuer Branch.";
+"Sandbox %@" = "Sandbox %@";
+"Starting Claude …" = "Claude wird gestartet …";
+"Stopping Claude …" = "Claude wird gestoppt …";
+"all folders" = "alle Ordner";
+"not installed – Start service installs it" = "nicht installiert – „Dienst starten“ installiert es";
+
+"Then click \"Check access\". No new token is needed – the existing token only needs the additional repository." = "Dann „Zugriff prüfen“ klicken. Es wird kein neuer Token benötigt – dem bestehenden Token muss nur das zusätzliche Repository hinzugefügt werden.";
+"The sandbox starts with the folder \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox." = "Die Sandbox startet mit dem Ordner „main“. Claude startet nicht automatisch; OpenCode läuft als Dienst für die ganze Sandbox.";
+"VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further folders ~/work/<folder>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Ordner ~/work/<folder>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
+
+"Back" = "Zurück";
+"Browse …" = "Durchsuchen …";
+"Choose this folder" = "Diesen Ordner wählen";
+"Folder name" = "Ordnername";
+"New folder" = "Neuer Ordner";
+"No subfolders here." = "Keine Unterordner vorhanden.";
+"Only folders under ~/work are shown. Files are hidden." = "Es werden nur Ordner unter ~/work angezeigt. Dateien sind ausgeblendet.";
+"Opens the folder browser; you can also create a folder there." = "Öffnet den Ordner-Browser; dort kannst du auch einen Ordner anlegen.";
+"Show hidden folders" = "Versteckte Ordner anzeigen";

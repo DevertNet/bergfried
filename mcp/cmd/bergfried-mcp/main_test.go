@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestWorktreeIDFromWorkDirectory(t *testing.T) {
+func TestFolderIDFromWorkDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, "work", "api", "sub")
@@ -16,23 +16,23 @@ func TestWorktreeIDFromWorkDirectory(t *testing.T) {
 	t.Chdir(dir)
 	// OpenCode's shared server starts the MCP process with the project directory; the
 	// environment may belong to a different client, so the working directory wins.
-	t.Setenv("BERGFRIED_WORKTREE", "shop/main")
-	if got := worktreeID(); got != "api" {
-		t.Fatalf("worktreeID() = %q, want api", got)
+	t.Setenv("BERGFRIED_FOLDER", "shop/main")
+	if got := folderID(); got != "work/api/sub" {
+		t.Fatalf("folderID() = %q, want work/api/sub", got)
 	}
 }
 
-func TestWorktreeIDFallsBackToEnv(t *testing.T) {
+func TestFolderIDFallsBackToEnv(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Chdir(t.TempDir())
-	t.Setenv("BERGFRIED_WORKTREE", "shop/main")
-	if got := worktreeID(); got != "shop/main" {
-		t.Fatalf("worktreeID() = %q", got)
+	t.Setenv("BERGFRIED_FOLDER", "shop/main")
+	if got := folderID(); got != "shop/main" {
+		t.Fatalf("folderID() = %q", got)
 	}
 }
 
-func TestWorktreeIDRejectsInvalidPath(t *testing.T) {
+func TestFolderIDRejectsInvalidPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, "work", "UNSICHER")
@@ -40,8 +40,8 @@ func TestWorktreeIDRejectsInvalidPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	t.Setenv("BERGFRIED_WORKTREE", "")
-	if got := worktreeID(); got != "" {
-		t.Fatalf("invalid directory must not become a worktree name: %q", got)
+	t.Setenv("BERGFRIED_FOLDER", "")
+	if got := folderID(); got != "" {
+		t.Fatalf("invalid directory must not become a folder name: %q", got)
 	}
 }

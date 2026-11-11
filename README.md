@@ -2,7 +2,7 @@
 
 **Run Claude Code and OpenCode in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
 
-![Bergfried app: sandboxes with their worktrees](docs/design/runtime-separation-mockup.png)
+![Bergfried app: sandboxes with their Claude folders](docs/design/claude-sessions-mockup.png)
 
 <sub>UI overview with made-up demo data ([tools/demoapi](tools/demoapi/demoapi.py)); the live app follows this layout.</sub>
 
@@ -10,7 +10,7 @@ Bergfried gives every project its own Linux VM (a **sandbox**) with Claude Code 
 see nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
 
 ## How it works in 30 seconds
-1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Worktrees are folders with code; Claude runs per worktree in a tmux window, OpenCode runs once for the whole sandbox.
+1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Folders under `~/work` hold the code; Claude runs in the folder you choose, OpenCode runs once for the whole sandbox.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
 3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees.
 
@@ -18,14 +18,14 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 
 4. **SSH keys never leave the Mac.** Bergfried signs *upstream with your real ssh-agent*, only during a grant you created (time window, key, target host key).
 5. **Git uses a token you create per sandbox** (fine-grained, selected repos only), so plain `git push`/`pull` just works.
-6. **Claude and OpenCode are separate.** Each worktree has its own Claude session (with Remote Control). OpenCode is one service for the whole sandbox, controlled from the desktop app; both can use the same worktree, but not at the same time on the same files.
+6. **Claude and OpenCode are separate.** Each Claude entry is a folder with a Claude session (and Remote Control). OpenCode is one service for the whole sandbox, controlled from the desktop app; both can use the same folder, but not at the same time on the same files.
 
 ```mermaid
 flowchart LR
   phone["Phone / claude.ai/code<br/>(Remote Control)"]
   desktop["OpenCode desktop app"]
   subgraph vm["Sandbox = Lima VM (Linux)"]
-    claude["Claude per worktree"]
+    claude["Claude per folder"]
     oc["OpenCode service"]
     mcp["bergfried-mcp"]
     claude --- mcp
@@ -65,16 +65,16 @@ make build            # bin/bergfriedd, bin/bergfried-mcp
 app/build.sh          # app/build/Bergfried.app
 open app/build/Bergfried.app
 ```
-In the app: **Settings → General → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. The sandbox starts with the worktree `main`; start Claude in a worktree when you need it, and use OpenCode as a sandbox-wide service. Sign in once per runtime in the VM, then open Claude from your phone or OpenCode in the desktop app.
+In the app: **Settings → General → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. The sandbox starts with the folder `main`; add a Claude entry and choose its folder (the browser can also create one) when you need it, and use OpenCode as a sandbox-wide service. Sign in once per runtime in the VM, then open Claude from your phone or OpenCode in the desktop app.
 If something fails, the **Diagnostics** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ### OpenCode desktop app
-OpenCode is driven from the [OpenCode desktop app](https://opencode.ai/download), not from the phone. It is one service for the whole sandbox: Connect starts it and the desktop app opens the worktrees as projects, even if Claude was never started.
+OpenCode is driven from the [OpenCode desktop app](https://opencode.ai/download), not from the phone. It is one service for the whole sandbox; the desktop app opens the folders as projects, even if Claude was never started.
 1. Start the sandbox and sign in to OpenCode (button in the OpenCode card if needed).
-2. In the **OpenCode** card click **Connect desktop** (or **Shell / SSH → Connect desktop app …**). Connecting installs OpenCode if it is missing.
-3. Copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. Open the sandbox's worktrees as projects; Claude is not required.
+2. Click **Start service** if it is not running (this installs OpenCode if needed). Only a running service shows **Connect desktop**.
+3. Click **Connect desktop** (or **Shell / SSH → Connect desktop app …**), copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. Open the sandbox's folders as projects; Claude is not required.
 
-The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service / Stop service** in the OpenCode card to control it; stopping it does not stop Claude.
+The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service / Stop service** in the OpenCode card to control it; **Connect desktop** appears only while the service runs. Stopping it does not stop Claude.
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.
@@ -97,7 +97,7 @@ Updates installed from inside the app are not quarantined. Only do this if you t
 Built by and for the author on macOS; **young software, not audited**. Releases come in two channels (stable and dev, see [docs/UPDATES.md](docs/UPDATES.md)); open work is in [docs/ROADMAP.md](docs/ROADMAP.md). The app is ad-hoc signed, so macOS asks for folder access again after each update. A Debian VPS host is designed but postponed.
 
 ## Documentation
-[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/design/runtime-separation-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
+[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/design/claude-sessions-mockup.png) · [Folder browser](docs/design/claude-folder-browser-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
 
 ## License
 Not chosen yet — until a license file is added, all rights are reserved.
