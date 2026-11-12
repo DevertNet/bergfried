@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,5 +44,13 @@ func TestFolderIDRejectsInvalidPath(t *testing.T) {
 	t.Setenv("BERGFRIED_FOLDER", "")
 	if got := folderID(); got != "" {
 		t.Fatalf("invalid directory must not become a folder name: %q", got)
+	}
+}
+
+func TestInstructionsDescribeTaskRelease(t *testing.T) {
+	for _, want := range []string{"release_ssh", "task_id", "once per task"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("instructions do not contain %q", want)
+		}
 	}
 }

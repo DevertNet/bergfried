@@ -12,7 +12,7 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 ## How it works in 30 seconds
 1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Folders under `~/work` hold the code; Claude runs in the folder you choose, OpenCode runs once for the whole sandbox.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
-3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees.
+3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees. SSH access is granted per task: the assistant asks once for a task and releases the grant when it is finished (`release_ssh`); the timer you choose stays as an upper limit.
 
 ![Open requests and an active SSH grant](docs/img/requests.png)
 
