@@ -157,7 +157,7 @@ func fail(err error) error { return status.Error(codes.FailedPrecondition, err.E
 
 func (a *adminServer) DecideSSH(_ context.Context, r *pb.DecideSSHRequest) (*pb.DecideResponse, error) {
 	msg, err := a.ssh.DecideSSH(broker.Decision{ID: r.Id, Allow: r.Allow, Minutes: int(r.Minutes), KeyFP: r.KeyFingerprint,
-		User: r.User, AllFolders: r.AllFolders, PerConn: r.PerConnection, TrustUnknownHost: r.TrustUnknownHost})
+		User: r.User, TrustUnknownHost: r.TrustUnknownHost})
 	if err != nil {
 		return nil, fail(err)
 	}

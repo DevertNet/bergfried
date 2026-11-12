@@ -825,8 +825,6 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		Minutes          int    `json:"minutes"`
 		Key              string `json:"key_fingerprint"`
 		User             string `json:"user"`
-		AllFolders       bool   `json:"all_folders"`
-		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
 		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
 		Note             string `json:"note"`       // optional message for the agent
@@ -836,7 +834,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllFolders: q.AllFolders, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
+		TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
 	if err != nil {
 		fail(w, 409, err)
 		return

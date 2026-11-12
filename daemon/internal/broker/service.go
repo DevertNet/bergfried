@@ -51,8 +51,6 @@ type Decision struct {
 	Allow            bool
 	Minutes          int
 	KeyFP, User      string
-	AllFolders       bool
-	PerConn          bool
 	TrustUnknownHost bool
 	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
 	// slice is zeroed by DecideSSH. Never stored, logged or audited.
@@ -281,10 +279,6 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if d.Minutes < 1 || d.Minutes > MaxMinutes {
 		return "", fmt.Errorf("duration must be 1..%d minutes", MaxMinutes)
 	}
-	if d.PerConn && s.B.ConfirmEach == nil {
-		// Without a confirmation path every connection would be refused (the grant would be worthless).
-		return "", errors.New("\"confirm every connection\" is not yet available without the macOS dialog (serve without --no-dialog)")
-	}
 	if p.info.Source != "known_hosts" && !d.TrustUnknownHost {
 		return "", fmt.Errorf("host key of %s is new (%s) – confirm with --trust-host-key", r.Path, strings.Join(p.info.HostKeyFPs, ", "))
 	}
@@ -331,12 +325,8 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if ok, _ := s.B.St.SetRequestStatus(d.ID, "allowed"); !ok {
 		return "", errors.New("request no longer open")
 	}
-	worktreeName := r.Worktree
-	if d.AllFolders {
-		worktreeName = ""
-	}
-	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: worktreeName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
-		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute), PerConn: d.PerConn}
+	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: r.Worktree, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
+		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute)}
 	gid, err := s.B.St.AddGrant(g)
 	if err != nil {
 		return "", err
@@ -348,7 +338,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		source = "key file, decrypted in memory until the grant ends (not loaded into the agent, passphrase not stored)"
 	}
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_folders=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllFolders, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d", gid, d.ID, r.Path, keyFP, source, user, d.Minutes))
 	p.ch <- pendingResult{grant: &g, note: cleanNote(d.Note)}
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }

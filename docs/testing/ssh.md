@@ -11,9 +11,9 @@ make build
 
 In Claude: "I need SSH access to `server.example.com` to check X" → tool `request_ssh`.
 
-1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration, **key**, scope (folder/all folders), mode (silent in the window / every connection).
+1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration and **key**.
 2. Without dialog: `serve --no-dialog`, then `requests list` and
-   `ssh allow <id> --minutes 30 [--key SHA256:…] [--user claude] [--all-folders] [--per-connection] [--trust-host-key]`.
+   `ssh allow <id> --minutes 30 [--key SHA256:…] [--user claude] [--trust-host-key]`.
 3. `ssh keys` (keys of your ssh-agent), `ssh grants [--all]`, `ssh extend <grant> --minutes 60`, `ssh revoke <grant>`.
 
 ## Checks

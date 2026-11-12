@@ -495,7 +495,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 	defer conn.Close()
 	c := pb.NewAdminClient(conn)
 	if len(args) == 0 {
-		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-folders] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
+		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
 	}
 	num := func(i int) (int64, error) {
 		var n int64
@@ -555,12 +555,10 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		minutes := fs.Int("minutes", 15, "Dauer")
 		key := fs.String("key", "", "key fingerprint (SHA256:…); otherwise the host default")
 		user := fs.String("user", "", "user on the target (default: claude)")
-		allWt := fs.Bool("all-folders", false, "for all folders of the sandbox")
-		per := fs.Bool("per-connection", false, "confirm every connection individually")
 		trust := fs.Bool("trust-host-key", false, "confirm a new host key")
 		_ = fs.Parse(args[2:])
 		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
-			User: *user, AllFolders: *allWt, PerConnection: *per, TrustUnknownHost: *trust})
+			User: *user, TrustUnknownHost: *trust})
 		if err != nil {
 			return err
 		}

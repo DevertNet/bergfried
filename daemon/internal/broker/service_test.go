@@ -348,18 +348,26 @@ type silentAsker2 struct{}
 
 func (silentAsker2) AskSSH(store.Request, SSHInfo) {}
 
-func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
+func TestApprovalCreatesSilentGrantForRequestFolder(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
-	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
-	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, PerConn: true}}
-	s.Timeout = 300 * time.Millisecond
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("without ConfirmEach no per-connection grant may be created")
+	if s.B.ConfirmEach != nil {
+		t.Fatal("ConfirmEach must not be set in this test")
 	}
-	f.b.ConfirmEach = func(store.SSHGrant, string) bool { return true }
-	s.Timeout = 2 * time.Second
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict != pb.Verdict_VERDICT_ALLOWED {
-		t.Fatalf("with ConfirmEach it must work: %v", res)
+	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("%v %v", res, err)
+	}
+	gs, _ := f.b.St.ListGrants(true, f.now)
+	if len(gs) != 1 {
+		t.Fatalf("%+v", gs)
+	}
+	if gs[0].PerConn {
+		t.Fatal("a new grant must not be per-connection")
+	}
+	if gs[0].Worktree != "main" {
+		t.Fatalf("folder of the request expected, got %q", gs[0].Worktree)
 	}
 }
 

@@ -23,7 +23,6 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Documentation refresh; assistants must update README/docs in the same change (rule in `CLAUDE.md`)
 
 ## Next
-- [ ] Per-connection SSH confirmation as its own app request (currently only in the legacy dialog mode)
 - [ ] Port overview per sandbox ("open shop on localhost:8080") — Lima already forwards guest ports to `127.0.0.1`
 - [ ] Resource limits and idle auto-stop, `caffeinate` option
 - [ ] Update Claude Code in all VMs from the app
