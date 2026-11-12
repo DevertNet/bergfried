@@ -105,7 +105,7 @@ final class AppModel: ObservableObject {
         do {
             switch r.kind {
             case "ssh":
-                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allFolders: false, perConnection: false, trustUnknownHost: false, note: note))
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: note))
             case "ghtoken":
                 try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
             default:

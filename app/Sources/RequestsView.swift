@@ -110,7 +110,8 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
+                Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder))
+                    + (g.perConnection ? " · " + L("every connection individually") : "")).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer()
@@ -135,14 +136,14 @@ struct SSHDecisionSheet: View {
     @Local private var keys: [KeyInfo] = []
     @Local private var keyErr: String?
     @Local private var key = ""
-    @Local private var minutes = 15
+    @Local private var minutes = 10
     @Local private var user = ""
-    @Local private var allFolders = false
-    @Local private var perConn = false
     @Local private var trust = false
     @Local private var passphrase = ""
     @Local private var note = ""
     @Local private var error: String?
+
+    static let durationSteps: [(minutes: Int, label: String)] = [(10, "10 minutes"), (20, "20 minutes"), (30, "30 minutes"), (40, "40 minutes"), (50, "50 minutes"), (60, "1 hour"), (90, "90 minutes"), (120, "2 hours"), (240, "4 hours"), (480, "8 hours"), (1440, "24 hours")]
 
     func keyLabel(_ k: KeyInfo) -> String {
         let name = k.comment.isEmpty ? k.type : k.comment
@@ -203,7 +204,9 @@ struct SSHDecisionSheet: View {
                     section("Access") {
                         LabeledContent("Duration") {
                             Picker("Duration", selection: $minutes) {
-                                Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
+                                ForEach(Self.durationSteps.indices, id: \.self) { i in
+                                    Text(LocalizedStringKey(Self.durationSteps[i].label)).tag(Self.durationSteps[i].minutes)
+                                }
                             }.labelsHidden().fixedSize()
                         }
                         LabeledContent("User") {
@@ -242,13 +245,6 @@ struct SSHDecisionSheet: View {
                             .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     }
 
-                    section("Options") {
-                        Toggle("For all folders of the sandbox", isOn: $allFolders)
-                        Text("Without the checkmark the grant applies to this folder for display only; technically the boundary is the sandbox.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
-                    }
-
                     section("Note for the assistant (optional)") {
                         TextEditor(text: $note)
                             .font(.callout)
@@ -273,14 +269,14 @@ struct SSHDecisionSheet: View {
                 Button("Deny", role: .destructive) {
                     passphrase = ""
                     let n = note
-                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allFolders: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
+                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: n)); dismiss() }
                 }
                 Button("Approve") {
                     let pw = passphrase
                     passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
                     let n = note
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allFolders: allFolders, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, trustUnknownHost: trust, passphrase: pw, note: n))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
@@ -290,7 +286,7 @@ struct SSHDecisionSheet: View {
         .task {
             // Precedence: the request's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
-            minutes = [15, 60, 240, 1440].last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 15) }) ?? 15
+            minutes = Self.durationSteps.map { $0.minutes }.last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 10) }) ?? 10
             if let resp: KeysResponse = try? await model.api.get("/v1/ssh/keys") {
                 keys = resp.keys; keyErr = resp.error
                 key = resp.keys.first(where: { $0.fingerprint == r.ssh?.defaultKey })?.fingerprint ?? resp.keys.first?.fingerprint ?? ""

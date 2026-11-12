@@ -32,7 +32,7 @@ flowchart LR
 |---|---|---|
 | `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
 | `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, Claude folders, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
-| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `request_github_token`) plus the `ssh-hook` subcommand. |
+| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `release_ssh`, `request_github_token`) plus the `ssh-hook` subcommand. |
 | Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
 | `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
 
@@ -68,6 +68,7 @@ only while a grant is active (time window, key, target host key).
 5. **SSH:** the broker implements the ssh-agent protocol with destination constraints (`session-bind@openssh.com`). It signs only with an active grant **and** a matching target host key (fingerprint recorded at grant time from `known_hosts`/`ssh-keyscan`).
    A root-owned `Match exec` hook in the VM turns a plain `ssh host` into a request; interactive `ssh` waits for your decision.
    Keys that are not in the ssh-agent (passphrase-protected key files in `~/.ssh`) are offered too: the passphrase typed for the grant decrypts the key into the daemon's memory for the length of the grant (`broker/localkeys.go`; see [SECURITY.md](SECURITY.md)).
+   `RequestSSH` returns the grant id as `task_id`; one grant belongs to one task. When the task is finished the assistant calls `ReleaseSSH` (`release_ssh`) with that `task_id` and the daemon revokes exactly that grant of the calling sandbox (rewrite the VM config, terminate running `ssh`).
 6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`, also used to log in `gh`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
 7. **Claude works in folders:** a Claude entry is a folder under `~/work` (`main` = `~/work/main`) plus a Claude session. Creating a sandbox creates `main` with Claude stopped; adding a Claude entry only selects an existing folder. Bergfried does **not** create git worktrees or branches.
    The database stores per entry whether Claude should run. Claude is started explicitly, then runs `cd ~/work/<folder> && claude --continue --remote-control '<sandbox>/<window>'` in a tmux window (tmux session `bf`); `COMPOSE_PROJECT_NAME=<sandbox>-<window>` separates Docker stacks.

@@ -93,6 +93,10 @@ func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) 
 	return s.ssh.RequestSSH(ctx, s.sandbox, s.folder(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
+func (s *sandboxServer) ReleaseSSH(ctx context.Context, r *pb.SSHReleaseRequest) (*pb.SSHReleaseResult, error) {
+	return s.ssh.Release(ctx, s.sandbox, r.TaskId)
+}
+
 // folder: name without the "<sandbox>/" prefix that the VM sends along.
 func (s *sandboxServer) folder(ctx context.Context) string {
 	return strings.TrimPrefix(folderFrom(ctx), s.sandbox+"/")
@@ -153,7 +157,7 @@ func fail(err error) error { return status.Error(codes.FailedPrecondition, err.E
 
 func (a *adminServer) DecideSSH(_ context.Context, r *pb.DecideSSHRequest) (*pb.DecideResponse, error) {
 	msg, err := a.ssh.DecideSSH(broker.Decision{ID: r.Id, Allow: r.Allow, Minutes: int(r.Minutes), KeyFP: r.KeyFingerprint,
-		User: r.User, AllFolders: r.AllFolders, PerConn: r.PerConnection, TrustUnknownHost: r.TrustUnknownHost})
+		User: r.User, TrustUnknownHost: r.TrustUnknownHost})
 	if err != nil {
 		return nil, fail(err)
 	}

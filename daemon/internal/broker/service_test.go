@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -347,18 +348,26 @@ type silentAsker2 struct{}
 
 func (silentAsker2) AskSSH(store.Request, SSHInfo) {}
 
-func TestPerConnectionRefusedWithoutConfirmPath(t *testing.T) {
+func TestApprovalCreatesSilentGrantForRequestFolder(t *testing.T) {
 	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
-	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
-	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp, PerConn: true}}
-	s.Timeout = 300 * time.Millisecond
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict == pb.Verdict_VERDICT_ALLOWED {
-		t.Fatal("without ConfirmEach no per-connection grant may be created")
+	if s.B.ConfirmEach != nil {
+		t.Fatal("ConfirmEach must not be set in this test")
 	}
-	f.b.ConfirmEach = func(store.SSHGrant, string) bool { return true }
-	s.Timeout = 2 * time.Second
-	if res, _ := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, ""); res.Verdict != pb.Verdict_VERDICT_ALLOWED {
-		t.Fatalf("with ConfirmEach it must work: %v", res)
+	fp := ssh.FingerprintSHA256(f.userKey.PublicKey())
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: fp}}
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "ok.example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("%v %v", res, err)
+	}
+	gs, _ := f.b.St.ListGrants(true, f.now)
+	if len(gs) != 1 {
+		t.Fatalf("%+v", gs)
+	}
+	if gs[0].PerConn {
+		t.Fatal("a new grant must not be per-connection")
+	}
+	if gs[0].Worktree != "main" {
+		t.Fatalf("folder of the request expected, got %q", gs[0].Worktree)
 	}
 }
 
@@ -392,5 +401,157 @@ func TestCleanNote(t *testing.T) {
 	}
 	if got := cleanNote(strings.Repeat("x", 600)); len([]rune(got)) != 501 {
 		t.Fatalf("long note must be truncated, got %d runes", len([]rune(got)))
+	}
+}
+
+func TestRequestAllowedCarriesTaskID(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:abc"})
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 30, KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey()), User: "claude"}}
+	res, err := s.RequestSSH(context.Background(), "shop", "main", "example.com", "", 5, "")
+	if err != nil || res.Verdict != pb.Verdict_VERDICT_ALLOWED {
+		t.Fatalf("%v %v", res, err)
+	}
+	gs, _ := f.b.St.ListGrants(true, f.now)
+	if len(gs) != 1 {
+		t.Fatalf("%+v", gs)
+	}
+	if res.TaskId != gs[0].ID {
+		t.Fatalf("task id must be the grant id: %d != %d", res.TaskId, gs[0].ID)
+	}
+	if !strings.Contains(res.Message, "release_ssh") {
+		t.Fatalf("message must mention release_ssh: %q", res.Message)
+	}
+	if !strings.Contains(res.Message, "task_id=") {
+		t.Fatalf("message must contain the task id: %q", res.Message)
+	}
+}
+
+func TestReleaseRevokesOwnGrantAndCleansUp(t *testing.T) {
+	s, f, h := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	id := f.grant(t, "shop", 10, false)
+	res, err := s.Release(context.Background(), "shop", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Released {
+		t.Fatalf("%v", res)
+	}
+	if g, _ := f.b.St.GetGrant(id); !g.Revoked {
+		t.Fatal("the grant must be revoked")
+	}
+	if h.applied == 0 || h.kill == 0 {
+		t.Fatalf("VM must be rewritten and ssh terminated (apply=%d kill=%d)", h.applied, h.kill)
+	}
+	as, _ := f.b.St.AuditList(50)
+	found := false
+	for _, e := range as {
+		if e.Event == "ssh.task_released" && e.Sandbox == "shop" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("audit entry ssh.task_released missing")
+	}
+}
+
+func TestReleaseTwice(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	id := f.grant(t, "shop", 10, false)
+	if res, err := s.Release(context.Background(), "shop", id); err != nil || !res.Released {
+		t.Fatalf("%v %v", res, err)
+	}
+	res, err := s.Release(context.Background(), "shop", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Released || !strings.Contains(res.Message, "already ended") {
+		t.Fatalf("%v", res)
+	}
+}
+
+func TestReleaseExpiredGrant(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	id := f.grant(t, "shop", 10, false)
+	f.now = f.now.Add(11 * time.Minute)
+	res, err := s.Release(context.Background(), "shop", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Released || !strings.Contains(res.Message, "already ended") {
+		t.Fatalf("%v", res)
+	}
+}
+
+func TestReleaseForeignGrantNotDisclosed(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	own := f.grant(t, "shop", 10, false)
+	foreign, err := f.b.St.AddGrant(store.SSHGrant{
+		Sandbox: "other", Worktree: "main", Host: "secret.example.com", KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey()),
+		User: "deploy", HostKeys: []string{ssh.FingerprintSHA256(f.host.PublicKey())}, Expires: f.now.Add(10 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Release(context.Background(), "shop", foreign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Released {
+		t.Fatalf("%v", res)
+	}
+	if g, _ := f.b.St.GetGrant(foreign); g.Revoked {
+		t.Fatal("a grant of another sandbox must not be revoked")
+	}
+	if strings.Contains(res.Message, "secret.example.com") {
+		t.Fatalf("foreign host must not be disclosed: %q", res.Message)
+	}
+	if strings.Contains(res.Message, "task_id="+strconv.FormatInt(foreign, 10)) {
+		t.Fatalf("foreign task must not be listed: %q", res.Message)
+	}
+	if !strings.Contains(res.Message, "task_id="+strconv.FormatInt(own, 10)+" host=srv user=claude") {
+		t.Fatalf("only the caller's active tasks belong in the message: %q", res.Message)
+	}
+}
+
+func TestReleaseUnknownTask(t *testing.T) {
+	s, _, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	res, err := s.Release(context.Background(), "shop", 424242)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Released {
+		t.Fatalf("%v", res)
+	}
+	if !strings.Contains(res.Message, "No SSH task 424242 in this sandbox.") {
+		t.Fatalf("%q", res.Message)
+	}
+	if !strings.Contains(res.Message, "There are no active SSH tasks.") {
+		t.Fatalf("%q", res.Message)
+	}
+}
+
+func TestReleaseOtherIDLeavesAttemptGrantActive(t *testing.T) {
+	s, f, _ := svcFx(t, "known_hosts", []string{"SHA256:x"})
+	s.Asker = &autoAsker{s, Decision{Allow: true, Minutes: 5, KeyFP: ssh.FingerprintSHA256(f.userKey.PublicKey())}}
+	if st, msg := s.Attempt(context.Background(), "shop", "a.example.com", "22", "", true); st != "allowed" {
+		t.Fatalf("%s %q", st, msg)
+	}
+	gs, _ := f.b.St.ListGrants(true, f.now)
+	if len(gs) != 1 {
+		t.Fatalf("%+v", gs)
+	}
+	res, err := s.Release(context.Background(), "shop", gs[0].ID+1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Released {
+		t.Fatalf("%v", res)
+	}
+	after, _ := f.b.St.ListGrants(true, f.now)
+	if len(after) != 1 || after[0].ID != gs[0].ID {
+		t.Fatalf("the grant created by the ssh hook must stay active: %+v", after)
+	}
+	if !after[0].Expires.Equal(gs[0].Expires) {
+		t.Fatalf("expiry must not change: %v != %v", after[0].Expires, gs[0].Expires)
 	}
 }

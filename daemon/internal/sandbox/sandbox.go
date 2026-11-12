@@ -352,7 +352,10 @@ func guidance(outDir string) string {
 		"- **Fetch content:** `request_file` / `request_folder` with a short, honest reason. On `allowed` a read-only copy appears at `vm_path`. " +
 		"You respect `denied`, `blocked` and `expired` and do not work around them. " +
 		"Prefer `request_folder` when you need several files from the same folder; ask for individual files only when you need just a few (or when the folder is too large).\n" +
-		"- **Servers via SSH:** call `request_ssh` first (host, user if known, minutes, reason). Then use plain `ssh user@host`. " +
+		"- **Servers via SSH:** call `request_ssh` once per task (host, user if known, minutes = estimate for the whole task, reason = one sentence about the task). " +
+		"Plan which hosts the whole task needs and request each once; every new task gets its own request. Keep the returned `task_id`. Then use plain `ssh user@host`. " +
+		"As soon as the task is finished (you reported the result or the user changed the topic) call `release_ssh` with the `task_id` of each host of that task; " +
+		"it ends the grant and terminates running ssh connections. If you lost a `task_id`, call `release_ssh` with any number: the answer lists your active tasks. " +
 		"There is no access to private keys and no agent forwarding.\n" +
 		"- **Results for the user:** put them in `" + outDir + "` (they appear on the Mac).\n" +
 		"- **Git/GitHub:** use plain `git` over HTTPS (`git clone https://github.com/owner/repo`, `push`, `pull` …). This sandbox's GitHub token is in the VM " +

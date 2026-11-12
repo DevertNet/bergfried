@@ -51,8 +51,6 @@ type Decision struct {
 	Allow            bool
 	Minutes          int
 	KeyFP, User      string
-	AllFolders       bool
-	PerConn          bool
 	TrustUnknownHost bool
 	// Passphrase of a key that is not loaded in the upstream agent. Used once to decrypt the key file for this grant; the caller's
 	// slice is zeroed by DecideSSH. Never stored, logged or audited.
@@ -174,7 +172,8 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, worktree, host, user 
 		if r.note != "" {
 			msg += " Note from the user: " + r.note
 		}
-		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, Message: msg}, nil
+		msg += fmt.Sprintf(" task_id=%d. When the task this access was requested for is finished, call release_ssh with this task_id.", g.ID)
+		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, TaskId: g.ID, Message: msg}, nil
 	case <-timer.C:
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
 			s.audit("ssh.request_expired", sandbox, worktree, fmt.Sprintf("id=%d", id))
@@ -280,10 +279,6 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if d.Minutes < 1 || d.Minutes > MaxMinutes {
 		return "", fmt.Errorf("duration must be 1..%d minutes", MaxMinutes)
 	}
-	if d.PerConn && s.B.ConfirmEach == nil {
-		// Without a confirmation path every connection would be refused (the grant would be worthless).
-		return "", errors.New("\"confirm every connection\" is not yet available without the macOS dialog (serve without --no-dialog)")
-	}
 	if p.info.Source != "known_hosts" && !d.TrustUnknownHost {
 		return "", fmt.Errorf("host key of %s is new (%s) – confirm with --trust-host-key", r.Path, strings.Join(p.info.HostKeyFPs, ", "))
 	}
@@ -330,12 +325,8 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 	if ok, _ := s.B.St.SetRequestStatus(d.ID, "allowed"); !ok {
 		return "", errors.New("request no longer open")
 	}
-	worktreeName := r.Worktree
-	if d.AllFolders {
-		worktreeName = ""
-	}
-	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: worktreeName, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
-		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute), PerConn: d.PerConn}
+	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: r.Worktree, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
+		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute)}
 	gid, err := s.B.St.AddGrant(g)
 	if err != nil {
 		return "", err
@@ -347,7 +338,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		source = "key file, decrypted in memory until the grant ends (not loaded into the agent, passphrase not stored)"
 	}
 	s.Hosts.Remember(r.Path, keyFP, user)
-	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d all_folders=%v per_conn=%v", gid, d.ID, r.Path, keyFP, source, user, d.Minutes, d.AllFolders, d.PerConn))
+	s.audit("ssh.grant_created", r.Sandbox, r.Worktree, fmt.Sprintf("grant=%d request=%d host=%s key=%s source=%s user=%s minutes=%d", gid, d.ID, r.Path, keyFP, source, user, d.Minutes))
 	p.ch <- pendingResult{grant: &g, note: cleanNote(d.Note)}
 	return fmt.Sprintf("allowed (grant %d)", gid), nil
 }
@@ -377,6 +368,37 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 	delete(s.open, id)
 	s.mu.Unlock()
 	return nil
+}
+
+// Release ends the grant of a finished task. Only a grant of the calling sandbox can be released; an unknown id and an id
+// of another sandbox get the same answer (do not reveal that the id exists elsewhere).
+func (s *Service) Release(ctx context.Context, sandbox string, taskID int64) (*pb.SSHReleaseResult, error) {
+	g, err := s.B.St.GetGrant(taskID)
+	if err != nil || g.Sandbox != sandbox {
+		msg := fmt.Sprintf("No SSH task %d in this sandbox.", taskID)
+		active, _ := s.B.St.ListGrants(true, s.B.now())
+		var own []string
+		for _, ag := range active {
+			if ag.Sandbox == sandbox {
+				own = append(own, fmt.Sprintf("task_id=%d host=%s user=%s", ag.ID, ag.Host, ag.User))
+			}
+		}
+		if len(own) > 0 {
+			msg += " Active tasks: " + strings.Join(own, "; ")
+		} else {
+			msg += " There are no active SSH tasks."
+		}
+		s.audit("ssh.release_unknown", sandbox, "", fmt.Sprintf("id=%d", taskID))
+		return &pb.SSHReleaseResult{Released: false, Message: msg}, nil
+	}
+	if g.Revoked || !g.Expires.After(s.B.now()) {
+		return &pb.SSHReleaseResult{Released: false, Message: fmt.Sprintf("SSH task %d already ended.", taskID)}, nil
+	}
+	if err := s.Revoke(ctx, taskID); err != nil {
+		return nil, err
+	}
+	s.audit("ssh.task_released", sandbox, g.Worktree, fmt.Sprintf("grant=%d host=%s", taskID, g.Host))
+	return &pb.SSHReleaseResult{Released: true, Message: fmt.Sprintf("Released: SSH access to %s ended, running ssh connections were terminated.", g.Host)}, nil
 }
 
 func (s *Service) Extend(ctx context.Context, id int64, minutes int) (time.Time, error) {

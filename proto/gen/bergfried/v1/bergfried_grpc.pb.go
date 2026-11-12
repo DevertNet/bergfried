@@ -24,6 +24,7 @@ const (
 	SandboxAPI_RequestFile_FullMethodName        = "/bergfried.v1.SandboxAPI/RequestFile"
 	SandboxAPI_RequestFolder_FullMethodName      = "/bergfried.v1.SandboxAPI/RequestFolder"
 	SandboxAPI_RequestSSH_FullMethodName         = "/bergfried.v1.SandboxAPI/RequestSSH"
+	SandboxAPI_ReleaseSSH_FullMethodName         = "/bergfried.v1.SandboxAPI/ReleaseSSH"
 	SandboxAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SandboxAPI/SSHAttempt"
 	SandboxAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SandboxAPI/RequestGitHubToken"
 )
@@ -42,6 +43,8 @@ type SandboxAPIClient interface {
 	RequestFolder(ctx context.Context, in *AccessRequest, opts ...grpc.CallOption) (*AccessResult, error)
 	// Request an SSH grant; blocks until decided.
 	RequestSSH(ctx context.Context, in *SSHAccessRequest, opts ...grpc.CallOption) (*SSHAccessResult, error)
+	// Ends the SSH grant of a finished task (task_id from RequestSSH). Only grants of the calling sandbox can be released.
+	ReleaseSSH(ctx context.Context, in *SSHReleaseRequest, opts ...grpc.CallOption) (*SSHReleaseResult, error)
 	// Report of an SSH attempt from the VM (ssh hook): creates – without blocking – a request in the app.
 	SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error)
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
@@ -107,6 +110,16 @@ func (c *sandboxAPIClient) RequestSSH(ctx context.Context, in *SSHAccessRequest,
 	return out, nil
 }
 
+func (c *sandboxAPIClient) ReleaseSSH(ctx context.Context, in *SSHReleaseRequest, opts ...grpc.CallOption) (*SSHReleaseResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SSHReleaseResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_ReleaseSSH_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxAPIClient) SSHAttempt(ctx context.Context, in *SSHAttemptRequest, opts ...grpc.CallOption) (*SSHAttemptResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SSHAttemptResult)
@@ -141,6 +154,8 @@ type SandboxAPIServer interface {
 	RequestFolder(context.Context, *AccessRequest) (*AccessResult, error)
 	// Request an SSH grant; blocks until decided.
 	RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error)
+	// Ends the SSH grant of a finished task (task_id from RequestSSH). Only grants of the calling sandbox can be released.
+	ReleaseSSH(context.Context, *SSHReleaseRequest) (*SSHReleaseResult, error)
 	// Report of an SSH attempt from the VM (ssh hook): creates – without blocking – a request in the app.
 	SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error)
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
@@ -170,6 +185,9 @@ func (UnimplementedSandboxAPIServer) RequestFolder(context.Context, *AccessReque
 }
 func (UnimplementedSandboxAPIServer) RequestSSH(context.Context, *SSHAccessRequest) (*SSHAccessResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestSSH not implemented")
+}
+func (UnimplementedSandboxAPIServer) ReleaseSSH(context.Context, *SSHReleaseRequest) (*SSHReleaseResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseSSH not implemented")
 }
 func (UnimplementedSandboxAPIServer) SSHAttempt(context.Context, *SSHAttemptRequest) (*SSHAttemptResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method SSHAttempt not implemented")
@@ -288,6 +306,24 @@ func _SandboxAPI_RequestSSH_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxAPI_ReleaseSSH_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SSHReleaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).ReleaseSSH(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_ReleaseSSH_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).ReleaseSSH(ctx, req.(*SSHReleaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxAPI_SSHAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SSHAttemptRequest)
 	if err := dec(in); err != nil {
@@ -350,6 +386,10 @@ var SandboxAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestSSH",
 			Handler:    _SandboxAPI_RequestSSH_Handler,
+		},
+		{
+			MethodName: "ReleaseSSH",
+			Handler:    _SandboxAPI_ReleaseSSH_Handler,
 		},
 		{
 			MethodName: "SSHAttempt",
