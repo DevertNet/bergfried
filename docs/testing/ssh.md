@@ -11,7 +11,7 @@ make build
 
 In Claude: "I need SSH access to `server.example.com` to check X" → tool `request_ssh`.
 
-1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration and **key**.
+1. The dialog shows (with a host-key warning if the host is not in your `known_hosts`): duration (10–60 minutes in 10-minute steps, then 90 minutes, 2, 4, 8 and 24 hours), user, **key** and the note.
 2. Without dialog: `serve --no-dialog`, then `requests list` and
    `ssh allow <id> --minutes 30 [--key SHA256:…] [--user claude] [--trust-host-key]`.
 3. `ssh keys` (keys of your ssh-agent), `ssh grants [--all]`, `ssh extend <grant> --minutes 60`, `ssh revoke <grant>`.
@@ -21,13 +21,13 @@ In Claude: "I need SSH access to `server.example.com` to check X" → tool `requ
 - During the grant: `ssh <user>@<host>` works, only with the chosen key and only to the approved host (host key is checked).
 - Another host with the same grant → refused (`ssh.sign_denied`, reason in the log).
 - After expiry or `revoke`: new connections fail, running `ssh` processes in the VM are terminated.
-- Finish a task: the `request_ssh` result contains `task_id=<grant>`. Ask the assistant to release it (`release_ssh` with that `task_id`). The result says `Released: SSH access to <host> ended, running ssh connections were terminated.`, `ssh grants` no longer lists the grant, a running `ssh` session in the VM ends, and the audit log shows `ssh.task_released`. Releasing the same id again says `already ended`; an id of another sandbox is refused and only your own active tasks are listed.
+- Finish a task: the `request_ssh` result contains `task_id=<grant>`. Ask the assistant to release it (`release_ssh` with that `task_id`). The grant list in the app shows this id as `Task <id>` in the grant's caption. The result says `Released: SSH access to <host> ended, running ssh connections were terminated.`, `ssh grants` no longer lists the grant, a running `ssh` session in the VM ends, and the audit log shows `ssh.task_released`. Releasing the same id again says `already ended`; an id of another sandbox is refused and only your own active tasks are listed.
 - A plain `ssh host` in the VM terminal creates a request through the `Match exec` hook; interactive `ssh` waits for your decision, scripts get a message and no wait (`BERGFRIED_SSH_WAIT=1|0` forces/prevents waiting).
 - A note in "Note for the assistant (optional)" is returned with the decision (allow and deny): the assistant sees `Note from the user: …` in the `request_ssh` result, and the interactive `ssh` hook prints it too. The note is limited to 500 characters.
 
 ## Notes
 - **Server side:** during a grant an assistant could add its own key to the target's `authorized_keys`. For important servers use a restricted user whose `authorized_keys` is root-owned (`AuthorizedKeysFile /etc/ssh/authorized_keys/%u`).
-- "Only this folder" is display and audit only; technically the grant applies to the sandbox (same Linux user).
+- The folder of a grant is display and audit only; technically the grant applies to the sandbox (same Linux user).
 - Broker behaviour (no session-bind → refuse, forwarding → refuse, no writes to the ssh-agent) is covered by tests in `daemon/internal/broker`.
 - The template uses `IdentityAgent /run/user/%i/bergfried-agent.sock` (system-wide); an existing `SSH_AUTH_SOCK` in the VM is not used.
 

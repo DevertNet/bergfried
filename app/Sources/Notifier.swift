@@ -105,7 +105,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
                 Task { await m.deny(r) }
             case "ssh-allow":
                 if let s = r.ssh, s.source == "known_hosts", !s.defaultKey.isEmpty {
-                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allFolders: false, perConnection: false, trustUnknownHost: false)) }
+                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, trustUnknownHost: false)) }
                 }
             default:
                 m.pane = .requests

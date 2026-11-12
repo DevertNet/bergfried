@@ -15,10 +15,18 @@
 "+ 4 hours" = "+ 4 Stunden";
 "1 hour" = "1 Stunde";
 "1. Create the token on GitHub (the form is pre-filled: expiry 1 year, permissions Contents, Pull requests, Actions):" = "1. Token bei GitHub anlegen (Formular ist vorausgefüllt: Ablauf 1 Jahr, Rechte Contents, Pull requests, Actions):";
+"10 minutes" = "10 Minuten";
 "15 minutes" = "15 Minuten";
+"2 hours" = "2 Stunden";
 "2. Click \"Generate token\" and paste the value here (GitHub shows it only once):" = "2. „Generate token“ klicken und den Wert hier einfügen (GitHub zeigt ihn nur einmal):";
+"20 minutes" = "20 Minuten";
 "24 hours" = "24 Stunden";
+"30 minutes" = "30 Minuten";
 "4 hours" = "4 Stunden";
+"40 minutes" = "40 Minuten";
+"50 minutes" = "50 Minuten";
+"8 hours" = "8 Stunden";
+"90 minutes" = "90 Minuten";
 "Access to %@" = "Zugriff auf %@";
 "Active SSH grants" = "Aktive SSH-Freigaben";
 "Actor" = "Akteur";
@@ -55,7 +63,6 @@
 "Claude not logged in – log in now" = "Claude nicht eingeloggt – jetzt einloggen";
 "Close" = "Schließen";
 "Code source" = "Code-Quelle";
-"Confirm every connection (not yet available in the app)" = "Jede Verbindung einzeln bestätigen (in der App noch nicht verfügbar)";
 "Copy SSH command" = "SSH-Befehl kopieren";
 "Copy link" = "Link kopieren";
 "Could not create the start script: %@" = "Konnte Startskript nicht anlegen: %@";
@@ -182,6 +189,7 @@
 "Stopped" = "Gestoppt";
 "Stopping …" = "Stoppt …";
 "Target: **%@**" = "Ziel: **%@**";
+"Task %lld · Sandbox %@ · %@" = "Aufgabe %lld · Sandbox %@ · %@";
 "Template" = "Vorlage";
 "Template r%lld" = "Vorlage r%lld";
 "Terminal app for \"Terminal\" and \"Login\"" = "Terminal-App für „Terminal“ und „Login“";
@@ -212,7 +220,6 @@
 "VM status currently unavailable (the VM may still be starting)." = "Status der VM aktuell nicht abrufbar (die VM startet möglicherweise noch).";
 "VM template (bergfried.yaml)" = "VM-Vorlage (bergfried.yaml)";
 "Where do sandboxes live?" = "Wo liegen Sandboxes?";
-"Without the checkmark the grant applies to this agent for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Agent; technisch bleibt die Grenze die Sandbox.";
 "Yes, copy %@" = "Ja, %@ kopieren";
 "You are up to date." = "Du bist auf dem neuesten Stand.";
 "activating Remote Control …" = "aktiviere Remote Control …";
@@ -249,7 +256,6 @@
 "ready" = "bereit";
 "restarting …" = "startet neu …";
 "running (v%@)" = "läuft (v%@)";
-"silent within the window" = "still im Zeitfenster";
 "starting …" = "wird gestartet …";
 "temporarily allowed" = "temporär erlaubt";
 "unknown" = "unbekannt";
@@ -315,7 +321,6 @@
 "New host key" = "Neuer Host-Schlüssel";
 "Request" = "Anfrage";
 "Access" = "Zugriff";
-"Options" = "Optionen";
 "Note for the agent (optional)" = "Hinweis für den Agenten (optional)";
 "Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant." = "Nur ankreuzen, wenn der Fingerabdruck mit dem übereinstimmt, was der Server-Besitzer dir genannt hat. Bergfried merkt ihn sich nach der Freigabe für diesen Host.";
 "Key not loaded in your ssh-agent" = "Schlüssel nicht in deinem ssh-agent geladen";
@@ -460,7 +465,6 @@
 "The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here." = "Das GitHub-Token gehört zur Sandbox: Es wird beim Anlegen einer Sandbox mit Git-Repo abgefragt oder auf Anfrage des Assistenten (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.";
 "The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions." = "Das Token liegt anschließend in der VM; der Assistent kann es lesen und für alle Git-Aktionen und GitHub Actions nutzen – innerhalb der gewählten Repos und Rechte.";
 "VM disk (code, Docker data): ~/.lima/bergfried-<name>\nExchange folders: ~/.bergfried/sandboxes/<name>/shared/in (read-only in the VM) and shared/out\nCode in the VM: ~/work/main (git repo or imported folder), further worktrees ~/work/<worktree>\nDaemon data (DB, blocklist, template): ~/.bergfried" = "VM-Platte (Code, Docker-Daten): ~/.lima/bergfried-<name>\nAustausch-Ordner: ~/.bergfried/sandboxes/<name>/shared/in (read-only in der VM) und shared/out\nCode in der VM: ~/work/main (Git-Repo oder importierter Ordner), weitere Worktrees ~/work/<worktree>\nDaten des Daemons (DB, Sperrliste, Vorlage): ~/.bergfried";
-"Without the checkmark the grant applies to this worktree for display only; technically the boundary is the sandbox." = "Ohne Haken gilt die Freigabe zur Anzeige nur für diesen Worktree; technisch bleibt die Grenze die Sandbox.";
 "The file-name index is rebuilt from the blocklist. Contents are never indexed; assistants only get a file after you approve a request." = "Der Dateinamen-Index wird anhand der Sperrliste neu aufgebaut. Inhalte werden nie indexiert; Assistenten bekommen eine Datei erst nach deiner Freigabe.";
 "Unsaved work in the worktree" = "Ungesicherte Arbeit im Worktree";
 
