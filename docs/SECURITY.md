@@ -20,6 +20,7 @@ An assistant (or anything it runs, including prompt-injected instructions) misus
 - The private SSH key never leaves the Mac. For keys in your ssh-agent signing happens upstream (the daemon never sees the key), only with a grant plus a host-key binding; agent forwarding is refused. The one exception is the passphrase-key mode below.
 - Blocklist: case-insensitive compare (macOS), `..`/absolute paths/symlink escapes fail (`index.Resolve`), symlinks are never followed or copied. `PUT /v1/blocklist` cannot remove the three fixed entries (`.ssh`, `Library`, `.config`).
 - Assistant-provided text (reason, name, user, host) is display data only: sanitised, never interpolated into shell or AppleScript source; host names and users are validated by regex before they reach `~/.ssh/config` blocks.
+- Releasing an SSH task (`release_ssh`, `Service.Release`) only reduces access: it revokes one grant and needs no approval. It works only for grants of the calling sandbox (identity = socket); an unknown id and an id of another sandbox get the same answer (`No SSH task <id> in this sandbox.` plus the caller's active tasks), so a sandbox cannot probe for foreign ids.
 - All sockets are 0600 in 0700 directories; `~/.bergfried` is 0700.
 - Everything is audited (`audit` table; app "Audit log", CSV export with formula protection). Audit failures are not swallowed.
 

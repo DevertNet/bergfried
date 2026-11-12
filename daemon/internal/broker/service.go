@@ -174,7 +174,8 @@ func (s *Service) RequestSSH(ctx context.Context, sandbox, worktree, host, user 
 		if r.note != "" {
 			msg += " Note from the user: " + r.note
 		}
-		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, Message: msg}, nil
+		msg += fmt.Sprintf(" task_id=%d. When the task this access was requested for is finished, call release_ssh with this task_id.", g.ID)
+		return &pb.SSHAccessResult{Verdict: pb.Verdict_VERDICT_ALLOWED, ExpiresUnix: g.Expires.Unix(), User: g.User, TaskId: g.ID, Message: msg}, nil
 	case <-timer.C:
 		if ok, _ := s.B.St.SetRequestStatus(id, "expired"); ok {
 			s.audit("ssh.request_expired", sandbox, worktree, fmt.Sprintf("id=%d", id))
@@ -377,6 +378,37 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 	delete(s.open, id)
 	s.mu.Unlock()
 	return nil
+}
+
+// Release ends the grant of a finished task. Only a grant of the calling sandbox can be released; an unknown id and an id
+// of another sandbox get the same answer (do not reveal that the id exists elsewhere).
+func (s *Service) Release(ctx context.Context, sandbox string, taskID int64) (*pb.SSHReleaseResult, error) {
+	g, err := s.B.St.GetGrant(taskID)
+	if err != nil || g.Sandbox != sandbox {
+		msg := fmt.Sprintf("No SSH task %d in this sandbox.", taskID)
+		active, _ := s.B.St.ListGrants(true, s.B.now())
+		var own []string
+		for _, ag := range active {
+			if ag.Sandbox == sandbox {
+				own = append(own, fmt.Sprintf("task_id=%d host=%s user=%s", ag.ID, ag.Host, ag.User))
+			}
+		}
+		if len(own) > 0 {
+			msg += " Active tasks: " + strings.Join(own, "; ")
+		} else {
+			msg += " There are no active SSH tasks."
+		}
+		s.audit("ssh.release_unknown", sandbox, "", fmt.Sprintf("id=%d", taskID))
+		return &pb.SSHReleaseResult{Released: false, Message: msg}, nil
+	}
+	if g.Revoked || !g.Expires.After(s.B.now()) {
+		return &pb.SSHReleaseResult{Released: false, Message: fmt.Sprintf("SSH task %d already ended.", taskID)}, nil
+	}
+	if err := s.Revoke(ctx, taskID); err != nil {
+		return nil, err
+	}
+	s.audit("ssh.task_released", sandbox, g.Worktree, fmt.Sprintf("grant=%d host=%s", taskID, g.Host))
+	return &pb.SSHReleaseResult{Released: true, Message: fmt.Sprintf("Released: SSH access to %s ended, running ssh connections were terminated.", g.Host)}, nil
 }
 
 func (s *Service) Extend(ctx context.Context, id int64, minutes int) (time.Time, error) {

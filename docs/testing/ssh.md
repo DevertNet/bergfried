@@ -21,6 +21,7 @@ In Claude: "I need SSH access to `server.example.com` to check X" → tool `requ
 - During the grant: `ssh <user>@<host>` works, only with the chosen key and only to the approved host (host key is checked).
 - Another host with the same grant → refused (`ssh.sign_denied`, reason in the log).
 - After expiry or `revoke`: new connections fail, running `ssh` processes in the VM are terminated.
+- Finish a task: the `request_ssh` result contains `task_id=<grant>`. Ask the assistant to release it (`release_ssh` with that `task_id`). The result says `Released: SSH access to <host> ended, running ssh connections were terminated.`, `ssh grants` no longer lists the grant, a running `ssh` session in the VM ends, and the audit log shows `ssh.task_released`. Releasing the same id again says `already ended`; an id of another sandbox is refused and only your own active tasks are listed.
 - A plain `ssh host` in the VM terminal creates a request through the `Match exec` hook; interactive `ssh` waits for your decision, scripts get a message and no wait (`BERGFRIED_SSH_WAIT=1|0` forces/prevents waiting).
 - A note in "Note for the assistant (optional)" is returned with the decision (allow and deny): the assistant sees `Note from the user: …` in the `request_ssh` result, and the interactive `ssh` hook prints it too. The note is limited to 500 characters.
 

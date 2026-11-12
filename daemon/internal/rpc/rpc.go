@@ -93,6 +93,10 @@ func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) 
 	return s.ssh.RequestSSH(ctx, s.sandbox, s.folder(ctx), r.Host, r.User, int(r.Minutes), r.Reason)
 }
 
+func (s *sandboxServer) ReleaseSSH(ctx context.Context, r *pb.SSHReleaseRequest) (*pb.SSHReleaseResult, error) {
+	return s.ssh.Release(ctx, s.sandbox, r.TaskId)
+}
+
 // folder: name without the "<sandbox>/" prefix that the VM sends along.
 func (s *sandboxServer) folder(ctx context.Context) string {
 	return strings.TrimPrefix(folderFrom(ctx), s.sandbox+"/")
