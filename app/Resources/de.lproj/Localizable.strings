@@ -97,13 +97,16 @@
 "Export CSV …" = "CSV exportieren …";
 "Extend" = "Verlängern";
 "Failed" = "Fehlgeschlagen";
+"File request: %@" = "Datei-Anfrage: %@";
 "File request: %@/%@" = "Datei-Anfrage: %@/%@";
 "Filter (sandbox, agent, event, details …)" = "Filter (Sandbox, Agent, Ereignis, Details …)";
 "Folder" = "Ordner";
 "Folder in your home directory that should be copied into the VM" = "Ordner im Home-Verzeichnis, der in die VM kopiert werden soll";
 "For all worktrees of the sandbox" = "Für alle Worktrees der Sandbox";
 "Git repo" = "Git-Repo";
+"GitHub access for %@" = "GitHub-Zugriff für %@";
 "GitHub access for %@ / %@" = "GitHub-Zugriff für %@ / %@";
+"GitHub access: %@" = "GitHub-Zugriff: %@";
 "GitHub access: %@/%@" = "GitHub-Zugriff: %@/%@";
 "Host key is new (not in your known_hosts)" = "Host-Key ist neu (nicht in deiner known_hosts)";
 "I know this host key" = "Ich kenne diesen Host-Key";
@@ -172,7 +175,9 @@
 "Restart" = "Neu starten";
 "Revoke" = "Entziehen";
 "Running" = "Läuft";
+"SSH access for %@" = "SSH-Zugriff für %@";
 "SSH access for %@/%@" = "SSH-Zugriff für %@/%@";
+"SSH request: %@" = "SSH-Anfrage: %@";
 "SSH request: %@/%@" = "SSH-Anfrage: %@/%@";
 "SSH upstream agent" = "SSH-Upstream-Agent";
 "Save" = "Speichern";

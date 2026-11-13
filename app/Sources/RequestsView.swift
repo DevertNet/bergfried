@@ -39,6 +39,12 @@ struct RequestsView: View {
     }
 }
 
+extension RequestInfo {
+    /// The assistant's tool sends "unknown" (or nothing) when it cannot name a folder: show only the sandbox then.
+    var hasFolder: Bool { !folder.isEmpty && folder != "unknown" }
+    var origin: String { hasFolder ? "\(sandbox) / \(folder)" : sandbox }
+}
+
 struct PendingRow: View {
     @EnvironmentObject var model: AppModel
     let r: RequestInfo
@@ -60,7 +66,7 @@ struct PendingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: icon)
-                Text("\(r.sandbox) / \(r.folder)").font(.headline)
+                Text(r.origin).font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -92,14 +98,20 @@ struct HistoryRow: View {
     let r: RequestInfo
     var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" ? .red : .secondary) }
     var body: some View {
-        HStack {
-            Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
-            Text("\(r.sandbox)/\(r.folder)")
-            Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
-            Spacer()
-            Text(LocalizedStringKey(r.status)).foregroundStyle(color)
-            Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
-        }.font(.callout)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
+                Text(r.origin)
+                Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Text(LocalizedStringKey(r.status)).foregroundStyle(color)
+                Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
+            }.font(.callout)
+            if !r.reason.isEmpty {
+                Text(L("Assistant's reason (unchecked): %@", r.reason))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(r.reason)
+            }
+        }
     }
 }
 
@@ -152,6 +164,7 @@ struct SSHDecisionSheet: View {
     }
 
     var unknownHost: Bool { (r.ssh?.source ?? "") != "known_hosts" }
+    var title: String { r.hasFolder ? L("SSH access for %@/%@", r.sandbox, r.folder) : L("SSH access for %@", r.sandbox) }
     var selectedKey: KeyInfo? { keys.first { $0.fingerprint == key } }
     var notLoaded: Bool { selectedKey.map { $0.loaded == false } ?? false }
     var needsPassphrase: Bool { notLoaded && selectedKey?.encrypted == true }
@@ -164,11 +177,88 @@ struct SSHDecisionSheet: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    var sheetContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            section("Request") {
+                Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+
+            if unknownHost {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) {
+                        Text($0).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                    Toggle("I know this host key", isOn: $trust)
+                    Text("Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            section("Access") {
+                LabeledContent("Duration") {
+                    Picker("Duration", selection: $minutes) {
+                        ForEach(Self.durationSteps.indices, id: \.self) { i in
+                            Text(LocalizedStringKey(Self.durationSteps[i].label)).tag(Self.durationSteps[i].minutes)
+                        }
+                    }.labelsHidden().fixedSize()
+                }
+                LabeledContent("User") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
+                        if let ru = r.ssh?.requestedUser, !ru.isEmpty {
+                            Text(ru == user ? L("Requested by the assistant.") : L("Requested by the assistant: %@", ru))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                LabeledContent("Key") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Picker("Key", selection: $key) {
+                            ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
+                        }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                        if let k = selectedKey {
+                            Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                if needsPassphrase {
+                    SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
+                }
+            }
+
+            if notLoaded {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("Key not loaded in your ssh-agent", systemImage: "key.slash")
+                        .font(.caption.bold()).foregroundStyle(.orange)
+                    Text("Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            section("Note for the assistant (optional)") {
+                TextEditor(text: $note)
+                    .font(.callout)
+                    .frame(minHeight: 62, maxHeight: 90)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                Text("Shown to the assistant with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(.trailing, 6)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L("SSH access for %@/%@", r.sandbox, r.folder)).font(.title3.bold())
+                    Text(title).font(.title3.bold())
                     LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -179,81 +269,9 @@ struct SSHDecisionSheet: View {
             }
             Divider().padding(.vertical, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    section("Request") {
-                        Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
-                            .font(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    }
-
-                    if unknownHost {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) {
-                                Text($0).font(.caption.monospaced()).textSelection(.enabled)
-                            }
-                            Toggle("I know this host key", isOn: $trust)
-                            Text("Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant.")
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    section("Access") {
-                        LabeledContent("Duration") {
-                            Picker("Duration", selection: $minutes) {
-                                ForEach(Self.durationSteps.indices, id: \.self) { i in
-                                    Text(LocalizedStringKey(Self.durationSteps[i].label)).tag(Self.durationSteps[i].minutes)
-                                }
-                            }.labelsHidden().fixedSize()
-                        }
-                        LabeledContent("User") {
-                            VStack(alignment: .leading, spacing: 3) {
-                                TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
-                                if let ru = r.ssh?.requestedUser, !ru.isEmpty {
-                                    Text(ru == user ? L("Requested by the assistant.") : L("Requested by the assistant: %@", ru))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        LabeledContent("Key") {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Picker("Key", selection: $key) {
-                                    ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
-                                }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
-                                if let k = selectedKey {
-                                    Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                        .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
-                        if needsPassphrase {
-                            SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
-                        }
-                    }
-
-                    if notLoaded {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Label("Key not loaded in your ssh-agent", systemImage: "key.slash")
-                                .font(.caption.bold()).foregroundStyle(.orange)
-                            Text("Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.")
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    section("Note for the assistant (optional)") {
-                        TextEditor(text: $note)
-                            .font(.callout)
-                            .frame(minHeight: 62, maxHeight: 90)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                        Text("Shown to the assistant with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                }.padding(.trailing, 6)
+            ViewThatFits(in: .vertical) {
+                sheetContent
+                ScrollView { sheetContent }
             }
 
             if let error {
@@ -282,7 +300,7 @@ struct SSHDecisionSheet: View {
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 680, height: 720)
+        .padding(20).frame(width: 680).frame(maxHeight: 720)
         .task {
             // Precedence: the request's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
@@ -304,7 +322,7 @@ struct DenyRequestSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L("Deny request")).font(.title3.bold())
-            Text("\(r.sandbox) / \(r.folder)").font(.callout).foregroundStyle(.secondary)
+            Text(r.origin).font(.callout).foregroundStyle(.secondary)
             Text("Optional note for the assistant: why denied, what to do instead.").font(.callout)
             TextEditor(text: $note)
                 .font(.callout)
@@ -333,7 +351,7 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("GitHub access for %@ / %@", r.sandbox, r.folder)).font(.headline)
+            Text(r.hasFolder ? L("GitHub access for %@ / %@", r.sandbox, r.folder) : L("GitHub access for %@", r.sandbox)).font(.headline)
             if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
