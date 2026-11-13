@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -29,6 +30,35 @@ func TestRestartReasonsFor(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := restartReasonsFor(c.running, c.stamps, "t", cur)
+		if got == nil {
+			t.Fatalf("%s: reasons must be non-nil", c.name)
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Fatalf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestOpenCodeRestartReasons(t *testing.T) {
+	cur := store.HelperStamp{Guidance: "g", MCP: "m"}
+	same := map[string]store.HelperStamp{sandbox.OpenCodeTarget: cur}
+	diff := map[string]store.HelperStamp{sandbox.OpenCodeTarget: {Guidance: "x", MCP: "y"}}
+	cases := []struct {
+		name    string
+		wanted  bool
+		running bool
+		stamps  map[string]store.HelperStamp
+		want    []string
+	}{
+		{name: "not wanted but running without stamp", wanted: false, running: true, stamps: nil, want: []string{}},
+		{name: "not wanted but running with different stamp", wanted: false, running: true, stamps: diff, want: []string{}},
+		{name: "wanted and running without stamp", wanted: true, running: true, stamps: nil, want: []string{"unknown"}},
+		{name: "wanted but not running", wanted: true, running: false, stamps: nil, want: []string{}},
+		{name: "wanted and running with equal stamp", wanted: true, running: true, stamps: same, want: []string{}},
+		{name: "wanted and running with different stamp", wanted: true, running: true, stamps: diff, want: []string{"guidance", "mcp"}},
+	}
+	for _, c := range cases {
+		got := opencodeRestartReasons(c.wanted, c.running, c.stamps, cur)
 		if got == nil {
 			t.Fatalf("%s: reasons must be non-nil", c.name)
 		}
