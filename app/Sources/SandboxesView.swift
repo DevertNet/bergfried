@@ -305,6 +305,7 @@ struct ClaudeRow: View {
                 HStack(spacing: 6) {
                     Circle().fill(state.color).frame(width: 8, height: 8)
                     Text(label).font(.callout.bold()).lineLimit(1)
+                    if running, let r = w.restartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: r, footer: L("Use “Restart Claude” in the menu; the conversation continues."))) }
                 }
                 Text("~/"+w.folder).font(.caption2.monospaced()).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
@@ -414,6 +415,7 @@ struct OpenCodeServiceCard: View {
                             Text(serviceRunning ? L("service running") : L("service stopped"))
                                 .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary)
                         }
+                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "OpenCode", reasons: r, footer: L("Stop the service and start it again."))) }
                     }
                     Text(status.0).font(.caption).foregroundStyle(status.1)
                     Text(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
@@ -853,5 +855,23 @@ struct CreateSandboxSheet: View {
             do { preview = try await model.api.send("POST", "/v1/import/preview", PathBody(path: url.path), as: ImportPreview.self) }
             catch { previewError = error.localizedDescription }
         }
+    }
+}
+
+/// Tooltip of the "Restart needed" label: why a running assistant should be restarted and how.
+func restartHelp(tool: String, reasons: [String], footer: String) -> String {
+    var lines: [String] = []
+    if reasons.contains("unknown") { lines.append(L("%@ was started before Bergfried tracked which instructions and tools it uses. Stop and start it again to be sure the current ones apply.", tool)) }
+    if reasons.contains("guidance") { lines.append(L("The instructions for the assistant (bergfried.md) have changed.")) }
+    if reasons.contains("mcp") { lines.append(L("The Bergfried tool for the assistant (bergfried-mcp) was updated.")) }
+    lines.append(footer)
+    return lines.joined(separator: "\n")
+}
+
+struct RestartNeededLabel: View {
+    let help: String
+    var body: some View {
+        Label("Restart needed", systemImage: "arrow.clockwise.circle.fill")
+            .font(.caption).foregroundStyle(.orange).help(help)
     }
 }

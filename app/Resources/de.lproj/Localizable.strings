@@ -460,6 +460,13 @@
 "The sandbox starts with the worktree \"main\". Claude is not started automatically; OpenCode runs as a service for the whole sandbox." = "Die Sandbox startet mit dem Worktree „main“. Claude startet nicht automatisch; OpenCode läuft als Dienst für die ganze Sandbox.";
 "A worktree is a folder with code (~/work/<name>). Claude is not started automatically; start it in the worktree list. OpenCode sees the worktree as a project." = "Ein Worktree ist ein Ordner mit Code (~/work/<name>). Claude startet nicht automatisch; starte es in der Worktree-Liste. OpenCode sieht den Worktree als Projekt.";
 
+"Restart needed" = "Neustart nötig";
+"%@ was started before Bergfried tracked which instructions and tools it uses. Stop and start it again to be sure the current ones apply." = "%@ wurde gestartet, bevor Bergfried den Stand der Anweisungen und Tools festgehalten hat. Stoppe und starte neu, damit sicher die aktuellen gelten.";
+"The instructions for the assistant (bergfried.md) have changed." = "Die Anweisungen für den Assistenten (bergfried.md) haben sich geändert.";
+"The Bergfried tool for the assistant (bergfried-mcp) was updated." = "Das Bergfried-Tool für den Assistenten (bergfried-mcp) wurde aktualisiert.";
+"Use “Restart Claude” in the menu; the conversation continues." = "Nutze „Claude neu starten“ im Menü; das Gespräch läuft weiter.";
+"Stop the service and start it again." = "Stoppe den Dienst und starte ihn neu.";
+
 "During a grant an assistant could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config)." = "Während einer Freigabe könnte ein Assistent einen eigenen Key in authorized_keys des Ziels eintragen. Für wichtige Server einen eingeschränkten User „claude“ nutzen, dessen authorized_keys root gehört (AuthorizedKeysFile in sshd_config).";
 "Filter (sandbox, worktree, event, details …)" = "Filter (Sandbox, Worktree, Ereignis, Details …)";
 "The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here." = "Das GitHub-Token gehört zur Sandbox: Es wird beim Anlegen einer Sandbox mit Git-Repo abgefragt oder auf Anfrage des Assistenten (Reiter „Anfragen“) eingerichtet und liegt in der VM. Es gibt hier keine globale Einstellung.";

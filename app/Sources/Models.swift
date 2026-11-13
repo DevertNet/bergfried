@@ -38,6 +38,7 @@ struct ClaudeInfo: Codable, Hashable {
     var rc: Bool
     var rcUrl: String
     var rcAction: String   // "", "activating", "failed", "waiting"
+    var restartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
 }
 
 struct SandboxInfo: Codable, Identifiable, Hashable {
@@ -58,6 +59,7 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var claudeInstalled: Bool?
     var opencodeInstalled: Bool?
     var opencodeRunning: Bool?
+    var opencodeRestartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
     var opencodePort: Int?
     var hostDiskUsed: Int64
     var guestDiskUsed: Int64

@@ -69,6 +69,54 @@ func TestSeededAndDeleteWorktree(t *testing.T) {
 	}
 }
 
+func TestHelperStamps(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.AddSandbox(Sandbox{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now()})
+	st, err := s.ListHelperStamps("a")
+	if err != nil || st == nil || len(st) != 0 {
+		t.Fatalf("unknown sandbox must give an empty, non-nil map: %v %v", st, err)
+	}
+	_ = s.AddWorktree(Worktree{Sandbox: "a", Name: "main", Path: "work/main", ComposeProject: "a-main", Created: time.Now()})
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g1", MCP: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetHelperStamp("a", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.ListHelperStamps("a")
+	if err != nil || len(st) != 2 {
+		t.Fatalf("%v %v", st, err)
+	}
+	if st["claude:main"] != (HelperStamp{Guidance: "g1", MCP: "m1"}) || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("%v", st)
+	}
+	// replace
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g3", MCP: "m3"}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = s.ListHelperStamps("a")
+	if len(st) != 2 || st["claude:main"] != (HelperStamp{Guidance: "g3", MCP: "m3"}) {
+		t.Fatalf("replace failed: %v", st)
+	}
+	// a deleted worktree loses its Claude stamp
+	_ = s.DeleteWorktree("a", "main")
+	st, _ = s.ListHelperStamps("a")
+	if _, ok := st["claude:main"]; ok || len(st) != 1 {
+		t.Fatalf("stamp of the deleted worktree must be gone: %v", st)
+	}
+	// a deleted sandbox loses all stamps
+	if err := s.DeleteSandbox("a"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.ListHelperStamps("a")
+	if err != nil || len(st) != 0 {
+		t.Fatalf("stamps of the deleted sandbox: %v %v", st, err)
+	}
+}
+
 func TestMigrateLegacySessionNames(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d")
 	s, err := Open(dir)

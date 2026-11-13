@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS sandboxes(name TEXT PRIMARY KEY, vm TEXT NOT NULL, re
 CREATE TABLE IF NOT EXISTS worktrees(sandbox TEXT NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL, compose_project TEXT NOT NULL, created INTEGER NOT NULL, claude INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(sandbox,name));
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
 CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, sandbox TEXT, worktree TEXT, detail TEXT);`)
+CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, sandbox TEXT, worktree TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target));`)
 	return err
 }
 
@@ -188,6 +189,9 @@ func (s *Store) ListSandboxes() ([]Sandbox, error) {
 }
 func (s *Store) DeleteSandbox(name string) error {
 	if _, err := s.DB.Exec(`DELETE FROM worktrees WHERE sandbox=?`, name); err != nil {
+		return err
+	}
+	if _, err := s.DB.Exec(`DELETE FROM helper_stamps WHERE sandbox=?`, name); err != nil {
 		return err
 	}
 	_, err := s.DB.Exec(`DELETE FROM sandboxes WHERE name=?`, name)
@@ -241,8 +245,40 @@ func (s *Store) SetWorktreeClaude(sandbox, name string, claude bool) error {
 	return err
 }
 func (s *Store) DeleteWorktree(sandbox, name string) error {
-	_, err := s.DB.Exec(`DELETE FROM worktrees WHERE sandbox=? AND name=?`, sandbox, name)
+	if _, err := s.DB.Exec(`DELETE FROM worktrees WHERE sandbox=? AND name=?`, sandbox, name); err != nil {
+		return err
+	}
+	_, err := s.DB.Exec(`DELETE FROM helper_stamps WHERE sandbox=? AND target=?`, sandbox, "claude:"+name)
 	return err
+}
+
+// HelperStamp is the hash of the guidance text and of the bergfried-mcp binary an assistant was
+// started with (target = "claude:<worktree>" or "opencode").
+type HelperStamp struct{ Guidance, MCP string }
+
+// SetHelperStamp stores (or replaces) the stamp of a target in a sandbox.
+func (s *Store) SetHelperStamp(sandbox, target string, st HelperStamp) error {
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO helper_stamps(sandbox,target,guidance,mcp) VALUES(?,?,?,?)`, sandbox, target, st.Guidance, st.MCP)
+	return err
+}
+
+// ListHelperStamps returns all stamps of a sandbox (empty map when there are none).
+func (s *Store) ListHelperStamps(sandbox string) (map[string]HelperStamp, error) {
+	rows, err := s.DB.Query(`SELECT target,guidance,mcp FROM helper_stamps WHERE sandbox=?`, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]HelperStamp{}
+	for rows.Next() {
+		var target string
+		var st HelperStamp
+		if err := rows.Scan(&target, &st.Guidance, &st.MCP); err != nil {
+			return nil, err
+		}
+		out[target] = st
+	}
+	return out, rows.Err()
 }
 
 // Audit writes an entry; errors must never be swallowed.
