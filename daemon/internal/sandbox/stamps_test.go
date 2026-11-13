@@ -122,3 +122,60 @@ func TestRecordStamp(t *testing.T) {
 		t.Fatalf("stored stamps: %v, want %+v", got, want)
 	}
 }
+
+func TestClaudeRestartInstallsHelpersBeforeRestart(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "bergfried-mcp")
+	if err := os.WriteFile(bin, []byte("v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BERGFRIED_MCP_BIN", bin)
+	m, f := mgr(t, "started\n")
+	if err := m.ClaudeRestart(context.Background(), "shop", "work/main"); err != nil {
+		t.Fatal(err)
+	}
+	copyIdx, installIdx, killIdx := -1, -1, -1
+	for i, c := range f.calls {
+		if strings.Contains(c, "cp "+bin+" bergfried-shop:/tmp/bergfried-mcp") {
+			copyIdx = i
+		}
+		if strings.HasSuffix(c, "bash -s") {
+			installIdx = i
+		}
+		if strings.HasPrefix(c, "shell --tty=false bergfried-shop -- bash -c tmux kill-window") {
+			killIdx = i
+		}
+	}
+	if copyIdx < 0 {
+		t.Fatalf("the binary was not copied into the VM: %v", f.calls)
+	}
+	if installIdx < 0 {
+		t.Fatalf("the helper setup script was not run: %v", f.calls)
+	}
+	if killIdx < 0 {
+		t.Fatalf("the Claude window was not stopped: %v", f.calls)
+	}
+	if copyIdx > killIdx || installIdx > killIdx {
+		t.Fatalf("helpers must be installed before the restart: %v", f.calls)
+	}
+	if len(f.stdin) == 0 || !strings.Contains(f.stdin[0], "install -m755 /tmp/bergfried-mcp") {
+		t.Fatalf("the helper setup script must install the copied binary: %q", f.stdin)
+	}
+	stamps, err := m.S.ListHelperStamps("shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stamps[ClaudeTarget("main")]; !ok {
+		t.Fatalf("no stamp for %s: %v", ClaudeTarget("main"), stamps)
+	}
+}
+
+func TestClaudeRestartDoesNotKillWindowWhenInstallFails(t *testing.T) {
+	t.Setenv("BERGFRIED_MCP_BIN", filepath.Join(t.TempDir(), "missing"))
+	m, f := mgr(t, "started\n")
+	if err := m.ClaudeRestart(context.Background(), "shop", "work/main"); err == nil {
+		t.Fatal("a missing binary must fail the restart")
+	}
+	if joined := strings.Join(f.calls, "\n"); strings.Contains(joined, "kill-window") {
+		t.Fatalf("the old window must stay untouched: %s", joined)
+	}
+}

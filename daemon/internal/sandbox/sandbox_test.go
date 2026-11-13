@@ -111,10 +111,18 @@ func TestSandboxNamesAndBaseProtection(t *testing.T) {
 type shellFake struct {
 	out   string
 	calls []string
+	stdin []string
 }
 
 func (f *shellFake) Run(_ context.Context, a ...string) ([]byte, error) {
 	f.calls = append(f.calls, strings.Join(a, " "))
+	return []byte(f.out), nil
+}
+
+func (f *shellFake) RunStdin(_ context.Context, in io.Reader, a ...string) ([]byte, error) {
+	b, _ := io.ReadAll(in)
+	f.calls = append(f.calls, strings.Join(a, " "))
+	f.stdin = append(f.stdin, string(b))
 	return []byte(f.out), nil
 }
 

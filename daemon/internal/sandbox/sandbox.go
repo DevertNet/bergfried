@@ -1068,6 +1068,9 @@ func (m *Manager) ClaudeRestart(ctx context.Context, sandbox, folder string) err
 	if !ok {
 		return fmt.Errorf("no Claude session for %s", folderDisplay(folder))
 	}
+	if err := m.InstallHelpers(ctx, s.VM, sandbox, false); err != nil {
+		return err
+	}
 	if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
 		return err
 	}
