@@ -59,7 +59,7 @@ only while a grant is active (time window, key, target host key).
 1. **One sandbox = one project = one Lima VM**, cloned from a base VM `bergfried-base-<hash of vm/bergfried.yaml>`. The base image contains `git`, `gh`, `git-lfs`, `make`, `jq`, `tmux`, Docker, headless `chromium`, Claude Code and OpenCode. The base VM is built on creation of the first sandbox with a new template hash or on "Build now"; existing sandboxes keep their image (the assistants are told to `sudo apt-get install` what is missing).
    The template is editable in the app and validated by `sandbox.CheckTemplate` (no mounts of your home, no `forwardAgent`, no Docker socket, both Bergfried sockets required). Your copy lives in `~/.bergfried/template/`:
    it is taken from the bundled template once, and at daemon start it is **replaced by a newer bundled template if you never edited it** (the copy equals the last adopted one, recorded in `seed.sha256`, or a known earlier bundled one; audit event `template.adopt`). An edited copy is kept and the app warns; "Reset template" adopts the bundled one.
-2. **Exactly two mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only) and `shared/out` (read-write). Existing folders are *copied* in (`importer`), never mounted.
+2. **Three mounts per sandbox:** `~/.bergfried/sandboxes/<name>/shared/in` (read-only), `shared/out` (read-write) and `~/.bergfried/skills` (read-only, the same path in every sandbox). The skills folder holds instructions for the assistants and is edited on the Mac only. Existing folders are *copied* in (`importer`), never mounted.
 3. **Identity of a sandbox = the socket.** For each running sandbox the daemon listens on `~/.lima/<vm>/sock/bergfried.sock` (gRPC `SandboxAPI`) and `ssh-agent.sock`.
    Lima forwards both into the VM (`/run/user/<uid>/bergfried.sock`, `bergfried-agent.sock`) with `reverse` port forwards. The *folder path* is only metadata claimed from inside the VM (same Linux user, not a security boundary), sent in the gRPC header `x-bergfried-folder`.
    Claude passes it via `BERGFRIED_FOLDER`; OpenCode's shared server starts one MCP process per project directory, so `bergfried-mcp` derives the folder from its working directory (`~/work/<folder>`) and only falls back to the environment variable.
@@ -85,7 +85,7 @@ only while a grant is active (time window, key, target host key).
 
 ## Data on your Mac
 
-`~/.bergfried` (0700): `bergfried.db`, `blocklist.json`, `hosts.json`, `settings.json` (update channel), `template/` (`bergfried.yaml`, `revision`, `seed.sha256`), `index-ack`, `update/` (staged releases, backups, `update.log`), `sandboxes/<name>/{shared/{in,out},github-token}`, `admin.sock`, `app.sock`, `daemon.log` (see [DEVELOPMENT.md](DEVELOPMENT.md#logs)).
+`~/.bergfried` (0700): `bergfried.db`, `blocklist.json`, `hosts.json`, `settings.json` (update channel), `template/` (`bergfried.yaml`, `revision`, `seed.sha256`), `index-ack`, `update/` (staged releases, backups, `update.log`), `skills/` (instructions for the assistants, mounted read-only into every sandbox), `sandboxes/<name>/{shared/{in,out},github-token}`, `admin.sock`, `app.sock`, `daemon.log` (see [DEVELOPMENT.md](DEVELOPMENT.md#logs)).
 Naming: VMs are `bergfried-<sandbox>` (≤ 24 characters, `base` reserved), base VMs `bergfried-base-<hash>`.
 
 ## Code layout

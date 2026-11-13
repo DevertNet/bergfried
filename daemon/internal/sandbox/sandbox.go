@@ -15,6 +15,7 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -129,6 +130,9 @@ func ValidName(n string) error {
 
 // VMName: name of the Lima VM of a new sandbox. (Existing sandboxes keep the name stored in the database.)
 func VMName(sandbox string) string { return "bergfried-" + sandbox }
+
+// SkillsDir: shared skills folder of the Bergfried data dir (<home>/skills).
+func (m *Manager) SkillsDir() string { return skills.Dir(m.Home) }
 
 // ValidSandboxName applies to NEW sandboxes; "base" is reserved (collides with base VMs).
 func ValidSandboxName(n string) error {
@@ -513,6 +517,10 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 	if err := ValidSandboxName(name); err != nil {
 		return err
 	}
+	skillsDir, err := skills.Ensure(m.Home)
+	if err != nil {
+		return err
+	}
 	if repo != "" && importPath != "" {
 		return fmt.Errorf("git repo and folder import are mutually exclusive")
 	}
@@ -558,8 +566,7 @@ func (m *Manager) Create(ctx context.Context, name, repo, importPath, token stri
 		}
 	}
 	progress(ctx, "Cloning the VM from the base")
-	if _, err := m.L.RunLines(ctx, "clone", m.BaseName(), vm, "--tty=false",
-		"--mount-only", in, "--mount-only", out+":w"); err != nil {
+	if _, err := m.L.RunLines(ctx, append([]string{"clone", m.BaseName(), vm, "--tty=false"}, lima.MountArgs(in, out, skillsDir)...)...); err != nil {
 		return err
 	}
 	progress(ctx, "VM startet (ca. 10–15 Sekunden)")
@@ -628,6 +635,20 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 	progress(ctx, "VM startet")
+	skillsDir, err := skills.Ensure(m.Home)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(m.Home, "sandboxes", name)
+	in, out := filepath.Join(dir, "shared", "in"), filepath.Join(dir, "shared", "out")
+	if ok, err := lima.HasMount(s.VM, skillsDir, false); err != nil || !ok {
+		// Lima can only change the mounts of a stopped instance; a failure must not prevent the start.
+		if err := m.L.EditMounts(ctx, s.VM, in, out, skillsDir); err != nil {
+			m.audit("sandbox.skills_mount_failed", name, "", err.Error())
+		} else {
+			m.audit("sandbox.skills_mount", name, "", s.VM)
+		}
+	}
 	if err := m.L.Start(ctx, s.VM); err != nil {
 		return err
 	}

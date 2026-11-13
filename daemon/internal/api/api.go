@@ -165,6 +165,7 @@ type sandboxJ struct {
 	ActiveGrants           int       `json:"active_grants"`
 	Pending                int       `json:"pending_requests"`
 	HasToken               bool      `json:"has_github_token"`
+	SkillsMount            bool      `json:"skills_mount"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -346,6 +347,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
 		}
+		j.SkillsMount, _ = lima.HasMount(x.VM, s.M.SkillsDir(), false)
 		var ps SandboxState
 		var havePS bool
 		if s.Mon != nil && j.Status == "Running" {

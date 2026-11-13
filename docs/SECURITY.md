@@ -8,7 +8,7 @@ An assistant (or anything it runs, including prompt-injected instructions) misus
 
 | | Assistant in the VM |
 |---|---|
-| See your home, keys, host Docker | **Never.** Only `shared/in` (ro) and `shared/out` are mounted. |
+| See your home, keys, host Docker | **Never.** Only `shared/in` (ro), `shared/out` and the shared `skills` folder (ro) are mounted. |
 | Read your files | Only copies you approve, one request at a time. Blocked paths are refused without asking. |
 | Use your SSH keys | Only during a grant you create (time window, key, target host key). The private key never leaves the Mac. Keys that are not loaded in your ssh-agent can be granted too, but only with the passphrase you type for that grant (see below). |
 | Use GitHub | With the fine-grained token **you** created for that sandbox (see below). |
@@ -16,7 +16,8 @@ An assistant (or anything it runs, including prompt-injected instructions) misus
 | `sudo` in the VM | Yes (Lima default); assistants are told to install missing software themselves with `sudo apt-get install`. The boundary is the VM, not the Linux user. |
 
 ## Invariants (covered by tests, please do not weaken)
-- The VM never sees your home, keys or the host Docker. Mounts: only `shared/in` (ro) and `shared/out`.
+- The VM never sees your home, keys or the host Docker. Mounts: only `shared/in` (ro), `shared/out` and the shared `skills` folder (ro).
+  Skills are instructions for the assistants, so the folder is read-only for the VM; changes are made only on the Mac. Whether the read-only mount is really enforced on the host side still has to be verified with a real Lima VM.
 - The private SSH key never leaves the Mac. For keys in your ssh-agent signing happens upstream (the daemon never sees the key), only with a grant plus a host-key binding; agent forwarding is refused. The one exception is the passphrase-key mode below.
 - Blocklist: case-insensitive compare (macOS), `..`/absolute paths/symlink escapes fail (`index.Resolve`), symlinks are never followed or copied. `PUT /v1/blocklist` cannot remove the three fixed entries (`.ssh`, `Library`, `.config`).
 - Assistant-provided text (reason, name, user, host) is display data only: sanitised, never interpolated into shell or AppleScript source; host names and users are validated by regex before they reach `~/.ssh/config` blocks.
