@@ -60,7 +60,9 @@ curl -s --unix-socket ~/.bergfried/app.sock http://localhost/v1/sandboxes \
   | jq '.[] | {name, status, skills_mount}'
 ```
 
-The app hint for this field is documented later. The daemon does not change the mounts of a running VM; the next stop/start adds the mount.
+The app shows this as an orange hint in the sandbox card while the VM is running and `skills_mount` is `false` ("Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically.", the same text as tooltip). Nothing is shown when the field is `true` or missing. The daemon does not change the mounts of a running VM; the next stop/start adds the mount.
+
+**To be verified in the real app:** the hint only on a running VM and only for `skills_mount: false`. The app part of this change was written without being able to run it.
 
 ## Using the skills
 
@@ -89,6 +91,7 @@ The shared folder is read-only in the VM, so an assistant proposes changes with 
 
 1. In a sandbox ask the assistant: "Create a shared skill `demo-proposal` with a `SKILL.md` that explains the test; call `propose_skill_change` with the complete content." The call blocks for up to 10 minutes.
 2. The app shows a request of kind `skill` with the skill names, the reason and one entry per file (`path`, `op` = create/modify/delete, `diff`). **To be verified in the real app:** the diff rendering and the Allow/Deny buttons.
+   App steps: in the Requests tab the card shows "wants to change the shared skill(s) … (%lld file(s))" and **Review changes …**; the sheet shows the warning, every file with Create / Change / Delete / No change, the complete diff (green `+`, red `-`, `@@` secondary, monospaced, selectable, per file scrollable, no truncation) and an optional note for Deny. **Allow** and **Deny** call `POST /v1/skills/decide`; on an error (409) the message stays in the sheet and the request ends `failed` in the history. The menu bar entry only opens the window – it has no Allow/Deny. **To be verified in the real app:** all of the above, since the app part was written without being able to run it.
 3. Allow: the file appears on the Mac at `~/.bergfried/skills/demo-proposal/SKILL.md`; the assistant gets "Approved and applied …"; the audit log has `skills.allowed`.
 4. Repeat the proposal and deny it with a note (for example "use another name"): nothing is written and the assistant sees the note (`skills.denied`).
 5. A proposal whose content contains a zero-width space (U+200B) is refused before it reaches the app, with `Invalid proposal: … invisible or line-breaking character U+200B`.

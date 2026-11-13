@@ -38,7 +38,7 @@ struct ClaudeInfo: Codable, Hashable {
     var rc: Bool
     var rcUrl: String
     var rcAction: String   // "", "activating", "failed", "waiting"
-    var restartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
+    var restartReasons: [String]?   // "unknown", "guidance", "mcp", "skills"; empty when nothing to do
 }
 
 struct SandboxInfo: Codable, Identifiable, Hashable {
@@ -59,13 +59,14 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var claudeInstalled: Bool?
     var opencodeInstalled: Bool?
     var opencodeRunning: Bool?
-    var opencodeRestartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
+    var opencodeRestartReasons: [String]?   // "unknown", "guidance", "mcp", "skills"; empty when nothing to do
     var opencodePort: Int?
     var hostDiskUsed: Int64
     var guestDiskUsed: Int64
     var guestDiskSize: Int64
     var probeError: String?
     var hasGithubToken: Bool
+    var skillsMount: Bool?   // false: the VM is running without the shared-skills mount (stop/start adds it)
     var id: String { name }
     var running: Bool { status == "Running" }
 }
@@ -86,6 +87,12 @@ struct GitHubDetail: Codable, Hashable {
     var hint: String
 }
 
+struct SkillFileDetail: Codable, Hashable {
+    var path: String
+    var op: String     // create, modify, delete, unchanged
+    var diff: String   // unified-style text: "+"/"-"/" " lines and "@@" headers
+}
+
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
@@ -100,6 +107,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var large: Bool
     var ssh: SSHInfo?
     var github: GitHubDetail?
+    var skill: [SkillFileDetail]?
     var pending: Bool { status == "pending" }
     // Request and grant ids come from different tables and can be equal: give the list rows distinct identities.
     var listID: String { "request-\(id)" }
@@ -184,3 +192,4 @@ func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount
 
 struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String; var note: String = "" }
 struct GitHubLink: Codable { var url: String; var hint: String }
+struct SkillDecideBody: Encodable { var id: Int64; var allow: Bool; var note: String = "" }
