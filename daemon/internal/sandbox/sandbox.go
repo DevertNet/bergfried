@@ -425,6 +425,10 @@ fi`, b64, gitName, sandboxName, sandboxName)
 	if _, err := m.L.ShellStdin(ctx, vm, strings.NewReader(script), "bash", "-s"); err != nil {
 		return fmt.Errorf("setting up the sandbox helpers: %w", err)
 	}
+	// The skills links are a convenience: a failure must not fail the helper setup.
+	if err := m.RelinkSkills(ctx, vm); err != nil {
+		m.audit("helpers.skills_link_failed", sandboxName, "", err.Error())
+	}
 	if !withOpenCode {
 		return nil
 	}

@@ -62,6 +62,27 @@ curl -s --unix-socket ~/.bergfried/app.sock http://localhost/v1/sandboxes \
 
 The app hint for this field is documented later. The daemon does not change the mounts of a running VM; the next stop/start adds the mount.
 
+## Using the skills
+
+The shared folder is linked per skill folder into `~/.claude/skills` in the VM; Claude Code and
+OpenCode both read that folder.
+
+1. Put a `SKILL.md` into `~/.bergfried/skills` on the Mac, e.g. `~/.bergfried/skills/demo/SKILL.md`.
+2. See the link in the VM (**to be verified** – needs a real VM):
+
+   ```bash
+   limactl shell bergfried-skills-test -- ls -l ~/.claude/skills
+   ```
+
+   `demo` is a symlink into `~/.bergfried/skills/demo`.
+3. Claude lists the skill (e.g. `/skills` or in its skill overview; **to be verified**).
+4. OpenCode lists it too (`opencode` skills; **to be verified**).
+5. Edit the skill file on the Mac: the app shows **Restart needed** for running assistants.
+   The daemon relinks the folder automatically (monitor); the assistants pick up the new
+   content after a restart.
+6. A local real folder with the same name in `~/.claude/skills` is not replaced (**to be verified**).
+7. Removing the skill folder on the Mac removes the link in the VM.
+
 ## Notes
 
 - `limactl edit … --mount-only` replaces **all** mounts; the daemon always passes `shared/in`, `shared/out:w` and the skills folder together.
