@@ -130,39 +130,41 @@ func decode(r *http.Request, v any) error {
 }
 
 type claudeJ struct {
-	Name     string `json:"name"`
-	Folder   string `json:"folder"`
-	Window   bool   `json:"window"`
-	Running  bool   `json:"running"`
-	RC       bool   `json:"rc"`
-	RCURL    string `json:"rc_url"`
-	RCAction string `json:"rc_action"` // "", "activating", "failed", "waiting"
+	Name           string   `json:"name"`
+	Folder         string   `json:"folder"`
+	Window         bool     `json:"window"`
+	Running        bool     `json:"running"`
+	RC             bool     `json:"rc"`
+	RCURL          string   `json:"rc_url"`
+	RCAction       string   `json:"rc_action"` // "", "activating", "failed", "waiting"
+	RestartReasons []string `json:"restart_reasons"`
 }
 
 type sandboxJ struct {
-	Name              string    `json:"name"`
-	VM                string    `json:"vm"`
-	Status            string    `json:"status"`
-	Repo              string    `json:"repo"`
-	TemplateVersion   int       `json:"template_version"`
-	Created           int64     `json:"created_unix"`
-	CPUs              int       `json:"cpus"`
-	Memory            int64     `json:"memory"`
-	Disk              int64     `json:"disk"`
-	ClaudeSessions    []claudeJ `json:"claude_sessions"`
-	ClaudeLoggedIn    *bool     `json:"claude_logged_in"`
-	OpenCodeLoggedIn  *bool     `json:"opencode_logged_in"`
-	ClaudeInstalled   *bool     `json:"claude_installed"`
-	OpenCodeInstalled *bool     `json:"opencode_installed"`
-	OpenCodeRunning   *bool     `json:"opencode_running"`
-	OpenCodePort      int       `json:"opencode_port"`
-	HostDiskUsed      int64     `json:"host_disk_used"`
-	GuestDiskUsed     int64     `json:"guest_disk_used"`
-	GuestDiskSize     int64     `json:"guest_disk_size"`
-	ProbeError        string    `json:"probe_error,omitempty"`
-	ActiveGrants      int       `json:"active_grants"`
-	Pending           int       `json:"pending_requests"`
-	HasToken          bool      `json:"has_github_token"`
+	Name                   string    `json:"name"`
+	VM                     string    `json:"vm"`
+	Status                 string    `json:"status"`
+	Repo                   string    `json:"repo"`
+	TemplateVersion        int       `json:"template_version"`
+	Created                int64     `json:"created_unix"`
+	CPUs                   int       `json:"cpus"`
+	Memory                 int64     `json:"memory"`
+	Disk                   int64     `json:"disk"`
+	ClaudeSessions         []claudeJ `json:"claude_sessions"`
+	ClaudeLoggedIn         *bool     `json:"claude_logged_in"`
+	OpenCodeLoggedIn       *bool     `json:"opencode_logged_in"`
+	ClaudeInstalled        *bool     `json:"claude_installed"`
+	OpenCodeInstalled      *bool     `json:"opencode_installed"`
+	OpenCodeRunning        *bool     `json:"opencode_running"`
+	OpenCodeRestartReasons []string  `json:"opencode_restart_reasons"`
+	OpenCodePort           int       `json:"opencode_port"`
+	HostDiskUsed           int64     `json:"host_disk_used"`
+	GuestDiskUsed          int64     `json:"guest_disk_used"`
+	GuestDiskSize          int64     `json:"guest_disk_size"`
+	ProbeError             string    `json:"probe_error,omitempty"`
+	ActiveGrants           int       `json:"active_grants"`
+	Pending                int       `json:"pending_requests"`
+	HasToken               bool      `json:"has_github_token"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -300,6 +302,16 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, st)
 }
 
+// restartReasonsFor reports why a running helper should be restarted. Not running means no
+// reasons (an empty, non-nil slice); a running helper without a stored stamp is "unknown".
+func restartReasonsFor(running bool, stamps map[string]store.HelperStamp, target string, current store.HelperStamp) []string {
+	if !running {
+		return []string{}
+	}
+	stamp, ok := stamps[target]
+	return sandbox.RestartReasons(ok, stamp, current)
+}
+
 func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	ss, err := s.M.S.ListSandboxes()
 	if err != nil {
@@ -319,7 +331,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	pend, _ := s.M.S.ListRequests(true, 500)
 	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", ClaudeSessions: []claudeJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", ClaudeSessions: []claudeJ{}, OpenCodeRestartReasons: []string{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
@@ -329,10 +341,19 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		if s.Mon != nil && j.Status == "Running" {
 			ps, havePS = s.Mon.Get(x.Name)
 		}
+		// stamps are the stored stamps of this sandbox, cur the stamp that would be installed now;
+		// haveStamps is false when the current stamp cannot be computed (reasons stay empty then).
+		var stamps map[string]store.HelperStamp
+		var cur store.HelperStamp
+		var haveStamps bool
 		if havePS {
 			j.ClaudeLoggedIn, j.OpenCodeLoggedIn = ps.ClaudeLoggedIn, ps.OpenCodeLoggedIn
 			j.ClaudeInstalled, j.OpenCodeInstalled, j.OpenCodeRunning = boolPtr(ps.ClaudeInstalled), boolPtr(ps.OpenCodeInstalled), boolPtr(ps.OpenCodeRunning)
 			j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.GuestUsed, ps.GuestSize, ps.Err
+			stamps, _ = s.M.S.ListHelperStamps(x.Name)
+			if c, err := s.M.CurrentStamp(x.Name); err == nil {
+				cur, haveStamps = c, true
+			}
 		}
 		j.HostDiskUsed = hostDiskUsed(x.VM)
 		j.OpenCodePort = x.OpenCodePort
@@ -342,7 +363,14 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		wts, _ := s.M.S.ListWorktrees(x.Name)
 		for _, w := range wts {
 			ws := ps.Worktrees[w.Name]
-			j.ClaudeSessions = append(j.ClaudeSessions, claudeJ{Name: w.Name, Folder: sandbox.FolderOf(w.Path), Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action})
+			c := claudeJ{Name: w.Name, Folder: sandbox.FolderOf(w.Path), Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action, RestartReasons: []string{}}
+			if haveStamps {
+				c.RestartReasons = restartReasonsFor(ws.Running, stamps, sandbox.ClaudeTarget(w.Name), cur)
+			}
+			j.ClaudeSessions = append(j.ClaudeSessions, c)
+		}
+		if haveStamps {
+			j.OpenCodeRestartReasons = restartReasonsFor(ps.OpenCodeRunning, stamps, sandbox.OpenCodeTarget, cur)
 		}
 		for _, g := range grants {
 			if g.Sandbox == x.Name {
