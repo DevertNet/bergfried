@@ -647,8 +647,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	// window left over in the other worktrees (an old OpenCode TUI or a manual start) is stopped.
 	for _, w := range worktrees {
 		if w.Claude {
-			if err := m.ensureWindow(ctx, s.VM, name, w.Name, folderOf(w.Path)); err != nil {
+			started, err := m.ensureWindow(ctx, s.VM, name, w.Name, folderOf(w.Path))
+			if err != nil {
 				return fmt.Errorf("Claude in %s: %w", folderDisplay(folderOf(w.Path)), err)
+			}
+			if started {
+				m.recordStamp(name, ClaudeTarget(w.Name))
 			}
 		} else if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
 			return fmt.Errorf("Claude in %s: %w", folderDisplay(folderOf(w.Path)), err)
@@ -814,17 +818,22 @@ else
   # A window with this name can be left over from an earlier OpenCode TUI or a crashed Claude.
   # Only keep it if Claude runs in this pane.
   tty=$(tmux display-message -p -t %[3]s:%[2]s '#{pane_tty}' 2>/dev/null || true)
-  if [ -n "$tty" ] && ps -t "${tty#/dev/}" -o comm= 2>/dev/null | grep -qx claude; then exit 0; fi
+  if [ -n "$tty" ] && ps -t "${tty#/dev/}" -o comm= 2>/dev/null | grep -qx claude; then echo kept; exit 0; fi
   tmux kill-window -t %[3]s:%[2]s 2>/dev/null || true
   if tmux has-session -t %[3]s 2>/dev/null; then tmux new-window -t %[3]s -n %[2]s; else tmux new-session -d -s %[3]s -n %[2]s; fi
 fi
-tmux send-keys -t %[3]s:%[2]s %[4]q Enter`, trust, worktree, tmuxSession, claudeCmd(sandbox, worktree, folder))
+tmux send-keys -t %[3]s:%[2]s %[4]q Enter
+echo started`, trust, worktree, tmuxSession, claudeCmd(sandbox, worktree, folder))
 }
 
-// ensureWindow creates the tmux session/window if missing and starts Claude in it.
-func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, worktree, folder string) error {
-	_, err := m.L.Shell(ctx, vm, "bash", "-c", windowScript(sandbox, worktree, folder))
-	return err
+// ensureWindow creates the tmux session/window if missing and starts Claude in it. started is
+// false when an existing window with a running Claude was kept.
+func (m *Manager) ensureWindow(ctx context.Context, vm, sandbox, worktree, folder string) (started bool, err error) {
+	out, err := m.L.Shell(ctx, vm, "bash", "-c", windowScript(sandbox, worktree, folder))
+	if err != nil {
+		return false, err
+	}
+	return strings.HasSuffix(strings.TrimSpace(string(out)), "started"), nil
 }
 
 // killWindow stops a Claude window if it exists.
@@ -1001,8 +1010,12 @@ func (m *Manager) ClaudeStart(ctx context.Context, sandbox, folder string) error
 			return err
 		}
 	}
-	if err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder); err != nil {
+	started, err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder)
+	if err != nil {
 		return err
+	}
+	if started {
+		m.recordStamp(sandbox, ClaudeTarget(w.Name))
 	}
 	if err := m.S.SetWorktreeClaude(sandbox, w.Name, true); err != nil {
 		return err
@@ -1058,8 +1071,12 @@ func (m *Manager) ClaudeRestart(ctx context.Context, sandbox, folder string) err
 	if err := m.killWindow(ctx, s.VM, w.Name); err != nil {
 		return err
 	}
-	if err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder); err != nil {
+	started, err := m.ensureWindow(ctx, s.VM, sandbox, w.Name, folder)
+	if err != nil {
 		return err
+	}
+	if started {
+		m.recordStamp(sandbox, ClaudeTarget(w.Name))
 	}
 	if err := m.S.SetWorktreeClaude(sandbox, w.Name, true); err != nil {
 		return err
