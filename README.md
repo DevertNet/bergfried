@@ -74,7 +74,7 @@ OpenCode is driven from the [OpenCode desktop app](https://opencode.ai/download)
 2. Click **Start service** if it is not running (this installs OpenCode if needed). Only a running service shows **Connect desktop**.
 3. Click **Connect desktop** (or **Shell / SSH → Connect desktop app …**), copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. Open the sandbox's folders as projects; Claude is not required.
 
-The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service / Stop service** in the OpenCode card to control it; **Connect desktop** appears only while the service runs. Stopping it does not stop Claude.
+The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service** and **Stop service** in the OpenCode card to control it (while a job runs the card shows a spinner and the step, like the Claude rows); **Restart service** in the card's ⋯ menu restarts it. **Connect desktop** appears only while the service runs. Stopping it does not stop Claude.
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.
