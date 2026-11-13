@@ -25,6 +25,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/notify"
 	"github.com/DevertNet/bergfried/daemon/internal/rpc"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
@@ -323,6 +324,11 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	if err != nil {
 		return err
 	}
+	skillsDir, err := skills.Ensure(home)
+	if err != nil {
+		return err
+	}
+	skillSvc := skills.NewService(m.S, skillsDir)
 	// The first index build makes macOS ask for folder access: the app explains that first (see index.Gate).
 	_, bundleErr := update.RunningBundle()
 	gate := index.NewGate(filepath.Join(home, "index-ack"), api.Version, bundleErr == nil)
@@ -387,7 +393,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	m.SaveToken = tokStore.Set
 	m.DropToken = tokStore.Delete
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, Skills: skillSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
@@ -401,7 +407,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Skills: skillSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

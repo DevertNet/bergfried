@@ -9,6 +9,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] macOS control app (SwiftUI, no Xcode): sandboxes, Claude folders, requests, grants, audit log, VM template editor, notifications, menu bar
 - [x] Claude entries per sandbox (folder + session), Remote Control monitor/automation
 - [x] GitHub: one fine-grained token per sandbox in the VM, guided creation, `request_github_token`
+- [x] Shared skills: one folder for all sandboxes, read-only in the VM, links into `~/.claude/skills`; assistants can propose changes (`propose_skill_change`) that the user approves with a diff
 - [x] Rename "session" → "sandbox" everywhere, migration of existing installs
 - [x] English repository, app in English and German
 - [x] Updates from GitHub releases (build by CI, install button in the app, step-by-step progress and errors)

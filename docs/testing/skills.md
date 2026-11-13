@@ -83,6 +83,27 @@ OpenCode both read that folder.
 6. A local real folder with the same name in `~/.claude/skills` is not replaced (**to be verified**).
 7. Removing the skill folder on the Mac removes the link in the VM.
 
+## Proposals
+
+The shared folder is read-only in the VM, so an assistant proposes changes with `propose_skill_change`; you decide in the app.
+
+1. In a sandbox ask the assistant: "Create a shared skill `demo-proposal` with a `SKILL.md` that explains the test; call `propose_skill_change` with the complete content." The call blocks for up to 10 minutes.
+2. The app shows a request of kind `skill` with the skill names, the reason and one entry per file (`path`, `op` = create/modify/delete, `diff`). **To be verified in the real app:** the diff rendering and the Allow/Deny buttons.
+3. Allow: the file appears on the Mac at `~/.bergfried/skills/demo-proposal/SKILL.md`; the assistant gets "Approved and applied …"; the audit log has `skills.allowed`.
+4. Repeat the proposal and deny it with a note (for example "use another name"): nothing is written and the assistant sees the note (`skills.denied`).
+5. A proposal whose content contains a zero-width space (U+200B) is refused before it reaches the app, with `Invalid proposal: … invisible or line-breaking character U+200B`.
+6. Open a proposal and, before allowing it, change the same file on the Mac. Allowing it fails: the request ends as `failed`, the audit log has `skills.apply_failed`, and the assistant is told to propose again.
+
+The app is the decision maker; for a terminal test the same decisions work over the app socket:
+
+```bash
+curl -s --unix-socket ~/.bergfried/app.sock http://localhost/v1/requests | jq '.[] | select(.kind=="skill")'
+curl -s --unix-socket ~/.bergfried/app.sock -X POST http://localhost/v1/skills/decide \
+  -d '{"id":ID,"allow":true}'                     # {"status":"allowed"}
+curl -s --unix-socket ~/.bergfried/app.sock -X POST http://localhost/v1/skills/decide \
+  -d '{"id":ID,"allow":false,"note":"use another name"}'
+```
+
 ## Notes
 
 - `limactl edit … --mount-only` replaces **all** mounts; the daemon always passes `shared/in`, `shared/out:w` and the skills folder together.

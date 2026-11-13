@@ -16,6 +16,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
@@ -261,5 +262,116 @@ func TestSandboxesReportClaude(t *testing.T) {
 	}
 	if strings.Contains(body, `"runtime"`) || strings.Contains(body, `"worktrees"`) {
 		t.Fatalf("runtime/worktrees must be gone: %s", body)
+	}
+}
+
+func waitSkillRequest(t *testing.T, st *store.Store) store.Request {
+	t.Helper()
+	for i := 0; i < 300; i++ {
+		rs, err := st.ListRequests(true, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rs {
+			if r.Kind == "skill" {
+				return r
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("no pending skill request")
+	return store.Request{}
+}
+
+type skillAnswer struct {
+	res skills.Result
+	err error
+}
+
+func proposeSkill(t *testing.T, svc *skills.Service, cs []skills.Change) chan skillAnswer {
+	t.Helper()
+	ch := make(chan skillAnswer, 1)
+	go func() {
+		r, err := svc.Request(context.Background(), "shop", "main", "improve the demo skill", cs)
+		ch <- skillAnswer{r, err}
+	}()
+	return ch
+}
+
+func TestRequestsShowSkillDetails(t *testing.T) {
+	s, ts := srv(t)
+	s.Skills = skills.NewService(s.M.S, t.TempDir())
+	ch := proposeSkill(t, s.Skills, []skills.Change{{Path: "demo/SKILL.md", Content: []byte("new content\n")}})
+	req := waitSkillRequest(t, s.M.S)
+
+	if _, err := s.M.S.AddRequest(store.Request{Sandbox: "shop", Worktree: "main", Kind: "ghtoken", Path: "o/r", Status: "pending",
+		Extra: `{"repo":"o/r","has_token":false}`}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, body := do(t, "GET", ts.URL+"/v1/requests", "")
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(body), &list); err != nil {
+		t.Fatal(err, body)
+	}
+	var skillEntry, other map[string]any
+	for _, e := range list {
+		switch e["kind"] {
+		case "skill":
+			skillEntry = e
+		case "ghtoken":
+			other = e
+		}
+	}
+	if skillEntry == nil || other == nil {
+		t.Fatalf("requests = %s", body)
+	}
+	details, ok := skillEntry["skill"].([]any)
+	if !ok || len(details) != 1 {
+		t.Fatalf("skill details = %#v", skillEntry["skill"])
+	}
+	d, _ := details[0].(map[string]any)
+	if d["path"] != "demo/SKILL.md" || d["op"] != "create" || !strings.Contains(fmt.Sprint(d["diff"]), "+new content") {
+		t.Fatalf("detail = %#v", d)
+	}
+	if _, ok := other["skill"]; ok {
+		t.Fatalf("other kinds must not carry skill details: %#v", other)
+	}
+
+	code, out := do(t, "POST", ts.URL+"/v1/skills/decide", fmt.Sprintf(`{"id":%d,"allow":true}`, req.ID))
+	if code != 200 || !strings.Contains(out, `"status":"allowed"`) {
+		t.Fatalf("%d %s", code, out)
+	}
+	a := <-ch
+	if a.err != nil || !a.res.Allowed {
+		t.Fatalf("answer = %+v, %v", a.res, a.err)
+	}
+}
+
+func TestSkillsDecideDenyAndErrors(t *testing.T) {
+	s, ts := srv(t)
+	s.Skills = skills.NewService(s.M.S, t.TempDir())
+	ch := proposeSkill(t, s.Skills, []skills.Change{{Path: "demo/SKILL.md", Content: []byte("new content\n")}})
+	req := waitSkillRequest(t, s.M.S)
+
+	code, out := do(t, "POST", ts.URL+"/v1/skills/decide", fmt.Sprintf(`{"id":%d,"allow":false,"note":"use another name"}`, req.ID))
+	if code != 200 || !strings.Contains(out, `"status":"denied"`) {
+		t.Fatalf("%d %s", code, out)
+	}
+	a := <-ch
+	if a.err != nil || a.res.Allowed || !strings.Contains(a.res.Message, "use another name") {
+		t.Fatalf("answer = %+v, %v", a.res, a.err)
+	}
+
+	if code, out := do(t, "POST", ts.URL+"/v1/skills/decide", `{"id":9999,"allow":true}`); code != 409 || !strings.Contains(out, `"error"`) {
+		t.Fatalf("unknown id: %d %s", code, out)
+	}
+	if code, _ := do(t, "POST", ts.URL+"/v1/skills/decide", `{`); code != 400 {
+		t.Fatalf("bad body: %d", code)
+	}
+
+	s.Skills = nil
+	if code, _ := do(t, "POST", ts.URL+"/v1/skills/decide", `{"id":1,"allow":true}`); code != 400 {
+		t.Fatalf("without service: %d", code)
 	}
 }

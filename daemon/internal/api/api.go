@@ -25,6 +25,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
@@ -41,6 +42,7 @@ type Server struct {
 	Upstream      string
 	Mon           *Monitor
 	GH            *ghtoken.Service
+	Skills        *skills.Service
 	Upd           *update.Service
 
 	Home string      // ~/.bergfried (log files)
@@ -176,19 +178,20 @@ type sshInfoJ struct {
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
-	ID      int64           `json:"id"`
-	Sandbox string          `json:"sandbox"`
-	Folder  string          `json:"folder"`
-	Kind    string          `json:"kind"`
-	Path    string          `json:"path"`
-	Reason  string          `json:"reason"`
-	Status  string          `json:"status"`
-	Created int64           `json:"created_unix"`
-	Bytes   int64           `json:"bytes"`
-	Files   int64           `json:"files"`
-	Large   bool            `json:"large"`
-	SSH     *sshInfoJ       `json:"ssh,omitempty"`
-	GitHub  *ghtoken.Detail `json:"github,omitempty"`
+	ID      int64               `json:"id"`
+	Sandbox string              `json:"sandbox"`
+	Folder  string              `json:"folder"`
+	Kind    string              `json:"kind"`
+	Path    string              `json:"path"`
+	Reason  string              `json:"reason"`
+	Status  string              `json:"status"`
+	Created int64               `json:"created_unix"`
+	Bytes   int64               `json:"bytes"`
+	Files   int64               `json:"files"`
+	Large   bool                `json:"large"`
+	SSH     *sshInfoJ           `json:"ssh,omitempty"`
+	GitHub  *ghtoken.Detail     `json:"github,omitempty"`
+	Skill   []skills.FileDetail `json:"skill,omitempty"`
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
@@ -232,6 +235,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/opencode/start", s.simple("opencode.start", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStart(ctx, n) }))
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
+	mux.HandleFunc("POST /v1/skills/decide", s.skillsDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/log", s.logTail)
 	mux.HandleFunc("GET /v1/update", s.updateInfo)
@@ -635,6 +639,24 @@ func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+func (s *Server) skillsDecide(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ID    int64  `json:"id"`
+		Allow bool   `json:"allow"`
+		Note  string `json:"note"`
+	}
+	if err := decode(r, &q); err != nil || s.Skills == nil {
+		fail(w, 400, fmt.Errorf("invalid request"))
+		return
+	}
+	status, err := s.Skills.Decide(r.Context(), q.ID, q.Allow, q.Note)
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": status})
+}
+
 func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		ID    int64  `json:"id"`
@@ -827,6 +849,10 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 			var d ghtoken.Detail
 			if json.Unmarshal([]byte(q.Extra), &d) == nil {
 				j.GitHub = &d
+			}
+		case "skill":
+			if d, err := skills.DetailOf(q.Extra); err == nil {
+				j.Skill = d
 			}
 		}
 		if q.Kind == "ssh" && q.Status == "pending" {
