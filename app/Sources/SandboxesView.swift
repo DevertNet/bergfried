@@ -388,6 +388,7 @@ struct OpenCodeServiceCard: View {
 
     var serviceRunning: Bool { s.opencodeRunning == true }
     var canSignIn: Bool { s.running && s.opencodeInstalled == true && s.opencodeLoggedIn == false }
+    var busy: String? { model.running.first(where: { $0.key.hasPrefix("opencode-") && $0.key.hasSuffix(s.name) })?.value }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
@@ -415,7 +416,7 @@ struct OpenCodeServiceCard: View {
                             Text(serviceRunning ? L("service running") : L("service stopped"))
                                 .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary)
                         }
-                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "OpenCode", reasons: r, footer: L("Stop the service and start it again."))) }
+                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu."))) }
                     }
                     Text(status.0).font(.caption).foregroundStyle(status.1)
                     Text(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
@@ -429,15 +430,24 @@ struct OpenCodeServiceCard: View {
             if s.running {
                 HStack(spacing: 8) {
                     Spacer()
-                    if serviceRunning {
+                    if let b = busy {
+                        ProgressView().controlSize(.small)
+                        Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else if serviceRunning {
                         if pairing {
                             ProgressView().controlSize(.small).help(L("Preparing the connection …"))
                         } else {
                             Button("Connect desktop") { pair() }.controlSize(.small)
                         }
                         Button("Stop service") { model.setBanner(nil); Task { if let e = await model.runJob("opencode-stop-\(s.name)", L("Stopping the OpenCode service …"), "/v1/opencode/stop", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
+                        Menu {
+                            Button(L("Restart service")) {
+                                Task { if let e = await model.runJob("opencode-restart-\(s.name)", L("Restarting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } }
+                            }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
                     } else {
-                        Button("Start service") { Task { if let e = await model.runJob("opencode-start-\(s.name)", L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
+                        Button("Start service") { Task { if let e = await model.runJob("opencode-start-\(s.name)", L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small).buttonStyle(.borderedProminent)
                     }
                 }
             }

@@ -12,7 +12,7 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 ## How it works in 30 seconds
 1. **One sandbox = one project = one VM** (Lima, cloned from a base VM in seconds). Folders under `~/work` hold the code; Claude runs in the folder you choose, OpenCode runs once for the whole sandbox.
 2. **The VM cannot see your Mac.** Only two folders are shared: `shared/in` (read-only, files you approved) and `shared/out`.
-3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees. SSH access is granted per task: the assistant asks once for a task and releases the grant when it is finished (`release_ssh`); the timer you choose stays as an upper limit.
+3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees. Finished requests keep the assistant's reason, a folder the assistant's tool could not name ("unknown") is not shown at all, and the SSH sheet fits its content (max. height 720 px). SSH access is granted per task: the assistant asks once for a task and releases the grant when it is finished (`release_ssh`); the timer you choose stays as an upper limit.
 
 ![Open requests and an active SSH grant](docs/img/requests.png)
 
@@ -74,7 +74,7 @@ OpenCode is driven from the [OpenCode desktop app](https://opencode.ai/download)
 2. Click **Start service** if it is not running (this installs OpenCode if needed). Only a running service shows **Connect desktop**.
 3. Click **Connect desktop** (or **Shell / SSH → Connect desktop app …**), copy the one-time link (valid for 5 minutes) and paste it into the desktop app under **Add server**. Open the sandbox's folders as projects; Claude is not required.
 
-The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service / Stop service** in the OpenCode card to control it; **Connect desktop** appears only while the service runs. Stopping it does not stop Claude.
+The link uses a dedicated port per sandbox, works only on your Mac and is never exposed to the internet. A connection lasts 30 days; if a link expired, click Connect again. Claude keeps using Remote Control and is not listed in the desktop app. Use **Start service** and **Stop service** in the OpenCode card to control it (while a job runs the card shows a spinner and the step, like the Claude rows); **Restart service** in the card's ⋯ menu restarts it. **Connect desktop** appears only while the service runs. Stopping it does not stop Claude.
 
 ### Or install a release
 Download `Bergfried-<version>-macos-arm64.zip` from [Releases](https://github.com/DevertNet/bergfried/releases), unzip, move `Bergfried.app` to `/Applications` and open it.

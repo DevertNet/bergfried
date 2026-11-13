@@ -312,6 +312,16 @@ func restartReasonsFor(running bool, stamps map[string]store.HelperStamp, target
 	return sandbox.RestartReasons(ok, stamp, current)
 }
 
+// opencodeRestartReasons reports why the sandbox-level OpenCode service should be restarted. The
+// hint only applies when the service is wanted (the sandbox's opencode flag): a sandbox that never
+// asked for the service must not show a restart hint just because some opencode process runs.
+func opencodeRestartReasons(wanted, running bool, stamps map[string]store.HelperStamp, current store.HelperStamp) []string {
+	if !wanted {
+		return []string{}
+	}
+	return restartReasonsFor(running, stamps, sandbox.OpenCodeTarget, current)
+}
+
 func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	ss, err := s.M.S.ListSandboxes()
 	if err != nil {
@@ -370,7 +380,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 			j.ClaudeSessions = append(j.ClaudeSessions, c)
 		}
 		if haveStamps {
-			j.OpenCodeRestartReasons = restartReasonsFor(ps.OpenCodeRunning, stamps, sandbox.OpenCodeTarget, cur)
+			j.OpenCodeRestartReasons = opencodeRestartReasons(x.OpenCode, ps.OpenCodeRunning, stamps, cur)
 		}
 		for _, g := range grants {
 			if g.Sandbox == x.Name {

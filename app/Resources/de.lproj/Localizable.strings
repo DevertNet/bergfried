@@ -97,13 +97,16 @@
 "Export CSV …" = "CSV exportieren …";
 "Extend" = "Verlängern";
 "Failed" = "Fehlgeschlagen";
+"File request: %@" = "Datei-Anfrage: %@";
 "File request: %@/%@" = "Datei-Anfrage: %@/%@";
 "Filter (sandbox, agent, event, details …)" = "Filter (Sandbox, Agent, Ereignis, Details …)";
 "Folder" = "Ordner";
 "Folder in your home directory that should be copied into the VM" = "Ordner im Home-Verzeichnis, der in die VM kopiert werden soll";
 "For all worktrees of the sandbox" = "Für alle Worktrees der Sandbox";
 "Git repo" = "Git-Repo";
+"GitHub access for %@" = "GitHub-Zugriff für %@";
 "GitHub access for %@ / %@" = "GitHub-Zugriff für %@ / %@";
+"GitHub access: %@" = "GitHub-Zugriff: %@";
 "GitHub access: %@/%@" = "GitHub-Zugriff: %@/%@";
 "Host key is new (not in your known_hosts)" = "Host-Key ist neu (nicht in deiner known_hosts)";
 "I know this host key" = "Ich kenne diesen Host-Key";
@@ -172,7 +175,9 @@
 "Restart" = "Neu starten";
 "Revoke" = "Entziehen";
 "Running" = "Läuft";
+"SSH access for %@" = "SSH-Zugriff für %@";
 "SSH access for %@/%@" = "SSH-Zugriff für %@/%@";
+"SSH request: %@" = "SSH-Anfrage: %@";
 "SSH request: %@/%@" = "SSH-Anfrage: %@/%@";
 "SSH upstream agent" = "SSH-Upstream-Agent";
 "Save" = "Speichern";
@@ -426,6 +431,7 @@
 "Sandbox stopped" = "Sandbox gestoppt";
 "Starting the OpenCode service …" = "OpenCode-Dienst wird gestartet …";
 "Stopping the OpenCode service …" = "OpenCode-Dienst wird gestoppt …";
+"Restarting the OpenCode service …" = "OpenCode-Dienst wird neu gestartet …";
 "The folder is **copied**, not mounted: the VM never sees your home. Not copied: blocklist entries, .env files, keys, symlinks, node_modules and caches. Credentials in .git/config are removed. For git the assistant will need a GitHub token later (it asks for it)." = "Der Ordner wird **kopiert**, nicht eingebunden: die VM sieht dein Home nie. Nicht kopiert: Blocklist-Einträge, .env-Dateien, Schlüssel, Symlinks, node_modules und Caches. Zugangsdaten in .git/config werden entfernt. Für Git braucht der Assistent später einen GitHub-Token (er fragt danach).";
 "Worktree %@" = "Worktree %@";
 "Worktree %@ is being created …" = "Worktree %@ wird erstellt …";
@@ -449,6 +455,7 @@
 "Worktree name" = "Worktree-Name";
 "Start service" = "Dienst starten";
 "Stop service" = "Dienst stoppen";
+"Restart service" = "Dienst neu starten";
 "Connect desktop" = "Desktop-App verbinden";
 "A worktree is a folder with code. OpenCode opens these folders as projects." = "Ein Worktree ist ein Ordner mit Code. OpenCode öffnet diese Ordner als Projekte.";
 "Claude and OpenCode can use the same worktree, but not at the same time on the same files. Use separate worktrees for parallel work." = "Claude und OpenCode können denselben Worktree nutzen, aber nicht gleichzeitig an denselben Dateien. Für parallele Arbeit getrennte Worktrees anlegen.";
@@ -465,7 +472,7 @@
 "The instructions for the assistant (bergfried.md) have changed." = "Die Anweisungen für den Assistenten (bergfried.md) haben sich geändert.";
 "The Bergfried tool for the assistant (bergfried-mcp) was updated." = "Das Bergfried-Tool für den Assistenten (bergfried-mcp) wurde aktualisiert.";
 "Use “Restart Claude” in the menu; the conversation continues." = "Nutze „Claude neu starten“ im Menü; das Gespräch läuft weiter.";
-"Stop the service and start it again." = "Stoppe den Dienst und starte ihn neu.";
+"Use “Restart service” in the menu." = "Nutze „Dienst neu starten“ im Menü.";
 
 "During a grant an assistant could add its own key to authorized_keys on the target. For important servers use a restricted user \"claude\" whose authorized_keys belongs to root (AuthorizedKeysFile in sshd_config)." = "Während einer Freigabe könnte ein Assistent einen eigenen Key in authorized_keys des Ziels eintragen. Für wichtige Server einen eingeschränkten User „claude“ nutzen, dessen authorized_keys root gehört (AuthorizedKeysFile in sshd_config).";
 "Filter (sandbox, worktree, event, details …)" = "Filter (Sandbox, Worktree, Ereignis, Details …)";

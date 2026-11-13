@@ -11,7 +11,7 @@ Everything below is manual (real Lima VM, macOS app); CI only runs the Go tests 
 4. Sign in:
    - **Sign in to OpenCode …** → terminal with `opencode auth login` (choose a provider).
    - **Sign in to Claude …** → terminal with `claude auth login` (only needed if you want Claude).
-5. Click **Start service** in the OpenCode card. The status shows "service running"; **Connect desktop** appears only now.
+5. Click **Start service** in the OpenCode card. While the job runs the card shows a spinner plus the step text instead of its buttons (like the Claude rows); afterwards the status shows "service running" and **Connect desktop** appears only now.
 6. Start Claude in a folder (**Start Claude**); its status becomes "Claude runs · Remote Control active". Claude and OpenCode can use the same folder, but not at the same time on the same files.
 
 ## OpenCode desktop app (Claude not required)
@@ -24,7 +24,7 @@ OpenCode is a sandbox-level service, not a Claude entry. Connect works without a
 4. The desktop app opens the sandbox folders as projects. Send a prompt and check that file/SSH/GitHub requests still appear in **Bergfried**.
 5. Add another folder: it appears in the desktop app without a new link (one service and one link per sandbox).
 6. Click **Connect desktop** again after the link expired: a fresh link is issued; the saved connection keeps working. Errors are shown in the sheet with **Try again**.
-7. **Stop service** stops it; **Start service** brings it back. The state survives a sandbox stop/start.
+7. **Stop service** stops it; **Start service** brings it back; **Restart service** in the ⋯ menu restarts it (the start endpoint stops a running instance first). The state survives a sandbox stop/start.
 
 Check that the link uses a port in **42000–42999** and is **not** reachable from another device on the LAN (it is bound to `127.0.0.1` on the Mac). A link on the OpenCode default **49374** is wrong: a local OpenCode on the Mac can occupy it; click Connect again.
 
@@ -45,6 +45,7 @@ Check that the link uses a port in **42000–42999** and is **not** reachable fr
 ## Cleanup and edge cases
 
 - Removing a Claude entry stops Claude and removes only the entry; the folder and its OpenCode sessions stay untouched.
+- **Restart needed** after an update: only a service Bergfried started (the sandbox's wanted flag: **Start service**, **Connect desktop** or a sandbox start with a wanted service) shows the hint; **Restart service** in the ⋯ menu clears it. The hint is not shown for an OpenCode process that runs without Bergfried asking for it.
 - Delete the sandbox: the desktop connection is dead.
 - Two sandboxes with OpenCode get different local ports and separate links.
 - Two folders in **one** sandbox share **one** OpenCode service and **one** desktop link; each project gets its own MCP process.
