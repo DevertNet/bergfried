@@ -80,25 +80,25 @@ func TestHelperStamps(t *testing.T) {
 		t.Fatalf("unknown sandbox must give an empty, non-nil map: %v %v", st, err)
 	}
 	_ = s.AddWorktree(Worktree{Sandbox: "a", Name: "main", Path: "work/main", ComposeProject: "a-main", Created: time.Now()})
-	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g1", MCP: "m1", Skills: "s1"}); err != nil {
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g1", MCP: "m1"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetHelperStamp("a", "opencode", HelperStamp{Guidance: "g2", MCP: "m2", Skills: "s2"}); err != nil {
+	if err := s.SetHelperStamp("a", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
 		t.Fatal(err)
 	}
 	st, err = s.ListHelperStamps("a")
 	if err != nil || len(st) != 2 {
 		t.Fatalf("%v %v", st, err)
 	}
-	if st["claude:main"] != (HelperStamp{Guidance: "g1", MCP: "m1", Skills: "s1"}) || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2", Skills: "s2"}) {
+	if st["claude:main"] != (HelperStamp{Guidance: "g1", MCP: "m1"}) || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
 		t.Fatalf("%v", st)
 	}
 	// replace
-	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g3", MCP: "m3", Skills: "s3"}); err != nil {
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g3", MCP: "m3"}); err != nil {
 		t.Fatal(err)
 	}
 	st, _ = s.ListHelperStamps("a")
-	if len(st) != 2 || st["claude:main"] != (HelperStamp{Guidance: "g3", MCP: "m3", Skills: "s3"}) {
+	if len(st) != 2 || st["claude:main"] != (HelperStamp{Guidance: "g3", MCP: "m3"}) {
 		t.Fatalf("replace failed: %v", st)
 	}
 	// a deleted worktree loses its Claude stamp
@@ -168,13 +168,47 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 	}
 }
 
-func TestMigrateAddsSkillsStampColumn(t *testing.T) {
+func TestLegacySkillsStampColumnIsIgnored(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d")
 	s, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An old helper_stamps table without the skills column.
+	// A database from the version that still had the skills column: rows carry a value there.
+	for _, q := range []string{
+		`DROP TABLE helper_stamps`,
+		`CREATE TABLE helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, skills TEXT NOT NULL DEFAULT '', PRIMARY KEY(sandbox,target))`,
+		`INSERT INTO helper_stamps(sandbox,target,guidance,mcp,skills) VALUES('alt','opencode','g','m','old-skills-hash')`,
+	} {
+		if _, err := s.DB.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	s.DB.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("a database with the old skills column must open: %v", err)
+	}
+	st, err := s.ListHelperStamps("alt")
+	if err != nil || len(st) != 1 || st["opencode"] != (HelperStamp{Guidance: "g", MCP: "m"}) {
+		t.Fatalf("old stamp after migration: %v %v", st, err)
+	}
+	if err := s.SetHelperStamp("alt", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
+		t.Fatalf("writing a stamp with the legacy column present: %v", err)
+	}
+	st, err = s.ListHelperStamps("alt")
+	if err != nil || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("stamp after write: %v %v", st, err)
+	}
+}
+
+func TestHelperStampWithoutSkillsColumn(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d")
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An even older helper_stamps table without the skills column at all.
 	for _, q := range []string{
 		`DROP TABLE helper_stamps`,
 		`CREATE TABLE helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target))`,
@@ -187,18 +221,18 @@ func TestMigrateAddsSkillsStampColumn(t *testing.T) {
 	s.DB.Close()
 	s, err = Open(dir)
 	if err != nil {
-		t.Fatalf("a database with the old schema must open: %v", err)
+		t.Fatalf("a database without the skills column must open: %v", err)
 	}
 	st, err := s.ListHelperStamps("alt")
 	if err != nil || len(st) != 1 || st["opencode"] != (HelperStamp{Guidance: "g", MCP: "m"}) {
-		t.Fatalf("old stamp after migration: %v %v", st, err)
+		t.Fatalf("old stamp: %v %v", st, err)
 	}
-	if err := s.SetHelperStamp("alt", "opencode", HelperStamp{Guidance: "g", MCP: "m", Skills: "s"}); err != nil {
+	if err := s.SetHelperStamp("alt", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
 		t.Fatal(err)
 	}
-	st, _ = s.ListHelperStamps("alt")
-	if st["opencode"].Skills != "s" {
-		t.Fatalf("the skills column is not written: %v", st)
+	st, err = s.ListHelperStamps("alt")
+	if err != nil || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("stamp after write: %v %v", st, err)
 	}
 }
 

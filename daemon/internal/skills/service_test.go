@@ -177,7 +177,7 @@ func TestServiceProposalShowsUpAndAllowApplies(t *testing.T) {
 		t.Fatalf("Decide = %q, %v", status, err)
 	}
 	a := <-ch
-	if a.err != nil || !a.res.Allowed || !strings.Contains(a.res.Message, "Approved and applied") {
+	if a.err != nil || !a.res.Allowed || !strings.Contains(a.res.Message, "Approved and applied. The skills are shared with all sandboxes; the link in each VM is refreshed within a few seconds, no restart needed.") {
 		t.Fatalf("requester got %+v", a)
 	}
 	if b, err := os.ReadFile(filepath.Join(dir, "demo", "SKILL.md")); err != nil || string(b) != "new\n" {
