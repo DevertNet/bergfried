@@ -534,6 +534,5 @@
 "Skill proposal: %@/%@" = "Skill-Vorschlag: %@/%@";
 "Skill proposal: %@" = "Skill-Vorschlag: %@";
 "Skills %@: %@ …" = "Skills %@: %@ …";
-"The shared skills have changed." = "Die gemeinsamen Skills haben sich geändert.";
 "Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically." = "Gemeinsame Skills sind in dieser VM noch nicht eingebunden. Stoppe und starte die VM einmal; die Einbindung wird automatisch hinzugefügt.";
 "failed" = "fehlgeschlagen";

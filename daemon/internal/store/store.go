@@ -135,7 +135,6 @@ func (s *Store) migrate() error {
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode_port INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode INTEGER NOT NULL DEFAULT 0`)
-		_, _ = s.DB.Exec(`ALTER TABLE helper_stamps ADD COLUMN skills TEXT NOT NULL DEFAULT ''`)
 		// Leftovers of the former Mac-push concept (the token now lives in the VM, see docs/GITHUB.md).
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS git_pushes`)
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS ci_grants`)
@@ -146,7 +145,7 @@ CREATE TABLE IF NOT EXISTS worktrees(sandbox TEXT NOT NULL, name TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
 CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, sandbox TEXT, worktree TEXT, detail TEXT);
-CREATE TABLE IF NOT EXISTS helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, skills TEXT NOT NULL DEFAULT '', PRIMARY KEY(sandbox,target));`)
+CREATE TABLE IF NOT EXISTS helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target));`)
 	return err
 }
 
@@ -253,19 +252,19 @@ func (s *Store) DeleteWorktree(sandbox, name string) error {
 	return err
 }
 
-// HelperStamp is the hash of the guidance text, of the bergfried-mcp binary and of the shared
-// skills folder an assistant was started with (target = "claude:<worktree>" or "opencode").
-type HelperStamp struct{ Guidance, MCP, Skills string }
+// HelperStamp is the hash of the guidance text and of the bergfried-mcp binary an assistant was
+// started with (target = "claude:<worktree>" or "opencode").
+type HelperStamp struct{ Guidance, MCP string }
 
 // SetHelperStamp stores (or replaces) the stamp of a target in a sandbox.
 func (s *Store) SetHelperStamp(sandbox, target string, st HelperStamp) error {
-	_, err := s.DB.Exec(`INSERT OR REPLACE INTO helper_stamps(sandbox,target,guidance,mcp,skills) VALUES(?,?,?,?,?)`, sandbox, target, st.Guidance, st.MCP, st.Skills)
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO helper_stamps(sandbox,target,guidance,mcp) VALUES(?,?,?,?)`, sandbox, target, st.Guidance, st.MCP)
 	return err
 }
 
 // ListHelperStamps returns all stamps of a sandbox (empty map when there are none).
 func (s *Store) ListHelperStamps(sandbox string) (map[string]HelperStamp, error) {
-	rows, err := s.DB.Query(`SELECT target,guidance,mcp,skills FROM helper_stamps WHERE sandbox=?`, sandbox)
+	rows, err := s.DB.Query(`SELECT target,guidance,mcp FROM helper_stamps WHERE sandbox=?`, sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +273,7 @@ func (s *Store) ListHelperStamps(sandbox string) (map[string]HelperStamp, error)
 	for rows.Next() {
 		var target string
 		var st HelperStamp
-		if err := rows.Scan(&target, &st.Guidance, &st.MCP, &st.Skills); err != nil {
+		if err := rows.Scan(&target, &st.Guidance, &st.MCP); err != nil {
 			return nil, err
 		}
 		out[target] = st

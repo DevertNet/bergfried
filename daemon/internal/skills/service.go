@@ -311,7 +311,7 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, note string)
 		ch <- Result{Allowed: false, Message: "The user allowed it, but applying failed: " + aerr.Error() + ". Propose again."}
 		return "failed", aerr
 	}
-	msg := "Approved and applied. The skills are shared with all sandboxes; running assistants see the change after a restart."
+	msg := "Approved and applied. The skills are shared with all sandboxes; the link in each VM is refreshed within a few seconds, no restart needed."
 	if ok, _ := s.S.SetRequestStatus(id, "allowed"); !ok {
 		ch <- Result{Allowed: true, Message: msg}
 		return "", fmt.Errorf("request %d is no longer open", id)

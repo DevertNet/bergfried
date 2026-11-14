@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -59,8 +58,8 @@ func mcpHash(path string) (string, error) {
 	return mcpHashSum, nil
 }
 
-// CurrentStamp hashes what would be installed right now: the guidance text for this sandbox,
-// the bergfried-mcp binary and the shared skills folder.
+// CurrentStamp hashes what would be installed right now: the guidance text for this sandbox
+// and the bergfried-mcp binary.
 func (m *Manager) CurrentStamp(sandbox string) (store.HelperStamp, error) {
 	outDir := filepath.Join(m.Home, "sandboxes", sandbox, "shared", "out")
 	g := sha256.Sum256([]byte(guidance(outDir)))
@@ -69,16 +68,11 @@ func (m *Manager) CurrentStamp(sandbox string) (store.HelperStamp, error) {
 	if err != nil {
 		return store.HelperStamp{}, fmt.Errorf("bergfried-mcp not readable (%s): %w", bin, err)
 	}
-	skillsDir := m.SkillsDir()
-	sk, err := skills.Hash(skillsDir)
-	if err != nil {
-		return store.HelperStamp{}, fmt.Errorf("skills folder not readable (%s): %w", skillsDir, err)
-	}
-	return store.HelperStamp{Guidance: hex.EncodeToString(g[:]), MCP: mcp, Skills: sk}, nil
+	return store.HelperStamp{Guidance: hex.EncodeToString(g[:]), MCP: mcp}, nil
 }
 
 // RestartReasons turns the stored stamp into the reasons why an assistant should be restarted
-// ("guidance", "mcp" and/or "skills", in this order). Without a stamp the reason is "unknown".
+// ("guidance" and/or "mcp", in this order). Without a stamp the reason is "unknown".
 func RestartReasons(have bool, stored, current store.HelperStamp) []string {
 	if !have {
 		return []string{"unknown"}
@@ -89,9 +83,6 @@ func RestartReasons(have bool, stored, current store.HelperStamp) []string {
 	}
 	if stored.MCP != current.MCP {
 		out = append(out, "mcp")
-	}
-	if stored.Skills != current.Skills {
-		out = append(out, "skills")
 	}
 	return out
 }

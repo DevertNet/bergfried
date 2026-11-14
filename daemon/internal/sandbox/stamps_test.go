@@ -23,10 +23,6 @@ func TestRestartReasons(t *testing.T) {
 		{name: "guidance differs", have: true, stored: base, cur: store.HelperStamp{Guidance: "x", MCP: "m"}, want: []string{"guidance"}},
 		{name: "mcp differs", have: true, stored: base, cur: store.HelperStamp{Guidance: "g", MCP: "x"}, want: []string{"mcp"}},
 		{name: "both differ", have: true, stored: base, cur: store.HelperStamp{Guidance: "x", MCP: "y"}, want: []string{"guidance", "mcp"}},
-		{name: "skills differ", have: true, stored: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s1"}, cur: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s2"}, want: []string{"skills"}},
-		{name: "old row without skills", have: true, stored: base, cur: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s"}, want: []string{"skills"}},
-		{name: "all differ", have: true, stored: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s1"}, cur: store.HelperStamp{Guidance: "x", MCP: "y", Skills: "s2"}, want: []string{"guidance", "mcp", "skills"}},
-		{name: "all equal", have: true, stored: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s"}, cur: store.HelperStamp{Guidance: "g", MCP: "m", Skills: "s"}, want: []string{}},
 	} {
 		got := RestartReasons(c.have, c.stored, c.cur)
 		if got == nil {
@@ -74,50 +70,6 @@ func TestCurrentStamp(t *testing.T) {
 	}
 	if _, err := m.CurrentStamp("shop"); err == nil {
 		t.Fatal("a missing binary must return an error")
-	}
-}
-
-func TestCurrentStampSkills(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "bergfried-mcp")
-	if err := os.WriteFile(bin, []byte("v1"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BERGFRIED_MCP_BIN", bin)
-	m := &Manager{Home: t.TempDir()}
-	empty, err := m.CurrentStamp("shop")
-	if err != nil {
-		t.Fatal(err)
-	}
-	skill := filepath.Join(m.SkillsDir(), "demo")
-	if err := os.MkdirAll(skill, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(skill, "SKILL.md")
-	if err := os.WriteFile(file, []byte("v1"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	a, err := m.CurrentStamp("shop")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.Skills == empty.Skills {
-		t.Fatal("a new skill must change the skills hash")
-	}
-	if a.Guidance != empty.Guidance || a.MCP != empty.MCP {
-		t.Fatal("the skills hash must not depend on guidance or the binary")
-	}
-	if err := os.WriteFile(file, []byte("v2"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	b, err := m.CurrentStamp("shop")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Skills == a.Skills {
-		t.Fatal("a changed skill file must change the skills hash")
-	}
-	if b.Guidance != a.Guidance || b.MCP != a.MCP {
-		t.Fatal("only the skills hash may change")
 	}
 }
 

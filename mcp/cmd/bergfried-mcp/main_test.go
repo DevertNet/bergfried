@@ -59,7 +59,7 @@ func TestInstructionsDescribeTaskRelease(t *testing.T) {
 }
 
 func TestInstructionsDescribeSharedSkills(t *testing.T) {
-	for _, want := range []string{"propose_skill_change", "~/.claude/skills"} {
+	for _, want := range []string{"propose_skill_change", "~/.claude/skills", "without restarting the assistant", "within a few seconds", "if a new skill does not show up, restart the assistant"} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("instructions do not contain %q", want)
 		}

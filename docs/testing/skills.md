@@ -79,9 +79,8 @@ OpenCode both read that folder.
    `demo` is a symlink into `~/.bergfried/skills/demo`.
 3. Claude lists the skill (e.g. `/skills` or in its skill overview; **to be verified**).
 4. OpenCode lists it too (`opencode` skills; **to be verified**).
-5. Edit the skill file on the Mac: the app shows **Restart needed** for running assistants.
-   The daemon relinks the folder automatically (monitor); the assistants pick up the new
-   content after a restart.
+5. Edit the skill file on the Mac: running assistants see the new content without a restart
+   (verified on a real VM). The daemon relinks the folder automatically (monitor).
 6. A local real folder with the same name in `~/.claude/skills` is not replaced (**to be verified**).
 7. Removing the skill folder on the Mac removes the link in the VM.
 

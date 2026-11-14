@@ -880,7 +880,6 @@ func restartHelp(tool: String, reasons: [String], footer: String) -> String {
     if reasons.contains("unknown") { lines.append(L("%@ was started before Bergfried tracked which instructions and tools it uses. Stop and start it again to be sure the current ones apply.", tool)) }
     if reasons.contains("guidance") { lines.append(L("The instructions for the assistant (bergfried.md) have changed.")) }
     if reasons.contains("mcp") { lines.append(L("The Bergfried tool for the assistant (bergfried-mcp) was updated.")) }
-    if reasons.contains("skills") { lines.append(L("The shared skills have changed.")) }
     lines.append(footer)
     return lines.joined(separator: "\n")
 }

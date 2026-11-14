@@ -166,7 +166,7 @@ func TestClaudeRemoveKeepsFolder(t *testing.T) {
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "release_ssh", "task_id", "once per task", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "propose_skill_change", "~/.claude/skills", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "release_ssh", "task_id", "once per task", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "propose_skill_change", "~/.claude/skills", "without restarting the assistant", "within a few seconds", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
