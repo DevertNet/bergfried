@@ -19,6 +19,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
 	"google.golang.org/grpc"
@@ -67,6 +68,7 @@ type sandboxServer struct {
 	svc     *access.Service
 	ssh     *broker.Service
 	gh      *ghtoken.Service
+	skills  *skills.Service
 	st      *store.Store
 }
 
@@ -87,6 +89,27 @@ func (s *sandboxServer) RequestGitHubToken(ctx context.Context, r *pb.GitHubToke
 		v = pb.Verdict_VERDICT_EXPIRED
 	}
 	return &pb.GitHubTokenResult{Verdict: v, Message: msg}, nil
+}
+
+func (s *sandboxServer) ProposeSkillChange(ctx context.Context, r *pb.SkillProposalRequest) (*pb.SkillProposalResult, error) {
+	if s.skills == nil {
+		return nil, status.Error(codes.FailedPrecondition, "skills proposals are not configured")
+	}
+	changes := make([]skills.Change, len(r.Changes))
+	for i, c := range r.Changes {
+		changes[i] = skills.Change{Path: c.Path, Delete: c.Delete, Content: []byte(c.Content)}
+	}
+	res, err := s.skills.Request(ctx, s.sandbox, s.folder(ctx), r.Reason, changes)
+	if err != nil {
+		return nil, err
+	}
+	v := pb.Verdict_VERDICT_DENIED
+	if res.Allowed {
+		v = pb.Verdict_VERDICT_ALLOWED
+	} else if strings.Contains(res.Message, "expired") {
+		v = pb.Verdict_VERDICT_EXPIRED
+	}
+	return &pb.SkillProposalResult{Verdict: v, Message: res.Message}, nil
 }
 
 func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
@@ -227,6 +250,7 @@ type Daemon struct {
 	Svc       *access.Service
 	SSH       *broker.Service
 	GH        *ghtoken.Service
+	Skills    *skills.Service
 	AdminSock string
 	L         lima.Client
 
@@ -281,7 +305,7 @@ func (d *Daemon) startSandbox(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSandboxAPIServer(g, &sandboxServer{sandbox: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, st: d.St})
+	pb.RegisterSandboxAPIServer(g, &sandboxServer{sandbox: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, skills: d.Skills, st: d.St})
 	go g.Serve(l)
 	asock, err := SSHAgentSocket(vm)
 	if err != nil {

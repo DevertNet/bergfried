@@ -175,6 +175,32 @@ func TestMarkRCClearsFailed(t *testing.T) {
 	}
 }
 
+func TestSkillsRelinkDecision(t *testing.T) {
+	mo := NewMonitor(nil)
+	if mo.linked == nil {
+		t.Fatal("the map of linked skills hashes must be initialised")
+	}
+	linked := map[string]string{}
+	if !skillsRelinkNeeded(linked, "shop", "h1") {
+		t.Fatal("without an entry the links must be created")
+	}
+	linked["shop"] = "h1"
+	if skillsRelinkNeeded(linked, "shop", "h1") {
+		t.Fatal("an unchanged skills folder must not relink")
+	}
+	if !skillsRelinkNeeded(linked, "shop", "h2") {
+		t.Fatal("a changed skills folder must relink")
+	}
+	// A failed relink stores nothing: the next check retries it.
+	if !skillsRelinkNeeded(linked, "shop", "h2") {
+		t.Fatal("a failed relink must be retried")
+	}
+	linked["shop"] = "h2"
+	if skillsRelinkNeeded(linked, "shop", "h2") || !skillsRelinkNeeded(linked, "other", "h2") {
+		t.Fatal("sandboxes must be tracked separately")
+	}
+}
+
 func TestParseProbePID(t *testing.T) {
 	st := parseProbe("login_claude=true\nwin=main rc=1 theme=0 cpid=4242 idle=1 ask=0 url=https://claude.ai/code/session_A\n")
 	if a := st.Worktrees["main"]; a.PID != 4242 || !a.RC {

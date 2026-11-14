@@ -22,6 +22,23 @@ service SandboxAPI {
   // GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
   // in the app; blocks until the user has decided.
   rpc RequestGitHubToken(GitHubTokenRequest) returns (GitHubTokenResult);
+
+  // A proposal for the shared, read-only skills folder; blocks until the user has decided.
+  rpc ProposeSkillChange(SkillProposalRequest) returns (SkillProposalResult);
+}
+
+message SkillChange {
+  string path = 1;
+  bool delete = 2;
+  string content = 3;
+}
+message SkillProposalRequest {
+  string reason = 1;
+  repeated SkillChange changes = 2;
+}
+message SkillProposalResult {
+  Verdict verdict = 1;
+  string message = 2;
 }
 
 message GitHubTokenRequest {

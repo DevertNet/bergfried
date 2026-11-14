@@ -524,3 +524,16 @@
 "Only folders under ~/work are shown. Files are hidden." = "Es werden nur Ordner unter ~/work angezeigt. Dateien sind ausgeblendet.";
 "Opens the folder browser; you can also create a folder there." = "Öffnet den Ordner-Browser; dort kannst du auch einen Ordner anlegen.";
 "Show hidden folders" = "Versteckte Ordner anzeigen";
+
+"wants to change the shared skill(s) **%@** (%lld file(s))" = "möchte die gemeinsamen Skills **%@** ändern (%lld Datei(en))";
+"Review changes …" = "Änderungen prüfen …";
+"Skill proposal for %@" = "Skill-Vorschlag für %@";
+"Change" = "Ändern";
+"No change" = "Unverändert";
+"These changes apply to the shared skills of **all** sandboxes. Skills are instructions for the assistants and may contain scripts that run in the VMs – read the whole diff before you allow." = "Diese Änderungen gelten für die gemeinsamen Skills **aller** Sandboxes. Skills sind Anweisungen für die Assistenten und können Skripte enthalten, die in den VMs laufen – lies den gesamten Diff, bevor du erlaubst.";
+"Skill proposal: %@/%@" = "Skill-Vorschlag: %@/%@";
+"Skill proposal: %@" = "Skill-Vorschlag: %@";
+"Skills %@: %@ …" = "Skills %@: %@ …";
+"The shared skills have changed." = "Die gemeinsamen Skills haben sich geändert.";
+"Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically." = "Gemeinsame Skills sind in dieser VM noch nicht eingebunden. Stoppe und starte die VM einmal; die Einbindung wird automatisch hinzugefügt.";
+"failed" = "fehlgeschlagen";

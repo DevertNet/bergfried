@@ -82,6 +82,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
             c.title = r.hasFolder ? L("GitHub access: %@/%@", r.sandbox, r.folder) : L("GitHub access: %@", r.sandbox)
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
+        case "skill":
+            // No quick-allow: the user must see the diff in the app first.
+            c.title = r.hasFolder ? L("Skill proposal: %@/%@", r.sandbox, r.folder) : L("Skill proposal: %@", r.sandbox)
+            c.body = "\(r.path)\n\(clip(r.reason, 140))"
+            c.categoryIdentifier = "OPEN"
         default:
             c.title = r.hasFolder ? L("File request: %@/%@", r.sandbox, r.folder) : L("File request: %@", r.sandbox)
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"

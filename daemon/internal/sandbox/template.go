@@ -211,7 +211,7 @@ func CheckTemplate(yml string) (warnings []string, err error) {
 	var errs []string
 	if mounts, ok := m["mounts"]; ok {
 		if l, ok := mounts.([]any); !ok || len(l) > 0 {
-			errs = append(errs, "`mounts` must stay empty – the daemon sets the mounts (shared/in, shared/out) per sandbox; home must never be mounted")
+			errs = append(errs, "`mounts` must stay empty – the daemon sets the mounts (shared/in, shared/out, skills) per sandbox; home must never be mounted")
 		}
 	}
 	if base, ok := m["base"]; ok {

@@ -54,7 +54,7 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
 - **Claude login:** `claude setup-token` does **not** work with Remote Control ("requires a full-scope login token"). So: one login per VM (`claude auth login`, button in the app); credentials stay in the VM.
 - **No Xcode, no SwiftPM:** the dev Mac has only Command Line Tools (SwiftPM is broken there). `@State` is a macro without plugin in this SDK → replacement `@Local` (`app/Sources/Local.swift`). No third-party dependencies.
 - **App ↔ daemon over HTTP/JSON** instead of gRPC for Swift (grpc-swift needs SwiftPM). gRPC stays for VM ↔ daemon and CLI ↔ daemon.
-- **Import instead of mount** for existing folders (keeps "exactly two mounts", and performance).
+- **Import instead of mount** for existing folders (keeps the mounts limited to `shared/in`, `shared/out` and `skills`, and performance).
 - **Base VM named after the template hash:** a changed template means building a new base once; old base VMs are removed afterwards (only names matching `^bergfried-base-([0-9a-f]{8}|v[0-9]+)$`).
 - Go 1.26, pure Go (`modernc.org/sqlite`, no cgo).
 

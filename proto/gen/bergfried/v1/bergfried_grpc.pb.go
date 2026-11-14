@@ -27,6 +27,7 @@ const (
 	SandboxAPI_ReleaseSSH_FullMethodName         = "/bergfried.v1.SandboxAPI/ReleaseSSH"
 	SandboxAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SandboxAPI/SSHAttempt"
 	SandboxAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SandboxAPI/RequestGitHubToken"
+	SandboxAPI_ProposeSkillChange_FullMethodName = "/bergfried.v1.SandboxAPI/ProposeSkillChange"
 )
 
 // SandboxAPIClient is the client API for SandboxAPI service.
@@ -50,6 +51,8 @@ type SandboxAPIClient interface {
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
 	// in the app; blocks until the user has decided.
 	RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error)
+	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
+	ProposeSkillChange(ctx context.Context, in *SkillProposalRequest, opts ...grpc.CallOption) (*SkillProposalResult, error)
 }
 
 type sandboxAPIClient struct {
@@ -140,6 +143,16 @@ func (c *sandboxAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTok
 	return out, nil
 }
 
+func (c *sandboxAPIClient) ProposeSkillChange(ctx context.Context, in *SkillProposalRequest, opts ...grpc.CallOption) (*SkillProposalResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SkillProposalResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_ProposeSkillChange_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxAPIServer is the server API for SandboxAPI service.
 // All implementations must embed UnimplementedSandboxAPIServer
 // for forward compatibility.
@@ -161,6 +174,8 @@ type SandboxAPIServer interface {
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
 	// in the app; blocks until the user has decided.
 	RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error)
+	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
+	ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error)
 	mustEmbedUnimplementedSandboxAPIServer()
 }
 
@@ -194,6 +209,9 @@ func (UnimplementedSandboxAPIServer) SSHAttempt(context.Context, *SSHAttemptRequ
 }
 func (UnimplementedSandboxAPIServer) RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestGitHubToken not implemented")
+}
+func (UnimplementedSandboxAPIServer) ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProposeSkillChange not implemented")
 }
 func (UnimplementedSandboxAPIServer) mustEmbedUnimplementedSandboxAPIServer() {}
 func (UnimplementedSandboxAPIServer) testEmbeddedByValue()                    {}
@@ -360,6 +378,24 @@ func _SandboxAPI_RequestGitHubToken_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxAPI_ProposeSkillChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SkillProposalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).ProposeSkillChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_ProposeSkillChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).ProposeSkillChange(ctx, req.(*SkillProposalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxAPI_ServiceDesc is the grpc.ServiceDesc for SandboxAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -398,6 +434,10 @@ var SandboxAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestGitHubToken",
 			Handler:    _SandboxAPI_RequestGitHubToken_Handler,
+		},
+		{
+			MethodName: "ProposeSkillChange",
+			Handler:    _SandboxAPI_ProposeSkillChange_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

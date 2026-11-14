@@ -7,13 +7,14 @@ struct RequestsView: View {
     @Local private var sshFor: RequestInfo?
     @Local private var largeFor: RequestInfo?
     @Local private var gitFor: RequestInfo?
+    @Local private var skillFor: RequestInfo?
     @Local private var denyFor: RequestInfo?
 
     var body: some View {
         List {
             Section("Open requests") {
                 if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
-                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, deny: { denyFor = r }) }
+                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, reviewSkill: { skillFor = r }, deny: { denyFor = r }) }
             }
             Section("Active SSH grants") {
                 if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
@@ -28,6 +29,7 @@ struct RequestsView: View {
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
         .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
+        .sheet(item: $skillFor) { r in SkillProposalSheet(r: r) }
         .sheet(item: $denyFor) { r in DenyRequestSheet(r: r, onDeny: { note in Task { await model.deny(r, note: note) } }) }
         .confirmationDialog("Large approval", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
             Button(L("Yes, copy %@", largeFor.map { formatBytes($0.bytes) } ?? "")) { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
@@ -51,6 +53,7 @@ struct PendingRow: View {
     let decideSSH: () -> Void
     let confirmLarge: () -> Void
     let decideGit: () -> Void
+    let reviewSkill: () -> Void
     let deny: () -> Void
 
     var icon: String {
@@ -58,6 +61,7 @@ struct PendingRow: View {
         case "ssh": return "key.fill"
         case "folder": return "folder"
         case "ghtoken": return "key.horizontal.fill"
+        case "skill": return "book.closed"
         default: return "doc"
         }
     }
@@ -76,6 +80,7 @@ struct PendingRow: View {
                 else if r.github?.hasToken == true { LT("needs access to the repo **%@** (the sandbox's token does not reach it yet)", r.path) }
                 else { LT("needs a **GitHub token** and access to **%@**", r.path) }
             }
+            else if r.kind == "skill" { LT("wants to change the shared skill(s) **%@** (%lld file(s))", r.path, r.files) }
             else { LT(r.kind == "folder" ? "wants the folder **~/%@** (%lld file(s), %@)" : "wants the file **~/%@** (%lld file(s), %@)", r.path, r.files, formatBytes(r.bytes)) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             HStack {
@@ -84,6 +89,9 @@ struct PendingRow: View {
                     Button("Deny", role: .destructive, action: deny)
                 } else if r.kind == "ssh" {
                     Button("Decide …", action: decideSSH).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "skill" {
+                    Button("Review changes …", action: reviewSkill).buttonStyle(.borderedProminent)
                     Button("Deny", role: .destructive, action: deny)
                 } else {
                     Button("Allow") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
@@ -96,13 +104,13 @@ struct PendingRow: View {
 
 struct HistoryRow: View {
     let r: RequestInfo
-    var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" ? .red : .secondary) }
+    var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" || r.status == "failed" ? .red : .secondary) }
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
+                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(.secondary)
                 Text(r.origin)
-                Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+                Text(["ssh", "ghtoken", "skill"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text(LocalizedStringKey(r.status)).foregroundStyle(color)
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)

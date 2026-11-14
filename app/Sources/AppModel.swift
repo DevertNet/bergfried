@@ -100,7 +100,7 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the assistant.
+    /// Denies a request of any kind (file/folder, SSH, GitHub token, skill) with an optional note for the assistant.
     func deny(_ r: RequestInfo, note: String = "") async {
         do {
             switch r.kind {
@@ -108,6 +108,8 @@ final class AppModel: ObservableObject {
                 try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: note))
             case "ghtoken":
                 try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
+            case "skill":
+                try await api.post("/v1/skills/decide", SkillDecideBody(id: r.id, allow: false, note: note))
             default:
                 try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false, note: note))
             }
@@ -119,6 +121,16 @@ final class AppModel: ObservableObject {
     func decideGitHub(id: Int64, token: String) async -> String? {
         do { try await api.post("/v1/github/decide", GitHubDecideBody(id: id, allow: true, token: token)); await refresh(); return nil }
         catch { return error.localizedDescription }
+    }
+
+    /// Allows or denies a skill proposal with an optional note. Returns the error message (the request then ends failed).
+    func decideSkill(id: Int64, allow: Bool, note: String) async -> String? {
+        do { try await api.post("/v1/skills/decide", SkillDecideBody(id: id, allow: allow, note: note)); await refresh(); return nil }
+        catch {
+            // The request ends "failed"; refresh so the dead request disappears from the open list.
+            await refresh()
+            return error.localizedDescription
+        }
     }
 
     func revoke(_ g: GrantInfo) async {

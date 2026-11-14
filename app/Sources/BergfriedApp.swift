@@ -98,6 +98,9 @@ struct MenuContent: View {
                 Button(L("SSH %@/%@ → %@ …", r.sandbox, r.folder, r.path)) { open() }
             } else if r.kind == "ghtoken" {
                 Button("GitHub \(r.sandbox)/\(r.folder): \(r.path) …") { open() }
+            } else if r.kind == "skill" {
+                // The diff has to be reviewed in the app: no Allow/Deny here (they would call the file endpoint).
+                Button(L("Skills %@: %@ …", r.sandbox, r.path)) { open() }
             } else {
                 Menu("\(r.sandbox)/\(r.folder): ~/\(r.path)") {
                     Button("Allow") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }

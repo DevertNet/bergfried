@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type outputKey struct{}
@@ -158,15 +160,54 @@ type Instance struct {
 	Disk   int64  `json:"disk"`
 }
 
-// CreateArgs builds the limactl call: exactly two mounts, never home.
-func CreateArgs(name, template, inDir, outDir string) []string {
+// CreateArgs builds the limactl call: exactly three mounts (shared/in ro, shared/out rw, skills ro), never home.
+func CreateArgs(name, template, inDir, outDir, skills string) []string {
 	return []string{"create", "--name=" + name, "--tty=false",
-		"--mount", inDir, "--mount", outDir + ":w", template}
+		"--mount", inDir, "--mount", outDir + ":w", "--mount", skills, template}
 }
 
-func (c Client) Create(ctx context.Context, name, template, inDir, outDir string) error {
-	_, err := c.R.Run(ctx, CreateArgs(name, template, inDir, outDir)...)
+func (c Client) Create(ctx context.Context, name, template, inDir, outDir, skills string) error {
+	_, err := c.R.Run(ctx, CreateArgs(name, template, inDir, outDir, skills)...)
 	return err
+}
+
+// MountArgs is the --mount-only part of `limactl edit`/`limactl clone`: shared/in ro, shared/out rw, skills ro.
+func MountArgs(in, out, skills string) []string {
+	return []string{"--mount-only", in, "--mount-only", out + ":w", "--mount-only", skills}
+}
+
+// EditMounts replaces all mounts of a stopped instance (Lima refuses a running one).
+func (c Client) EditMounts(ctx context.Context, name, in, out, skills string) error {
+	args := append([]string{"edit", "--tty=false", name}, MountArgs(in, out, skills)...)
+	_, err := c.R.Run(ctx, args...)
+	return err
+}
+
+// HasMount reports whether the instance config (<instance dir>/lima.yaml) contains a mount with this location and writable flag.
+func HasMount(name, location string, writable bool) (bool, error) {
+	d, err := InstanceDir(name)
+	if err != nil {
+		return false, err
+	}
+	b, err := os.ReadFile(filepath.Join(d, "lima.yaml"))
+	if err != nil {
+		return false, err
+	}
+	var cfg struct {
+		Mounts []struct {
+			Location string `yaml:"location"`
+			Writable bool   `yaml:"writable"`
+		} `yaml:"mounts"`
+	}
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return false, err
+	}
+	for _, m := range cfg.Mounts {
+		if m.Location == location && m.Writable == writable {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 func (c Client) Start(ctx context.Context, name string) error {
 	_, err := c.RunLines(ctx, "start", "--tty=false", name)
