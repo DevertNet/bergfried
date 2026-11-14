@@ -19,6 +19,8 @@ func shellQuote(s string) string {
 // idempotent, prints nothing on success and does not fail when the mount is missing.
 func skillsLinkScript(skillsDir string) string {
 	return fmt.Sprintf(`set -u
+# ASCII ranges in the patterns below, independent of the locale.
+export LC_ALL=C
 SK=%s
 D="$HOME/.claude/skills"
 mkdir -p "$D"

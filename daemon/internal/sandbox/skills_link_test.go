@@ -14,8 +14,8 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 )
 
-// runSkillsLink runs the link script with the real bash, HOME and the skills folder in temp dirs.
-func runSkillsLink(t *testing.T, skillsDir, home string) (string, error) {
+// runSkillsLinkEnv runs the link script with extra environment variables for bash.
+func runSkillsLinkEnv(t *testing.T, skillsDir, home string, extra ...string) (string, error) {
 	t.Helper()
 	cmd := exec.Command("bash", "-s")
 	env := []string{}
@@ -24,10 +24,16 @@ func runSkillsLink(t *testing.T, skillsDir, home string) (string, error) {
 			env = append(env, e)
 		}
 	}
-	cmd.Env = append(env, "HOME="+home)
+	cmd.Env = append(append(env, "HOME="+home), extra...)
 	cmd.Stdin = strings.NewReader(skillsLinkScript(skillsDir))
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// runSkillsLink runs the link script with the real bash, HOME and the skills folder in temp dirs.
+func runSkillsLink(t *testing.T, skillsDir, home string) (string, error) {
+	t.Helper()
+	return runSkillsLinkEnv(t, skillsDir, home)
 }
 
 func mkSkill(t *testing.T, dir, name, content string) {
@@ -120,6 +126,27 @@ func TestSkillsLinkScriptLinksAndSkips(t *testing.T) {
 	for _, name := range []string{"Bad", "a.b", "synced", "no-skill"} {
 		if _, err := os.Lstat(filepath.Join(d, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("%s must not be linked: %v", name, err)
+		}
+	}
+}
+
+func TestSkillsLinkScriptIsLocaleIndependent(t *testing.T) {
+	home, sk := t.TempDir(), t.TempDir()
+	for _, name := range []string{"good", "Bad", "UPPER"} {
+		mkSkill(t, sk, name, "x")
+	}
+	// A UTF-8 locale may not be installed; the script must be correct either way.
+	out, err := runSkillsLinkEnv(t, sk, home, "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8")
+	if err != nil {
+		t.Fatalf("script failed: %v\n%s", err, out)
+	}
+	d := filepath.Join(home, ".claude", "skills")
+	if got := linkTarget(t, filepath.Join(d, "good")); got != filepath.Join(sk, "good") {
+		t.Fatalf("good: link target %q", got)
+	}
+	for _, name := range []string{"Bad", "UPPER"} {
+		if _, err := os.Lstat(filepath.Join(d, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s must not be linked with a UTF-8 locale: %v", name, err)
 		}
 	}
 }
