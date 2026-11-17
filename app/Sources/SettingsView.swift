@@ -161,7 +161,12 @@ struct SettingsView: View {
                 Picker("Channel", selection: Binding(get: { upd?.channel ?? "stable" }, set: { v in Task { await setChannel(v) } })) {
                     Text("Stable").tag("stable")
                     Text("Dev (builds from the development branch)").tag("dev")
+                    Text("Local (build from this Mac)").tag("local")
                 }.labelsHidden().frame(maxWidth: 260)
+            }
+            if upd?.channel == "local" {
+                Text("Local builds come from scripts/local-release.sh in the Bergfried repository on this Mac, not from GitHub. Any build that differs from the installed version is offered, also an older one.")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if upd?.channel == "dev" {
                 Text("Dev builds come from the development branch, may be broken and are not reviewed like stable releases. Switching back to stable only takes effect with the next stable release.")
