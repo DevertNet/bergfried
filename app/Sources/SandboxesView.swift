@@ -20,8 +20,9 @@ struct SandboxesView: View {
     /// Sandboxes that are being created and are not in the list yet (immediate feedback).
     var creating: [(name: String, step: String)] {
         model.running.compactMap { k, v in
-            guard k.hasPrefix("create-") else { return nil }
-            let n = String(k.dropFirst("create-".count))
+            let p = k.split(separator: "|", omittingEmptySubsequences: false)
+            guard p.count >= 2, p[0] == "create" else { return nil }
+            let n = String(p[1])
             return model.sandboxes.contains(where: { $0.name == n }) ? nil : (n, v)
         }.sorted { $0.name < $1.name }
     }
@@ -67,7 +68,7 @@ struct SandboxesView: View {
                                     Text(c.step).foregroundStyle(.secondary).lineLimit(1)
                                     Spacer()
                                 }
-                                JobOutput(key: "create-\(c.name)")
+                                JobOutput(key: AppModel.jobKey("create", c.name))
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -96,7 +97,7 @@ struct SandboxesView: View {
     }
 
     func delete(_ s: SandboxInfo, force: Bool) async {
-        let err = await model.runJob("del-\(s.name)", L("Deleting %@ …", s.name), "/v1/sandboxes/delete", NameBody(name: s.name, force: force))
+        let err = await model.runJob(AppModel.jobKey("del", s.name), L("Deleting %@ …", s.name), "/v1/sandboxes/delete", NameBody(name: s.name, force: force))
         if let err {
             if err.contains("unpushed") { forceDeleteFor = s; forceDeleteMsg = err } else { model.setBanner(err) }
         }
@@ -107,13 +108,13 @@ struct SandboxCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
     let delete: () -> Void
-    var busy: String? { model.running.first(where: { $0.key.hasSuffix(s.name) })?.value }
+    var busy: String? { model.jobs(of: s.name).first?.label }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
             meta
-            if let k = model.running.keys.first(where: { $0.hasSuffix(s.name) }) { JobOutput(key: k) }
+            if let k = model.jobs(of: s.name).first?.key { JobOutput(key: k) }
             if s.probeError != nil, s.running {
                 Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary)
             }
@@ -182,7 +183,7 @@ struct SandboxCard: View {
 
     @ViewBuilder var actions: some View {
         if s.running {
-            Button("Stop") { Task { report(await model.runJob("stop-\(s.name)", L("Stopping …"), "/v1/sandboxes/stop", NameBody(name: s.name))) } }
+            Button("Stop") { Task { report(await model.runJob(AppModel.jobKey("stop", s.name), L("Stopping …"), "/v1/sandboxes/stop", NameBody(name: s.name))) } }
             Menu {
                 Button(L("Shell in the VM (%@)", Terminal.appName)) { report(Terminal.shell(vm: s.vm)) }
                 Button("Copy SSH command") {
@@ -190,7 +191,7 @@ struct SandboxCard: View {
                 }
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
-            Button("Start") { Task { report(await model.runJob("start-\(s.name)", L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
+            Button("Start") { Task { report(await model.runJob(AppModel.jobKey("start", s.name), L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
         }
         Button(role: .destructive, action: delete) { Image(systemName: "trash") }
     }
@@ -212,8 +213,13 @@ struct RuntimeIcon: View {
 struct ClaudeServiceCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
+    @Local private var showStart = false
 
     var canSignIn: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == false }
+    var canStart: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
+    var runningCount: Int { s.claudeSessions.filter { $0.running == true }.count }
+    var restartReasons: [String] { Array(Set(s.claudeSessions.filter { $0.running == true }.flatMap { $0.restartReasons ?? [] })).sorted() }
+    var busy: String? { model.jobs(of: s.name).first(where: { $0.key.hasPrefix("claude-") })?.label }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
@@ -234,11 +240,17 @@ struct ClaudeServiceCard: View {
             HStack(alignment: .top, spacing: 10) {
                 RuntimeIcon(letter: "C", tint: .purple)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Claude Code").font(.callout.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Text("Claude Code").font(.callout.weight(.semibold))
+                        if s.running {
+                            Circle().fill(runningCount > 0 ? .green : Color.secondary).frame(width: 6, height: 6)
+                            Text(runningCount > 0 ? L("running in %lld folder(s)", runningCount) : L("not running"))
+                                .font(.caption2).foregroundStyle(runningCount > 0 ? .green : .secondary)
+                        }
+                        if !restartReasons.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues."))) }
+                    }
                     Text(status.0).font(.caption).foregroundStyle(status.1)
-                    Text(L("Start Claude in any folder of the list below – no git worktree, no new branch."))
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Text(L("Remote Control is available for every running Claude."))
+                    Text(L("One Claude per folder, started in the folder list below – no git worktree, no new branch. Remote Control is available for every running Claude."))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 4)
@@ -246,11 +258,24 @@ struct ClaudeServiceCard: View {
                     Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small)
                 }
             }
+            if canStart {
+                HStack(spacing: 8) {
+                    Spacer()
+                    if let b = busy {
+                        ProgressView().controlSize(.small)
+                        Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else {
+                        Button(L("Start Claude …")) { showStart = true }.controlSize(.small)
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
+        .sheet(isPresented: $showStart) { StartClaudeSheet(sandbox: s) }
     }
 }
 struct OpenCodeServiceCard: View {
@@ -263,7 +288,7 @@ struct OpenCodeServiceCard: View {
 
     var serviceRunning: Bool { s.opencodeRunning == true }
     var canSignIn: Bool { s.running && s.opencodeInstalled == true && s.opencodeLoggedIn == false }
-    var busy: String? { model.running.first(where: { $0.key.hasPrefix("opencode-") && $0.key.hasSuffix(s.name) })?.value }
+    var busy: String? { model.jobs(of: s.name).first(where: { $0.key.hasPrefix("opencode-") })?.label }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
@@ -314,15 +339,15 @@ struct OpenCodeServiceCard: View {
                         } else {
                             Button("Connect desktop") { pair() }.controlSize(.small)
                         }
-                        Button("Stop service") { model.setBanner(nil); Task { if let e = await model.runJob("opencode-stop-\(s.name)", L("Stopping the OpenCode service …"), "/v1/opencode/stop", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
+                        Button("Stop service") { model.setBanner(nil); Task { if let e = await model.runJob(AppModel.jobKey("opencode-stop", s.name), L("Stopping the OpenCode service …"), "/v1/opencode/stop", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
                         Menu {
                             Button(L("Restart service")) {
-                                Task { if let e = await model.runJob("opencode-restart-\(s.name)", L("Restarting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } }
+                                Task { if let e = await model.runJob(AppModel.jobKey("opencode-restart", s.name), L("Restarting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } }
                             }
                         } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
                     } else {
-                        Button("Start service") { Task { if let e = await model.runJob("opencode-start-\(s.name)", L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small).buttonStyle(.borderedProminent)
+                        Button("Start service") { Task { if let e = await model.runJob(AppModel.jobKey("opencode-start", s.name), L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small).buttonStyle(.borderedProminent)
                     }
                 }
             }
@@ -495,7 +520,7 @@ struct StartClaudeSheet: View {
                 Button(L("Start Claude")) {
                     let folder = chosen, name = sandbox.name
                     dismiss()
-                    Task { if let e = await model.runJob("claude-\(name)", L("Starting Claude …"), "/v1/claude/start", ClaudeBody(sandbox: name, folder: folder)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob(AppModel.jobKey("claude-start", name, folder), L("Starting Claude …"), "/v1/claude/start", ClaudeBody(sandbox: name, folder: folder)) { model.setBanner(e) } }
                 }.disabled(chosen.isEmpty).keyboardShortcut(.defaultAction)
             }
         }
@@ -717,7 +742,7 @@ struct CreateSandboxSheet: View {
                 Button("Create") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob(AppModel.jobKey("create", n), L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)

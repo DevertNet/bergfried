@@ -20,6 +20,18 @@ final class AppModel: ObservableObject {
     /// Output lines of running (and the last finished) jobs by job key, shown by JobOutput.
     @Published var logs: [String: [String]] = [:]
 
+    /// Job keys are "kind|sandbox|item" (or just "base", "update", "daemon" for global jobs), so a job belongs to
+    /// exactly one sandbox. Never match sandbox names with hasSuffix: sandbox "oc" would also pick up a folder "oc".
+    static func jobKey(_ kind: String, _ sandbox: String, _ item: String = "") -> String { [kind, sandbox, item].joined(separator: "|") }
+
+    /// Running jobs of one sandbox in a stable order (a dictionary's own order changes between redraws).
+    func jobs(of sandbox: String) -> [(key: String, label: String)] {
+        running.compactMap { k, v -> (key: String, label: String)? in
+            let p = k.split(separator: "|", omittingEmptySubsequences: false)
+            return p.count >= 2 && p[1] == sandbox ? (k, v) : nil
+        }.sorted { $0.key < $1.key }
+    }
+
     var pendingCount: Int { requests.count }
     private var started = false
     private var notified = Set<Int64>()

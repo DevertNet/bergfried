@@ -119,11 +119,12 @@ struct FolderRow: View {
     var running: Bool { w?.running == true }
     var canStart: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
     var busy: String? {
-        model.running.first(where: {
-            $0.key.hasSuffix("-\(s.name)-\(r.base)") || (w != nil && $0.key.hasSuffix("-\(s.name)-\(w!.name)"))
-        })?.value
+        model.jobs(of: s.name).first(where: {
+            let item = $0.key.split(separator: "|", omittingEmptySubsequences: false).last.map(String.init)
+            return item == r.base || (w != nil && item == w!.name)
+        })?.label
     }
-    var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
+    var sandboxBusy: Bool { !model.jobs(of: s.name).isEmpty }
 
     var state: (color: Color, text: String) {
         if !s.running { return (.gray, L("Sandbox stopped")) }
@@ -243,17 +244,17 @@ struct FolderRow: View {
     }
 
     func claudeJob(_ action: String, _ step: String, _ path: String) {
-        let key = "claude-\(action)-\(s.name)-\(w?.name ?? r.base)"
+        let key = AppModel.jobKey("claude-\(action)", s.name, w?.name ?? r.base)
         Task { if let e = await model.runJob(key, step, path, ClaudeBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
     }
 
     func removeEntry() {
-        Task { if let e = await model.runJob("claude-remove-\(s.name)-\(w?.name ?? r.base)", L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
+        Task { if let e = await model.runJob(AppModel.jobKey("claude-remove", s.name, w?.name ?? r.base), L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
     }
 
     func deleteFolder(force: Bool) {
         Task {
-            let e = await model.runJob("folder-delete-\(s.name)-\(r.base)", L("Deleting folder …"), "/v1/folders/delete", FolderBody(sandbox: s.name, folder: r.folder, force: force))
+            let e = await model.runJob(AppModel.jobKey("folder-delete", s.name, r.base), L("Deleting folder …"), "/v1/folders/delete", FolderBody(sandbox: s.name, folder: r.folder, force: force))
             if let e { if e.contains("unpushed") { forceMsg = e } else { model.setBanner(e) } }
         }
     }
@@ -297,7 +298,7 @@ struct NewFolderSheet: View {
                 Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("Create")) {
                     let body = FolderBody(sandbox: s.name, name: trimmedName, gitUrl: clone ? trimmedURL : "")
-                    let key = "folder-create-\(s.name)-\(trimmedName.isEmpty ? "new" : trimmedName)"
+                    let key = AppModel.jobKey("folder-create", s.name, trimmedName.isEmpty ? "new" : trimmedName)
                     dismiss()
                     Task { if let e = await model.runJob(key, clone ? L("Cloning repository …") : L("Creating folder …"), "/v1/folders/create", body) { model.setBanner(e) } }
                 }.disabled(!valid).keyboardShortcut(.defaultAction)
@@ -378,7 +379,7 @@ struct TransferFolderSheet: View {
 
     func start() {
         let body = FolderBody(sandbox: s.name, folder: folder, name: name, target: target, move: move)
-        let key = "folder-\(move ? "move" : "copy")-\(s.name)-\(folder.split(separator: "/").last.map(String.init) ?? folder)"
+        let key = AppModel.jobKey("folder-\(move ? "move" : "copy")", s.name, folder.split(separator: "/").last.map(String.init) ?? folder)
         let step = move ? L("Moving to %@ …", target) : L("Copying to %@ …", target)
         dismiss()
         Task { if let e = await model.runJob(key, step, "/v1/folders/transfer", body) { model.setBanner(e) } }
