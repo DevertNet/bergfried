@@ -21,6 +21,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Sandbox overview with Claude card (+ Claude and folder list) and OpenCode card (service, Start/Stop, Connect); settings with a secondary sidebar and cards
 - [x] Update checks show the download size; base-build output follows new lines but pauses when scrolling up
 - [x] Claude works in chosen folders: no new git worktrees/branches; existing worktrees remain as folders; OpenCode is one sandbox service
+- [x] Folders card: all folders of `~/work` with or without Claude, create (empty/clone), delete, copy and move between sandboxes (VM to VM, verified)
 - [x] Documentation refresh; assistants must update README/docs in the same change (rule in `CLAUDE.md`)
 
 ## Next

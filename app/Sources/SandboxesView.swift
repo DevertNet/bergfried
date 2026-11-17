@@ -168,7 +168,8 @@ struct SandboxCard: View {
         VStack(alignment: .leading, spacing: 12) {
             ClaudeServiceCard(s: s)
             OpenCodeServiceCard(s: s)
-            Text(L("Claude and OpenCode can use the same folder, but not at the same time on the same files. For parallel work, add several Claude entries with different folders."))
+            FoldersCard(s: s)
+            Text(L("Claude and OpenCode can use the same folder, but not at the same time on the same files. For parallel work, run Claude in several different folders."))
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -211,11 +212,8 @@ struct RuntimeIcon: View {
 struct ClaudeServiceCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
-    @Local private var showStart = false
 
     var canSignIn: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == false }
-    var canAdd: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
-    var sessions: [ClaudeInfo] { s.claudeSessions.sorted { $0.folder < $1.folder } }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
@@ -238,7 +236,7 @@ struct ClaudeServiceCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Claude Code").font(.callout.weight(.semibold))
                     Text(status.0).font(.caption).foregroundStyle(status.1)
-                    Text(L("Runs in the folder you choose for this Claude session – no git worktree, no new branch."))
+                    Text(L("Start Claude in any folder of the list below – no git worktree, no new branch."))
                         .font(.caption2).foregroundStyle(.secondary)
                     Text(L("Remote Control is available for every running Claude."))
                         .font(.caption2).foregroundStyle(.secondary)
@@ -247,143 +245,14 @@ struct ClaudeServiceCard: View {
                 if canSignIn {
                     Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small)
                 }
-                if canAdd {
-                    Button { showStart = true } label: { Label("Claude", systemImage: "plus") }
-                        .controlSize(.small).buttonStyle(.borderedProminent)
-                }
             }
-            Divider().padding(.top, 2)
-            if sessions.isEmpty {
-                Text(L("No Claude sessions yet. Choose “+ Claude” and select a folder."))
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                HStack(spacing: 10) {
-                    Text(L("Folder").uppercased()).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L("Status").uppercased()).frame(width: 260, alignment: .leading)
-                    Text(L("Actions").uppercased()).frame(width: 230, alignment: .trailing)
-                }.font(.caption2).foregroundStyle(.secondary)
-                ForEach(Array(sessions.enumerated()), id: \.element.name) { i, w in
-                    if i > 0 { Divider() }
-                    ClaudeRow(s: s, w: w)
-                }
-            }
-            Text(L("Existing worktrees remain as folders – Bergfried does not create new git worktrees. Removing an entry keeps the folder."))
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
-        .sheet(isPresented: $showStart) { StartClaudeSheet(sandbox: s) }
     }
 }
-
-struct ClaudeRow: View {
-    @EnvironmentObject var model: AppModel
-    let s: SandboxInfo
-    let w: ClaudeInfo
-    @Local private var removeOpen = false
-
-    var running: Bool { w.running == true }
-    var canStart: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
-    var label: String { w.folder.hasPrefix("work/") ? String(w.folder.dropFirst(5)) : w.folder }
-    var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(w.name)") })?.value }
-    var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
-
-    var state: (color: Color, text: String) {
-        if !s.running { return (.gray, L("Sandbox stopped")) }
-        if running {
-            if w.rc { return (.green, L("Claude runs · Remote Control active")) }
-            if w.rcAction == "failed" { return (.red, L("Remote Control cannot be activated – please restart")) }
-            if w.rcAction == "activating" { return (.orange, L("Activating Remote Control …")) }
-            if w.rcAction == "waiting" { return (.orange, L("Claude is probably waiting for input – open %@", Terminal.appName)) }
-            return (.orange, L("Claude runs · Remote Control starting …"))
-        }
-        if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
-        if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
-        if sandboxBusy { return (.orange, L("starting …")) }
-        return (.gray, L("not started"))
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Circle().fill(state.color).frame(width: 8, height: 8)
-                    Text(label).font(.callout.bold()).lineLimit(1)
-                    if running, let r = w.restartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: r, footer: L("Use “Restart Claude” in the menu; the conversation continues."))) }
-                }
-                Text("~/"+w.folder).font(.caption2.monospaced()).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            Text(state.text).font(.caption).foregroundStyle(state.color)
-                .lineLimit(1).truncationMode(.tail)
-                .frame(width: 260, alignment: .leading).help(state.text)
-            actions.frame(width: 230, alignment: .trailing)
-        }
-        .padding(.vertical, 4)
-        .confirmationDialog(L("Remove Claude entry for “%@”?", label), isPresented: $removeOpen) {
-            Button(L("Remove entry"), role: .destructive) { remove() }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("Claude is stopped. The folder ~/%@ and its contents remain.", w.folder))
-        }
-    }
-
-    @ViewBuilder var actions: some View {
-        if let b = busy {
-            ProgressView().controlSize(.small)
-            Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        } else {
-            HStack(spacing: 8) {
-                if running {
-                    Button("Stop Claude") { job("stop", L("Stopping Claude …"), "/v1/claude/stop") }.controlSize(.small)
-                } else if canStart {
-                    Button("Start Claude") { job("start", L("Starting Claude …"), "/v1/claude/start") }
-                        .controlSize(.small).buttonStyle(.borderedProminent)
-                }
-                if running && w.window {
-                    Button { if let e = Terminal.attach(vm: s.vm, window: w.name) { model.setBanner(e) } } label: { Label(Terminal.appName, systemImage: "terminal") }
-                        .controlSize(.small)
-                        .help(L("Opens the Claude window for ~/%@ in %@", w.folder, Terminal.appName))
-                }
-                if s.running {
-                    Menu {
-                    if running, w.rc, !w.rcUrl.isEmpty {
-                        Button("Copy Remote Control link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.rcUrl, forType: .string) }
-                        Divider()
-                    }
-                    if running, !w.rc {
-                        Button(L("Remote Control is running – mark as active")) {
-                            Task {
-                                do { try await model.api.post("/v1/claude/rc-ok", ClaudeBody(sandbox: s.name, folder: w.folder)); await model.refresh() }
-                                catch { model.setBanner(error.localizedDescription) }
-                            }
-                        }
-                    }
-                    if running {
-                        Button(L("Restart Claude")) { job("restart", L("Restarting Claude …"), "/v1/claude/restart") }
-                    }
-                    if s.running {
-                        Divider()
-                        Button(L("Remove Claude entry …"), role: .destructive) { removeOpen = true }
-                    }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).fixedSize()
-                }
-            }
-        }
-    }
-
-    func job(_ action: String, _ step: String, _ path: String) {
-        Task { if let e = await model.runJob("claude-\(action)-\(s.name)-\(w.name)", step, path, ClaudeBody(sandbox: s.name, folder: w.folder)) { model.setBanner(e) } }
-    }
-
-    func remove() {
-        Task { if let e = await model.runJob("claude-remove-\(s.name)-\(w.name)", L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: w.folder)) { model.setBanner(e) } }
-    }
-}
-
 struct OpenCodeServiceCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo

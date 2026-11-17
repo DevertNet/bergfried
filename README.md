@@ -2,9 +2,9 @@
 
 **Run Claude Code and OpenCode in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
 
-![Bergfried app: sandboxes with their Claude folders](docs/design/claude-sessions-mockup.png)
+![Bergfried app: sandboxes with their folders and Claude](docs/design/folders-overview-mockup.png)
 
-<sub>UI overview with made-up demo data ([tools/demoapi](tools/demoapi/demoapi.py)); the live app follows this layout.</sub>
+<sub>Design mockup with made-up data; the live app follows this layout (try it without a daemon with [tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
 Bergfried gives every project its own Linux VM (a **sandbox**) with Claude Code and the OpenCode service inside. Control Claude from your phone with Claude Code Remote Control and OpenCode from the OpenCode desktop app; the assistants
 see nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
@@ -65,7 +65,7 @@ make build            # bin/bergfriedd, bin/bergfried-mcp
 app/build.sh          # app/build/Bergfried.app
 open app/build/Bergfried.app
 ```
-In the app: **Settings → General → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. The sandbox starts with the folder `main`; add a Claude entry and choose its folder (the browser can also create one) when you need it, and use OpenCode as a sandbox-wide service. Sign in once per runtime in the VM, then open Claude from your phone or OpenCode in the desktop app.
+In the app: **Settings → General → Install and start daemon**, **Settings → Base VM → Build now** (once, a few minutes), then **New sandbox**. The sandbox starts with the folder `main`; the **Folders** card of the sandbox lists everything in `~/work` – create a folder (empty or cloned from a Git URL), start Claude in any folder, copy or move a folder to another sandbox, or delete it – and OpenCode is a sandbox-wide service. Sign in once per runtime in the VM, then open Claude from your phone or OpenCode in the desktop app.
 If something fails, the **Diagnostics** menu item shows the daemon log, the updater log and Lima's log per VM. Prefer the terminal? See [docs/testing/setup.md](docs/testing/setup.md). Released builds can update themselves from within the app ([docs/UPDATES.md](docs/UPDATES.md)).
 
 ### OpenCode desktop app
@@ -97,7 +97,7 @@ Updates installed from inside the app are not quarantined. Only do this if you t
 Built by and for the author on macOS; **young software, not audited**. Releases come in two channels (stable and dev, see [docs/UPDATES.md](docs/UPDATES.md)); open work is in [docs/ROADMAP.md](docs/ROADMAP.md). The app is ad-hoc signed, so macOS asks for folder access again after each update. A Debian VPS host is designed but postponed.
 
 ## Documentation
-[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/design/claude-sessions-mockup.png) · [Folder browser](docs/design/claude-folder-browser-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
+[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/design/folders-overview-mockup.png) · [Folder browser](docs/design/claude-folder-browser-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
 
 ## License
 Not chosen yet — until a license file is added, all rights are reserved.

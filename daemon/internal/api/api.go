@@ -227,6 +227,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/claude/folders", s.claudeFolders)
 	mux.HandleFunc("GET /v1/claude/browse", s.claudeBrowse)
 	mux.HandleFunc("POST /v1/claude/mkdir", s.claudeMkdir)
+	mux.HandleFunc("GET /v1/folders", s.foldersList)
+	mux.HandleFunc("POST /v1/folders/create", s.folderCreate)
+	mux.HandleFunc("POST /v1/folders/delete", s.folderDelete)
+	mux.HandleFunc("POST /v1/folders/transfer", s.folderTransfer)
 	mux.HandleFunc("POST /v1/claude/start", s.claudeStart)
 	mux.HandleFunc("POST /v1/claude/stop", s.claudeStop)
 	mux.HandleFunc("POST /v1/claude/restart", s.claudeRestart)
@@ -520,6 +524,87 @@ func (s *Server) claudeMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]string{"path": path})
+}
+
+// foldersList lists every folder under ~/work of a sandbox (with or without a Claude entry).
+func (s *Server) foldersList(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("sandbox")
+	if sandbox.ValidName(name) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	list, err := s.M.ListFolders(r.Context(), name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	out := []map[string]any{}
+	for _, f := range list {
+		out = append(out, map[string]any{"folder": f.Path, "name": f.Name, "git": f.Git, "branch": f.Branch, "dirty": f.Dirty, "modified": f.Modified})
+	}
+	writeJSON(w, 200, map[string]any{"folders": out})
+}
+
+type folderReq struct {
+	Sandbox string `json:"sandbox"`
+	Folder  string `json:"folder"`
+	Name    string `json:"name"`
+	GitURL  string `json:"git_url"`
+	Target  string `json:"target"`
+	Move    bool   `json:"move"`
+	Force   bool   `json:"force"`
+}
+
+func (s *Server) folderJob(w http.ResponseWriter, r *http.Request, kind string, f func(ctx context.Context, q folderReq) error) {
+	var q folderReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if sandbox.ValidName(q.Sandbox) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	writeJSON(w, 202, s.jobFor(kind, q.Sandbox, func(ctx context.Context) error {
+		err := f(ctx, q)
+		if s.Mon != nil {
+			s.Mon.Poke(q.Sandbox)
+			if q.Target != "" {
+				s.Mon.Poke(q.Target)
+			}
+		}
+		return err
+	}))
+}
+
+func (s *Server) folderCreate(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.create", func(ctx context.Context, q folderReq) error {
+		_, err := s.M.FolderCreate(ctx, q.Sandbox, q.Name, q.GitURL)
+		return err
+	})
+}
+
+func (s *Server) folderDelete(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.delete", func(ctx context.Context, q folderReq) error {
+		err := s.M.FolderDelete(ctx, q.Sandbox, q.Folder, q.Force)
+		if err == nil && s.Mon != nil {
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
+		}
+		return err
+	})
+}
+
+func (s *Server) folderTransfer(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.transfer", func(ctx context.Context, q folderReq) error {
+		if sandbox.ValidName(q.Target) != nil {
+			return fmt.Errorf("invalid target sandbox")
+		}
+		err := s.M.FolderTransfer(ctx, q.Sandbox, q.Folder, q.Target, q.Name, q.Move)
+		if err == nil && q.Move && s.Mon != nil {
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
+		}
+		return err
+	})
 }
 
 func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {
