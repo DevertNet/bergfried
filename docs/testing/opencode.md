@@ -7,7 +7,7 @@ Everything below is manual (real Lima VM, macOS app); CI only runs the Go tests 
 
 1. Install the [OpenCode desktop app](https://opencode.ai/download) on the Mac (once).
 2. Create a sandbox with **New sandbox** (no runtime choice; the folder `main` is created without starting Claude).
-3. Optionally add a Claude entry with **+ Claude** and choose a folder under `~/work` (e.g. `main` or `shopware-plugins`) or create one in the folder browser. No git worktree is used.
+3. Optionally start Claude in a folder of the **Folders** card (e.g. `main` or `shopware-plugins`) or create a folder there with **+ Folder**. No git worktree is used.
 4. Sign in:
    - **Sign in to OpenCode …** → terminal with `opencode auth login` (choose a provider).
    - **Sign in to Claude …** → terminal with `claude auth login` (only needed if you want Claude).

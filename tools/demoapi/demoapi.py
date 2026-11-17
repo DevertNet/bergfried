@@ -69,6 +69,11 @@ ROUTES = {
                    "index_ready": True, "upstream_agent": True, "sandboxes": len(SANDBOXES)},
     "/v1/sandboxes": SANDBOXES, "/v1/requests": REQUESTS, "/v1/ssh/grants": GRANTS, "/v1/audit": AUDIT,
     "/v1/claude/folders": {"folders": [{"folder": "work/main", "label": "main"}, {"folder": "work/checkout", "label": "checkout"}, {"folder": "work/docs", "label": "docs"}]},
+    "/v1/folders": {"folders": [
+        {"folder": "work/checkout", "name": "checkout", "git": True, "branch": "feature/paypal", "dirty": True, "modified": now - 3600},
+        {"folder": "work/docs", "name": "docs", "git": True, "branch": "main", "dirty": False, "modified": now - 86400},
+        {"folder": "work/main", "name": "main", "git": True, "branch": "main", "dirty": False, "modified": now - 600},
+        {"folder": "work/scratch", "name": "scratch", "git": False, "branch": "", "dirty": False, "modified": now - 5 * 86400}]},
     "/v1/blocklist": {"paths": [".ssh", "Library", ".config", ".gnupg"], "names": [".env", ".env.*", "id_rsa"]},
     "/v1/update": {"current": "1.0.0", "latest": "1.0.0", "available": False, "notes": "", "url": "", "checked_unix": now, "updatable": True},
 }

@@ -11,6 +11,7 @@ An assistant (or anything it runs, including prompt-injected instructions) misus
 | See your home, keys, host Docker | **Never.** Only `shared/in` (ro), `shared/out` and the shared `skills` folder (ro) are mounted. |
 | Read your files | Only copies you approve, one request at a time. Blocked paths are refused without asking. |
 | Use your SSH keys | Only during a grant you create (time window, key, target host key). The private key never leaves the Mac. Keys that are not loaded in your ssh-agent can be granted too, but only with the passphrase you type for that grant (see below). |
+| Move data between sandboxes | **Never by itself.** Copying/moving a folder to another sandbox exists only in the app (no MCP tool). It runs through the daemon from VM to VM, so a sandbox cannot reach another sandbox's files on its own. |
 | Use GitHub | With the fine-grained token **you** created for that sandbox (see below). |
 | Reach the network | Yes (the VM has normal outbound access). |
 | `sudo` in the VM | Yes (Lima default); assistants are told to install missing software themselves with `sudo apt-get install`. The boundary is the VM, not the Linux user. |

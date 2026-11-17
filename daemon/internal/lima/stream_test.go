@@ -60,3 +60,31 @@ exit 1
 		t.Fatalf("lines: %v", got)
 	}
 }
+
+func TestShellPipeConnectsSourceToTarget(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "got")
+	// The fake limactl: "shell --tty=false <vm> -- <cmd…>"; the source prints, the target stores stdin.
+	r := fakeLimactl(t, `vm=$3; shift 4
+if [ "$vm" = src ]; then printf 'payload-%s' "$1"; else cat > `+out+`; fi
+`)
+	if err := (Client{R: r}).ShellPipe(context.Background(), "src", []string{"x"}, "dst", []string{"y"}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(out)
+	if string(b) != "payload-x" {
+		t.Fatalf("%q", b)
+	}
+}
+
+func TestShellPipeReportsFailures(t *testing.T) {
+	r := fakeLimactl(t, `vm=$3; echo "oops-$vm" >&2; [ "$vm" = dst ] && { cat >/dev/null; exit 4; }; echo data`)
+	err := (Client{R: r}).ShellPipe(context.Background(), "src", []string{"x"}, "dst", []string{"y"})
+	if err == nil || !strings.Contains(err.Error(), "target") || !strings.Contains(err.Error(), "oops-dst") {
+		t.Fatalf("%v", err)
+	}
+	r = fakeLimactl(t, `vm=$3; echo "oops-$vm" >&2; [ "$vm" = src ] && exit 2; cat >/dev/null`)
+	err = (Client{R: r}).ShellPipe(context.Background(), "src", []string{"x"}, "dst", []string{"y"})
+	if err == nil || !strings.Contains(err.Error(), "source") {
+		t.Fatalf("%v", err)
+	}
+}

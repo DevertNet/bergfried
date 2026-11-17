@@ -185,6 +185,17 @@ struct ClaudeRemoveBody: Encodable { var sandbox: String; var folder: String }
 struct PairLink: Codable { var url: String }
 struct FolderEntry: Codable, Hashable { var folder: String; var label: String }
 struct FolderBrowseResponse: Codable { var path: String; var parent: String; var folders: [FolderEntry] }
+struct FolderItem: Codable, Hashable { var folder: String; var name: String; var git: Bool; var branch: String; var dirty: Bool; var modified: Int64 }
+struct FolderListResponse: Codable { var folders: [FolderItem] }
+struct FolderBody: Encodable {
+    var sandbox: String
+    var folder: String = ""
+    var name: String = ""
+    var gitUrl: String = ""
+    var target: String = ""
+    var move: Bool = false
+    var force: Bool = false
+}
 struct NewFolderBody: Encodable { var sandbox: String; var parent: String; var name: String }
 struct NewFolderResult: Codable { var path: String }
 

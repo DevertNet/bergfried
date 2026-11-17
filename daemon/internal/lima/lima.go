@@ -141,7 +141,57 @@ func (r ExecRunner) RunStdin(ctx context.Context, stdin io.Reader, args ...strin
 	return out, nil
 }
 
+// PipeRunner: optional capability of the runner to connect the stdout of one limactl call to the stdin of another (VM to VM, nothing is stored on the Mac).
+type PipeRunner interface {
+	RunPipe(ctx context.Context, from, to []string) error
+}
+
+func (r ExecRunner) RunPipe(ctx context.Context, from, to []string) error {
+	bin := r.Bin
+	if bin == "" {
+		bin = "limactl"
+	}
+	src := exec.CommandContext(ctx, bin, from...)
+	dst := exec.CommandContext(ctx, bin, to...)
+	var srcErr, dstErr bytes.Buffer
+	src.Stderr, dst.Stderr = &srcErr, &dstErr
+	pipe, err := src.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	dst.Stdin = pipe
+	if err := dst.Start(); err != nil {
+		return err
+	}
+	if err := src.Start(); err != nil {
+		_ = dst.Process.Kill()
+		_ = dst.Wait()
+		return err
+	}
+	srcWait := src.Wait() // closes the pipe after the source ended
+	dstWait := dst.Wait()
+	if srcWait != nil {
+		return fmt.Errorf("source: %w: %s", srcWait, strings.TrimSpace(srcErr.String()))
+	}
+	if dstWait != nil {
+		return fmt.Errorf("target: %w: %s", dstWait, strings.TrimSpace(dstErr.String()))
+	}
+	return nil
+}
+
 type Client struct{ R Runner }
+
+// ShellPipe runs srcCmd in srcVM and feeds its stdout into dstCmd in dstVM.
+func (c Client) ShellPipe(ctx context.Context, srcVM string, srcCmd []string, dstVM string, dstCmd []string) error {
+	pr, ok := c.R.(PipeRunner)
+	if !ok {
+		return fmt.Errorf("runner does not support piping")
+	}
+	sh := func(vm string, cmd []string) []string {
+		return append([]string{"shell", "--tty=false", vm, "--"}, cmd...)
+	}
+	return pr.RunPipe(ctx, sh(srcVM, srcCmd), sh(dstVM, dstCmd))
+}
 
 // ShellStdin runs a command in the VM and feeds stdin.
 func (c Client) ShellStdin(ctx context.Context, name string, stdin io.Reader, cmd ...string) ([]byte, error) {

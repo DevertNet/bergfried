@@ -8,3 +8,6 @@ SSH %@/%@ → %@ …
 v%lld – %@
 Updates
 VM: %@ (Lima)
+Claude
+git
+https://github.com/owner/repo
