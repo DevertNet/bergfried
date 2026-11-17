@@ -577,3 +577,5 @@
 "no Claude" = "kein Claude";
 "uncommitted changes" = "nicht committete Änderungen";
 "~/%@ and everything in it is removed from the VM. This cannot be undone. A Claude entry for the folder is removed, too. Unpushed git work is checked first." = "~/%@ und alles darin wird aus der VM entfernt. Das lässt sich nicht rückgängig machen. Ein Claude-Eintrag für den Ordner wird ebenfalls entfernt. Nicht gepushte Git-Arbeit wird vorher geprüft.";
+"Local (build from this Mac)" = "Lokal (Build von diesem Mac)";
+"Local builds come from scripts/local-release.sh in the Bergfried repository on this Mac, not from GitHub. Any build that differs from the installed version is offered, also an older one." = "Lokale Builds kommen von scripts/local-release.sh im Bergfried-Repository auf diesem Mac, nicht von GitHub. Jeder Build, der von der installierten Version abweicht, wird angeboten, auch ein älterer.";

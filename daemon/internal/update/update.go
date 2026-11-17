@@ -89,6 +89,8 @@ func New(repo, current, home string) *Service {
 const (
 	Stable = "stable"
 	Dev    = "dev"
+	// Local: updates come from a build on this Mac (Home/local-update, written by scripts/local-release.sh), not from GitHub.
+	Local = "local"
 )
 
 func (s *Service) settingsPath() string { return filepath.Join(s.Home, "settings.json") }
@@ -101,13 +103,13 @@ func (s *Service) loadChannel() string {
 	var v struct {
 		Channel string `json:"update_channel"`
 	}
-	if json.Unmarshal(b, &v) != nil || v.Channel != Dev {
+	if json.Unmarshal(b, &v) != nil || (v.Channel != Dev && v.Channel != Local) {
 		return Stable
 	}
-	return Dev
+	return v.Channel
 }
 
-// Channel returns "stable" or "dev".
+// Channel returns "stable", "dev" or "local".
 func (s *Service) Channel() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,8 +121,8 @@ func (s *Service) Channel() string {
 
 // SetChannel changes and persists the update channel; the next Check uses it.
 func (s *Service) SetChannel(ch string) error {
-	if ch != Stable && ch != Dev {
-		return fmt.Errorf("unknown channel %q (stable or dev)", ch)
+	if ch != Stable && ch != Dev && ch != Local {
+		return fmt.Errorf("unknown channel %q (stable, dev or local)", ch)
 	}
 	if err := os.MkdirAll(s.Home, 0o700); err != nil {
 		return err
@@ -275,6 +277,21 @@ func AssetName(version string) string {
 var errNoRelease = errors.New("no release published yet")
 
 func (s *Service) get(ctx context.Context, url string, limit int64) ([]byte, error) {
+	if p, ok := strings.CutPrefix(url, "file://"); ok { // local channel
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		b, err := io.ReadAll(io.LimitReader(f, limit+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(b)) > limit {
+			return nil, fmt.Errorf("%s is larger than %d bytes", p, limit)
+		}
+		return b, nil
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -324,6 +341,9 @@ func (s *Service) Check(ctx context.Context) Info {
 		}
 		s.mu.Unlock()
 		return i
+	}
+	if channel == Local {
+		return store(s.checkLocal(info))
 	}
 	b, err := s.get(ctx, s.API+"/repos/"+s.Repo+"/releases?per_page=30", maxAPIBytes)
 	if errors.Is(err, errNoRelease) { // nothing to update to; not an error for the user
@@ -376,6 +396,58 @@ func (s *Service) Check(ctx context.Context) Info {
 		}
 	}
 	return store(info)
+}
+
+var localZipRe = regexp.MustCompile(`^Bergfried-([0-9A-Za-z.-]{1,40})-macos-arm64\.zip$`)
+
+// LocalDir is where the local channel looks for a build (zip + SHA256SUMS, as in a release).
+func (s *Service) LocalDir() string { return filepath.Join(s.Home, "local-update") }
+
+// checkLocal offers the newest zip in LocalDir. Unlike the GitHub channels any version that differs from the running one counts
+// (a rebuild of the same code gets a new timestamp version, and a developer may deliberately go back to an older build).
+func (s *Service) checkLocal(info Info) Info {
+	dir := s.LocalDir()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return info // nothing built yet; not an error
+		}
+		info.Error = err.Error()
+		return info
+	}
+	var bestName string
+	var bestTime time.Time
+	var bestSize int64
+	for _, e := range ents {
+		if !localZipRe.MatchString(e.Name()) {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if bestName == "" || fi.ModTime().After(bestTime) {
+			bestName, bestTime, bestSize = e.Name(), fi.ModTime(), fi.Size()
+		}
+	}
+	if bestName == "" {
+		return info
+	}
+	ver := localZipRe.FindStringSubmatch(bestName)[1]
+	info.Latest, info.Size = ver, bestSize
+	info.Notes = "Local build from " + dir + " (built " + bestTime.Format("2006-01-02 15:04:05") + ")."
+	info.URL = "file://" + dir
+	if ver == s.Current {
+		return info
+	}
+	if _, err := os.Stat(filepath.Join(dir, "SHA256SUMS")); err != nil {
+		info.Error = "local build " + ver + " has no SHA256SUMS in " + dir
+		return info
+	}
+	info.assetURL = "file://" + filepath.Join(dir, bestName)
+	info.sumsURL = "file://" + filepath.Join(dir, "SHA256SUMS")
+	info.Available = true
+	return info
 }
 
 // Last returns the cached result of the latest check (zero value before the first check).
@@ -455,28 +527,43 @@ func (p *progressReader) Read(b []byte) (int, error) {
 }
 
 func (s *Service) download(ctx context.Context, url, dst string, limit int64) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", err
+	var src io.ReadCloser
+	var length int64 = -1
+	if p, ok := strings.CutPrefix(url, "file://"); ok { // local channel
+		f, err := os.Open(p)
+		if err != nil {
+			return "", err
+		}
+		if fi, err := f.Stat(); err == nil {
+			length = fi.Size()
+		}
+		src = f
+	} else {
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("User-Agent", "bergfried-updater")
+		resp, err := s.HTTP.Do(req)
+		if err != nil {
+			return "", err
+		}
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			return "", fmt.Errorf("download answered %d", resp.StatusCode)
+		}
+		src, length = resp.Body, resp.ContentLength
 	}
-	req.Header.Set("User-Agent", "bergfried-updater")
-	resp, err := s.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("download answered %d", resp.StatusCode)
-	}
+	defer src.Close()
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	body := io.Reader(resp.Body)
+	body := io.Reader(src)
 	if ctx.Value(reportKey{}) != nil {
-		body = &progressReader{r: resp.Body, ctx: ctx, label: "Downloading the update", total: resp.ContentLength}
+		body = &progressReader{r: src, ctx: ctx, label: "Downloading the update", total: length}
 	}
 	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(body, limit+1))
 	if err != nil {

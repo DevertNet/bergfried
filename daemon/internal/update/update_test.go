@@ -575,3 +575,88 @@ func TestRollbackRefusals(t *testing.T) {
 		t.Fatal("must refuse outside a bundle")
 	}
 }
+
+// ---- local channel ----
+
+// putLocal writes a local build (zip + SHA256SUMS) into the service's local-update directory.
+func putLocal(t *testing.T, svc *Service, version string, files []file, sums bool) string {
+	t.Helper()
+	dir := svc.LocalDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	z := makeZip(t, files)
+	name := AssetName(version)
+	if err := os.WriteFile(filepath.Join(dir, name), z, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if sums {
+		sum := sha256.Sum256(z)
+		if err := os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte(hex.EncodeToString(sum[:])+"  "+name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, name)
+}
+
+func TestLocalChannelOffersAndInstallsLocalBuild(t *testing.T) {
+	f := newFx(t, "0.4.1-dev.46", stable("v9.9.9")) // GitHub must not be asked
+	f.apiFail = true
+	if err := f.svc.SetChannel(Local); err != nil {
+		t.Fatal(err)
+	}
+	if New("o/r", "0.4.1", f.svc.Home).Channel() != Local {
+		t.Fatal("local channel not persisted")
+	}
+	if info := f.svc.Check(context.Background()); info.Available || info.Error != "" {
+		t.Fatalf("no local build yet must be quiet: %+v", info)
+	}
+	putLocal(t, f.svc, "0.4.1-local.20260101120000", bundleFiles("0.4.1-local.20260101120000"), true)
+	info := f.svc.Check(context.Background())
+	if !info.Available || info.Latest != "0.4.1-local.20260101120000" || info.Channel != Local || info.Error != "" || info.Size == 0 {
+		t.Fatalf("local build not offered: %+v", info)
+	}
+	if err := f.svc.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.launched) == 0 || !f.backedUp {
+		t.Fatalf("install did not back up and launch: %v", f.launched)
+	}
+}
+
+func TestLocalChannelNotOfferedWhenAlreadyRunningOrBroken(t *testing.T) {
+	f := newFx(t, "0.4.1-local.1")
+	_ = f.svc.SetChannel(Local)
+	putLocal(t, f.svc, "0.4.1-local.1", bundleFiles("0.4.1-local.1"), true)
+	if info := f.svc.Check(context.Background()); info.Available {
+		t.Fatalf("the running build must not be offered again: %+v", info)
+	}
+	// a different build without checksum list is reported, not offered
+	g := newFx(t, "0.4.1-local.1")
+	_ = g.svc.SetChannel(Local)
+	putLocal(t, g.svc, "0.4.1-local.2", bundleFiles("0.4.1-local.2"), false)
+	if info := g.svc.Check(context.Background()); info.Available || info.Error == "" {
+		t.Fatalf("missing SHA256SUMS must be an error: %+v", info)
+	}
+}
+
+func TestLocalChannelStageRejectsTamperedZipAndWrongVersion(t *testing.T) {
+	f := newFx(t, "0.4.1-dev.46")
+	_ = f.svc.SetChannel(Local)
+	p := putLocal(t, f.svc, "0.4.1-local.5", bundleFiles("0.4.1-local.5"), true)
+	b, _ := os.ReadFile(p)
+	b[len(b)/2] ^= 0xff // corrupt after the checksum was written
+	_ = os.WriteFile(p, b, 0o600)
+	info := f.svc.Check(context.Background())
+	if _, err := f.svc.Stage(context.Background(), info); err == nil {
+		t.Fatal("a zip that does not match SHA256SUMS must be refused")
+	}
+	// the bundle's own version must match the file name
+	h := newFx(t, "0.4.1-dev.46")
+	_ = h.svc.SetChannel(Local)
+	putLocal(t, h.svc, "0.4.1-local.6", bundleFiles("0.4.1-local.7"), true)
+	info = h.svc.Check(context.Background())
+	if _, err := h.svc.Stage(context.Background(), info); err == nil {
+		t.Fatal("a bundle with another version than announced must be refused")
+	}
+}
