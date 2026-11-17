@@ -8,6 +8,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -186,10 +187,33 @@ func (m *Manager) FolderDelete(ctx context.Context, sandbox, folder string, forc
 	return nil
 }
 
+// sudoProbe sets S to "sudo -n" when something below $d belongs to another user (for example files that a root
+// container or tool created inside the project, which the normal user cannot read), else to "". Folders that
+// the user fully owns never use sudo.
+const sudoProbe = `S=""; if [ -n "$(find "$d" ! -user "$(id -un)" -print -quit 2>/dev/null)" ] && sudo -n true 2>/dev/null; then S="sudo -n"; fi`
+
 // statScript prints "<files> <bytes>" of the regular files below ~/work/<name>.
 func statScript(name string) string {
 	return fmt.Sprintf(`d="$HOME/work/%s"; [ -d "$d" ] || exit 3
-find "$d" -type f -printf '%%s\n' | awk '{s+=$1} END {print NR, s+0}'`, name)
+%s
+$S find "$d" -type f -printf '%%s\n' | awk '{s+=$1} END {print NR, s+0}'`, name, sudoProbe)
+}
+
+// rmScript deletes ~/work/<name> (with sudo when part of it belongs to another user, see sudoProbe).
+func rmScript(name string) string {
+	return fmt.Sprintf(`d="$HOME/work/%s"
+%s
+$S rm -rf -- "$HOME/work/%s"`, name, sudoProbe, name)
+}
+
+// shortErr keeps an error readable: tar can print one line per unreadable file.
+func shortErr(err error) error {
+	const max = 500
+	msg := err.Error()
+	if len(msg) > max {
+		return fmt.Errorf("%s … (cut; full text in the daemon log)", msg[:max])
+	}
+	return err
 }
 
 func parseStat(out []byte) (files, bytes int64, err error) {
@@ -207,7 +231,9 @@ func parseStat(out []byte) (files, bytes int64, err error) {
 // tarOutScript writes ~/work/<name> as a tar stream to stdout. tar's exit status 1 ("file changed
 // as we read it", for example while a process writes) is tolerated; the file count check decides.
 func tarOutScript(name string) string {
-	return fmt.Sprintf(`tar -C "$HOME/work" -cpf - -- %s; rc=$?; [ "$rc" -le 1 ] || exit "$rc"`, name)
+	return fmt.Sprintf(`d="$HOME/work/%[1]s"
+%[2]s
+$S tar -C "$HOME/work" -cpf - -- %[1]s; rc=$?; [ "$rc" -le 1 ] || exit "$rc"`, name, sudoProbe)
 }
 
 // tarInScript unpacks the tar stream into a hidden temporary folder and renames it to ~/work/<newName>
@@ -295,7 +321,8 @@ func (m *Manager) FolderTransfer(ctx context.Context, src, folder, dst, newName 
 	lima.Output(ctx, fmt.Sprintf("%s ~/work/%s → %s:~/work/%s (%d files, %d bytes)", verb, name, dst, newName, wantFiles, wantBytes))
 	err = m.L.ShellPipe(ctx, ss.VM, []string{"bash", "-c", tarOutScript(name)}, ds.VM, []string{"bash", "-c", tarInScript(name, newName)})
 	if err != nil {
-		return fmt.Errorf("transfer failed (nothing was removed from the source): %w", err)
+		log.Printf("folder transfer %s:%s → %s:%s failed: %v", src, folder, dst, newName, err)
+		return fmt.Errorf("transfer failed (nothing was removed from the source): %w", shortErr(err))
 	}
 	progress(ctx, "Verifying the copy")
 	out, err = m.L.Shell(ctx, ds.VM, "bash", "-c", statScript(newName))
@@ -312,7 +339,7 @@ func (m *Manager) FolderTransfer(ctx context.Context, src, folder, dst, newName 
 	}
 	if move {
 		progress(ctx, "Removing the source folder")
-		if _, err := m.L.Shell(ctx, ss.VM, "bash", "-c", fmt.Sprintf(`rm -rf -- "$HOME/work/%s"`, name)); err != nil {
+		if _, err := m.L.Shell(ctx, ss.VM, "bash", "-c", rmScript(name)); err != nil {
 			return fmt.Errorf("the folder was copied to %s, but the source could not be removed: %w", dst, err)
 		}
 		m.audit("folder.move", src, folder, fmt.Sprintf("→ %s:work/%s", dst, newName))

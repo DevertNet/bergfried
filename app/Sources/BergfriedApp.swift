@@ -75,48 +75,6 @@ struct ContentView: View {
     }
 }
 
-struct MenuLabel: View {
-    @ObservedObject var model: AppModel
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: model.online ? "shield.lefthalf.filled" : "shield.slash")
-            if model.pendingCount > 0 { Text("\(model.pendingCount)") }
-        }
-    }
-}
-
-struct MenuContent: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) var openWindow
-
-    var body: some View {
-        if !model.online { Text("Daemon not reachable") }
-        else if model.status?.indexWaiting == true { Text("Open the Bergfried window to start indexing") }
-        else if model.requests.isEmpty { Text("No open requests") }
-        ForEach(model.requests.prefix(6)) { r in
-            if r.kind == "ssh" {
-                Button(L("SSH %@/%@ → %@ …", r.sandbox, r.folder, r.path)) { open() }
-            } else if r.kind == "ghtoken" {
-                Button("GitHub \(r.sandbox)/\(r.folder): \(r.path) …") { open() }
-            } else if r.kind == "skill" {
-                // The diff has to be reviewed in the app: no Allow/Deny here (they would call the file endpoint).
-                Button(L("Skills %@: %@ …", r.sandbox, r.path)) { open() }
-            } else {
-                Menu("\(r.sandbox)/\(r.folder): ~/\(r.path)") {
-                    Button("Allow") { if r.large { open() } else { Task { await model.decideFile(r, allow: true) } } }
-                    Button("Deny") { Task { await model.decideFile(r, allow: false) } }
-                }
-            }
-        }
-        if !model.grants.isEmpty { Divider(); Text(L("%lld active SSH grant(s)", model.grants.count)) }
-        Divider()
-        Button("Open window") { open() }
-        Button("Quit") { NSApp.terminate(nil) }
-    }
-
-    func open() { model.pane = .requests; openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
-}
-
 @main
 struct BergfriedApp: App {
     @StateObject private var model = AppModel()
@@ -143,8 +101,5 @@ struct BergfriedApp: App {
             ContentView().environmentObject(model).frame(minWidth: 920, minHeight: 560)
                 .task { model.start() }
         }
-        MenuBarExtra {
-            MenuContent().environmentObject(model)
-        } label: { MenuLabel(model: model) }
     }
 }
