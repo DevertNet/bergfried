@@ -306,6 +306,10 @@ func TestTransferScriptsRoundTrip(t *testing.T) {
 			t.Skip(bin + " not available")
 		}
 	}
+	// The scripts run in the Linux VMs and use GNU find (-printf); BSD find on macOS runners lacks it.
+	if err := exec.Command("find", ".", "-maxdepth", "0", "-printf", "").Run(); err != nil {
+		t.Skip("GNU find not available")
+	}
 	a, b := t.TempDir(), t.TempDir()
 	src := filepath.Join(a, "work", "shop")
 	if err := os.MkdirAll(filepath.Join(src, "sub", ".git"), 0o755); err != nil {
