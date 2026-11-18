@@ -308,21 +308,23 @@ struct ClaudeServiceCard: View {
                 RuntimeIcon(letter: "C", tint: .purple)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text("Claude Code").font(.callout.weight(.semibold))
+                        Text("Claude Code").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
                             .help(L("One Claude per folder, started in the folder list below – no git worktree, no new branch. Remote Control is available for every running Claude."))
-                        if model.isReady(s) {
+                        if !restartReasons.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues.")), compact: true) }
+                    }
+                    if model.isReady(s) {
+                        HStack(spacing: 5) {
                             Circle().fill(runningCount > 0 ? .green : Color.secondary).frame(width: 6, height: 6)
                             Text(runningCount > 0 ? L("running in %lld folder(s)", runningCount) : L("not running"))
-                                .font(.caption2).foregroundStyle(runningCount > 0 ? .green : .secondary)
+                                .font(.caption2).foregroundStyle(runningCount > 0 ? .green : .secondary).lineLimit(1)
                         }
-                        if !restartReasons.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues."))) }
                     }
-                    Text(status.0).font(.caption).foregroundStyle(status.1)
+                    Text(status.0).font(.caption).foregroundStyle(status.1).lineLimit(2)
                 }
-                Spacer(minLength: 4)
-                if canSignIn {
-                    Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small)
-                }
+                Spacer(minLength: 0)
+            }
+            if canSignIn {
+                HStack { Spacer(); Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small) }
             }
             if canStart {
                 HStack(spacing: 8) {
@@ -377,21 +379,23 @@ struct OpenCodeServiceCard: View {
                 RuntimeIcon(letter: "O", tint: .blue)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text("OpenCode").font(.callout.weight(.semibold))
+                        Text("OpenCode").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
                             .help(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
-                        if model.isReady(s) {
+                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu.")), compact: true) }
+                    }
+                    if model.isReady(s) {
+                        HStack(spacing: 5) {
                             Circle().fill(serviceRunning ? .green : Color.secondary).frame(width: 6, height: 6)
                             Text(serviceRunning ? L("service running") : L("service stopped"))
-                                .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary)
+                                .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary).lineLimit(1)
                         }
-                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu."))) }
                     }
-                    Text(status.0).font(.caption).foregroundStyle(status.1)
+                    Text(status.0).font(.caption).foregroundStyle(status.1).lineLimit(2)
                 }
-                Spacer(minLength: 4)
-                if canSignIn {
-                    Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "opencode")) }.controlSize(.small)
-                }
+                Spacer(minLength: 0)
+            }
+            if canSignIn {
+                HStack { Spacer(); Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "opencode")) }.controlSize(.small) }
             }
             if model.isReady(s) {
                 HStack(spacing: 8) {
