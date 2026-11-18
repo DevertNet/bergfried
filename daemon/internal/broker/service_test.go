@@ -48,6 +48,18 @@ func svcFx(t *testing.T, source string, hostFPs []string) (*Service, *fx, *fakeH
 	h := &fakeHooks{}
 	s := NewService(f.b, func(context.Context, string) ([]string, string, error) { return hostFPs, source, nil }, h, nil, hc)
 	s.Timeout = 2 * time.Second
+	// Attempt starts a background request that writes to the store; wait for it before the temp directory is removed
+	// (cleanups run last-in first-out, so this runs before the directory made in setup is deleted).
+	t.Cleanup(func() {
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			s.mu.Lock()
+			n := len(s.attempt)
+			s.mu.Unlock()
+			if n == 0 {
+				return
+			}
+		}
+	})
 	return s, f, h
 }
 

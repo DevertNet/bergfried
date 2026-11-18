@@ -24,8 +24,8 @@ Ordering follows semver: `0.1.0 < 0.1.1-dev.3 < 0.1.1-dev.17 < 0.1.1`. The **sta
 Settings → Updates: a picker **Stable / Dev** with a warning for dev ("builds from the development branch; may be broken"); the banner and release notes show the channel. Strings in English and German.
 
 ## Workflows
-- `ci.yml`: runs on every push to every branch and on pull requests (Go tests, macOS app build) — no release.
-- `dev-release.yml` (new): on push to `dev` → tests, build with version `X.Y.Z-dev.N`, zip + `SHA256SUMS`, publish a **pre-release**, prune old dev pre-releases. Uses only `GITHUB_TOKEN` (`contents: write`).
+- `ci.yml`: runs on every push to every branch (Go tests, macOS app build; no separate pull-request run) — no release.
+- `dev-release.yml` (new): on push to `dev` → build (tests already ran in `ci.yml`) with version `X.Y.Z-dev.N`, zip + `SHA256SUMS`, publish a **pre-release**, prune old dev pre-releases. Uses only `GITHUB_TOKEN` (`contents: write`).
 - `release.yml` (existing): tags `vX.Y.Z` only (rejects anything else).
 - Workflow files are edited only by you: the sandbox token has no Workflows permission.
 
