@@ -158,8 +158,8 @@ struct FolderRow: View {
                 HStack(spacing: 6) {
                     Circle().fill(state.color).frame(width: 8, height: 8)
                     Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
-                    Text(r.label).font(.callout.bold()).lineLimit(1)
-                    if running, let rr = w?.restartReasons, !rr.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: rr, footer: L("Use “Restart Claude” in the menu; the conversation continues."))) }
+                    Text(r.label).font(.callout.bold()).lineLimit(1).truncationMode(.middle).help(r.label)
+                    if running, let rr = w?.restartReasons, !rr.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: rr, footer: L("Use “Restart Claude” in the menu; the conversation continues.")), compact: true) }
                 }
                 HStack(spacing: 8) {
                     Text("~/"+r.folder).font(.caption2.monospaced()).foregroundStyle(.secondary)
@@ -171,7 +171,7 @@ struct FolderRow: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
             Text(state.text).font(.caption).foregroundStyle(state.color)
                 .lineLimit(1).truncationMode(.tail)
-                .frame(width: 260, alignment: .leading).help(state.text)
+                .frame(width: 220, alignment: .leading).help(state.text)
             actions.frame(width: 230, alignment: .trailing)
         }
         .padding(.vertical, 4)

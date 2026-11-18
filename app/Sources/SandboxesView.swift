@@ -780,8 +780,16 @@ func restartHelp(tool: String, reasons: [String], footer: String) -> String {
 
 struct RestartNeededLabel: View {
     let help: String
+    /// Icon only (tooltip carries the text) where horizontal space is tight, for example in folder rows.
+    var compact = false
     var body: some View {
-        Label("Restart needed", systemImage: "arrow.clockwise.circle.fill")
-            .font(.caption).foregroundStyle(.orange).help(help)
+        Group {
+            if compact {
+                Image(systemName: "arrow.clockwise.circle.fill")
+            } else {
+                Label("Restart needed", systemImage: "arrow.clockwise.circle.fill").lineLimit(1)
+            }
+        }
+        .font(.caption).foregroundStyle(.orange).fixedSize().help(help)
     }
 }
