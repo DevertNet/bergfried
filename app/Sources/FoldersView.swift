@@ -21,7 +21,7 @@ struct FoldersCard: View {
     @Local private var showStart = false
     @Local private var showNew = false
 
-    var reloadKey: String { "\(s.running)|\(s.claudeSessions.map(\.folder).joined(separator: ","))|\(model.running.count)" }
+    var reloadKey: String { "\(model.isReady(s))|\(s.claudeSessions.map(\.folder).joined(separator: ","))|\(model.running.count)" }
 
     var rows: [FolderRowData] {
         var res: [FolderRowData] = []
@@ -46,10 +46,11 @@ struct FoldersCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("Folders")).font(.callout.weight(.semibold))
                     Text(L("Everything in ~/work of this VM. Claude can run in any folder; copying and moving folders to another sandbox is done here."))
-                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        .help(L("Everything in ~/work of this VM. Claude can run in any folder; copying and moving folders to another sandbox is done here."))
                 }
                 Spacer(minLength: 4)
-                if s.running {
+                if model.isReady(s) {
                     Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.borderless).help(L("Reload the folder list"))
                     Menu {
@@ -66,6 +67,8 @@ struct FoldersCard: View {
             if !s.running {
                 Text(L("Start the sandbox to see all folders in ~/work."))
                     .font(.caption).foregroundStyle(.secondary)
+            } else if !model.isReady(s) {
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text(L("Sandbox is starting …")).font(.caption).foregroundStyle(.secondary) }
             } else if let loadError {
                 Text(loadError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             } else if items == nil {
@@ -74,18 +77,14 @@ struct FoldersCard: View {
                 Text(L("No folders in ~/work yet. Create one with “+ Folder”.")).font(.caption).foregroundStyle(.secondary)
             }
             if !rows.isEmpty {
-                HStack(spacing: 10) {
-                    Text(L("Folder").uppercased()).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L("Claude").uppercased()).frame(width: 260, alignment: .leading)
-                    Text(L("Actions").uppercased()).frame(width: 230, alignment: .trailing)
-                }.font(.caption2).foregroundStyle(.secondary)
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
                     if i > 0 { Divider() }
                     FolderRow(s: s, r: r)
                 }
             }
-            Text(L("Claude works directly in the folder – no git worktree, no new branch. Removing a Claude entry keeps the folder."))
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Label(L("Claude works directly in the folder – no git worktree, no new branch. Removing a Claude entry keeps the folder."), systemImage: "info.circle")
+                .labelStyle(.iconOnly).font(.caption).foregroundStyle(.secondary)
+                .help(L("Claude works directly in the folder – no git worktree, no new branch. Removing a Claude entry keeps the folder.") + "\n\n" + L("Claude and OpenCode can use the same folder, but not at the same time on the same files. For parallel work, run Claude in several different folders."))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,12 +96,20 @@ struct FoldersCard: View {
     }
 
     func load() async {
-        guard s.running else { items = nil; loadError = nil; return }
-        do {
-            let r: FolderListResponse = try await model.api.get("/v1/folders?sandbox=\(s.name)")
-            items = r.folders
-            loadError = nil
-        } catch { loadError = error.localizedDescription }
+        guard model.isReady(s) else { items = nil; loadError = nil; return }
+        // Right after a start the VM's SSH is often not ready yet: retry quietly and only show an error if it stays.
+        var lastError: Error?
+        for attempt in 0..<5 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            if Task.isCancelled { return }
+            do {
+                let r: FolderListResponse = try await model.api.get("/v1/folders?sandbox=\(s.name)")
+                items = r.folders
+                loadError = nil
+                return
+            } catch { lastError = error }
+        }
+        loadError = lastError?.localizedDescription
     }
 }
 
@@ -119,16 +126,18 @@ struct FolderRow: View {
     var running: Bool { w?.running == true }
     var canStart: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
     var busy: String? {
-        model.running.first(where: {
-            $0.key.hasSuffix("-\(s.name)-\(r.base)") || (w != nil && $0.key.hasSuffix("-\(s.name)-\(w!.name)"))
-        })?.value
+        model.jobs(of: s.name).first(where: {
+            let item = $0.key.split(separator: "|", omittingEmptySubsequences: false).last.map(String.init)
+            return item == r.base || (w != nil && item == w!.name)
+        })?.label
     }
-    var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
+    var sandboxBusy: Bool { !model.jobs(of: s.name).isEmpty }
 
     var state: (color: Color, text: String) {
         if !s.running { return (.gray, L("Sandbox stopped")) }
         guard let w else {
             if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
+            if s.claudeInstalled == nil || s.claudeLoggedIn == nil { return (.gray, L("checking …")) }
             if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
             return (.gray, L("no Claude"))
         }
@@ -140,6 +149,7 @@ struct FolderRow: View {
             return (.orange, L("Claude runs · Remote Control starting …"))
         }
         if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
+        if s.claudeInstalled == nil || s.claudeLoggedIn == nil { return (.gray, L("checking …")) }
         if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
         if sandboxBusy { return (.orange, L("starting …")) }
         return (.gray, L("Claude not started"))
@@ -157,21 +167,17 @@ struct FolderRow: View {
                 HStack(spacing: 6) {
                     Circle().fill(state.color).frame(width: 8, height: 8)
                     Image(systemName: "folder").foregroundStyle(.secondary).font(.caption)
-                    Text(r.label).font(.callout.bold()).lineLimit(1)
-                    if running, let rr = w?.restartReasons, !rr.isEmpty { RestartNeededLabel(help: restartHelp(tool: "Claude", reasons: rr, footer: L("Use “Restart Claude” in the menu; the conversation continues."))) }
+                    Text(r.label).font(.callout.bold()).lineLimit(1).truncationMode(.middle).help("~/" + r.folder)
+                    if running, let rr = w?.restartReasons, !rr.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: rr, footer: L("Use “Restart Claude” in the menu; the conversation continues.")), compact: true) }
                 }
-                HStack(spacing: 8) {
-                    Text("~/"+r.folder).font(.caption2.monospaced()).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(state.text).font(.caption2).foregroundStyle(state.color).lineLimit(1).truncationMode(.tail).help(state.text)
                     if let g = gitLine {
-                        Text(g).font(.caption2).foregroundStyle(r.item?.dirty == true ? Color.orange : Color.secondary).lineLimit(1)
+                        Text("· " + g).font(.caption2).foregroundStyle(r.item?.dirty == true ? Color.orange : Color.secondary).lineLimit(1).truncationMode(.tail)
                     }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
-            Text(state.text).font(.caption).foregroundStyle(state.color)
-                .lineLimit(1).truncationMode(.tail)
-                .frame(width: 260, alignment: .leading).help(state.text)
-            actions.frame(width: 230, alignment: .trailing)
+            actions.fixedSize()
         }
         .padding(.vertical, 4)
         .confirmationDialog(L("Remove Claude entry for “%@”?", r.label), isPresented: $removeOpen) {
@@ -243,17 +249,17 @@ struct FolderRow: View {
     }
 
     func claudeJob(_ action: String, _ step: String, _ path: String) {
-        let key = "claude-\(action)-\(s.name)-\(w?.name ?? r.base)"
+        let key = AppModel.jobKey("claude-\(action)", s.name, w?.name ?? r.base)
         Task { if let e = await model.runJob(key, step, path, ClaudeBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
     }
 
     func removeEntry() {
-        Task { if let e = await model.runJob("claude-remove-\(s.name)-\(w?.name ?? r.base)", L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
+        Task { if let e = await model.runJob(AppModel.jobKey("claude-remove", s.name, w?.name ?? r.base), L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: r.folder)) { model.setBanner(e) } }
     }
 
     func deleteFolder(force: Bool) {
         Task {
-            let e = await model.runJob("folder-delete-\(s.name)-\(r.base)", L("Deleting folder …"), "/v1/folders/delete", FolderBody(sandbox: s.name, folder: r.folder, force: force))
+            let e = await model.runJob(AppModel.jobKey("folder-delete", s.name, r.base), L("Deleting folder …"), "/v1/folders/delete", FolderBody(sandbox: s.name, folder: r.folder, force: force))
             if let e { if e.contains("unpushed") { forceMsg = e } else { model.setBanner(e) } }
         }
     }
@@ -297,7 +303,7 @@ struct NewFolderSheet: View {
                 Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("Create")) {
                     let body = FolderBody(sandbox: s.name, name: trimmedName, gitUrl: clone ? trimmedURL : "")
-                    let key = "folder-create-\(s.name)-\(trimmedName.isEmpty ? "new" : trimmedName)"
+                    let key = AppModel.jobKey("folder-create", s.name, trimmedName.isEmpty ? "new" : trimmedName)
                     dismiss()
                     Task { if let e = await model.runJob(key, clone ? L("Cloning repository …") : L("Creating folder …"), "/v1/folders/create", body) { model.setBanner(e) } }
                 }.disabled(!valid).keyboardShortcut(.defaultAction)
@@ -378,7 +384,7 @@ struct TransferFolderSheet: View {
 
     func start() {
         let body = FolderBody(sandbox: s.name, folder: folder, name: name, target: target, move: move)
-        let key = "folder-\(move ? "move" : "copy")-\(s.name)-\(folder.split(separator: "/").last.map(String.init) ?? folder)"
+        let key = AppModel.jobKey("folder-\(move ? "move" : "copy")", s.name, folder.split(separator: "/").last.map(String.init) ?? folder)
         let step = move ? L("Moving to %@ …", target) : L("Copying to %@ …", target)
         dismiss()
         Task { if let e = await model.runJob(key, step, "/v1/folders/transfer", body) { model.setBanner(e) } }

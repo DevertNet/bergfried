@@ -368,3 +368,40 @@ func TestTransferScriptsRoundTrip(t *testing.T) {
 		t.Fatalf("%d %d %v", f, n, err)
 	}
 }
+
+func TestTransferScriptsUseSudoOnlyForForeignFiles(t *testing.T) {
+	for name, s := range map[string]string{"tar": tarOutScript("shop"), "stat": statScript("shop"), "rm": rmScript("shop")} {
+		if !strings.Contains(s, `! -user "$(id -un)"`) || !strings.Contains(s, "$S ") {
+			t.Errorf("%s script must probe for foreign-owned files and prefix with $S: %s", name, s)
+		}
+	}
+}
+
+func TestRmScriptRemovesOwnFolderWithoutSudo(t *testing.T) {
+	if err := exec.Command("find", ".", "-maxdepth", "0", "-printf", "").Run(); err != nil {
+		t.Skip("GNU find not available")
+	}
+	home := t.TempDir()
+	d := filepath.Join(home, "work", "shop", "sub")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", "-c", rmScript("shop"))
+	c.Env = append(os.Environ(), "HOME="+home)
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(home, "work", "shop")); !os.IsNotExist(err) {
+		t.Fatal("folder not removed")
+	}
+}
+
+func TestShortErrCutsLongText(t *testing.T) {
+	long := fmt.Errorf("%s", strings.Repeat("tar: x: Permission denied\n", 100))
+	if got := shortErr(long).Error(); len(got) > 600 || !strings.Contains(got, "cut") {
+		t.Fatalf("not shortened: %d", len(got))
+	}
+	if short := fmt.Errorf("boom"); shortErr(short) != short {
+		t.Fatal("short errors stay unchanged")
+	}
+}

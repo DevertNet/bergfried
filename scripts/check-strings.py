@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks the app's German localisation.
 
-* every key used with L("…") / LT("…") in app/Sources must exist in app/Resources/de.lproj/Localizable.strings,
+* every key used with L("…") / LT("…") and every string literal of Text/Button/Label/… in app/Sources must exist in app/Resources/de.lproj/Localizable.strings,
   unless it is listed in app/Resources/same-in-german.txt (one key per line: text that is identical in German);
 * the key and its German value must contain the same format specifiers (%@, %lld, …) in the same order;
 * the .strings file must have no duplicate keys.
@@ -41,6 +41,13 @@ def main():
     for f in SRC:
         for m in re.finditer(r'\bLT?\(\s*"((?:[^"\\]|\\.)*)"', open(f, encoding="utf-8").read()):
             used.setdefault(unescape(m.group(1)), f)
+    # SwiftUI looks up literals of these views as localisation keys too: an untranslated one shows English in the German UI.
+    lit = re.compile(r'\b(?:Text|Button|Label|LabeledContent|Toggle|Picker|Section|SettingsCard|Menu|TextField|SecureField|Link|DisclosureGroup|GroupBox)\(\s*"((?:[^"\\]|\\.)*)"')
+    for f in SRC:
+        for m in lit.finditer(open(f, encoding="utf-8").read()):
+            k = unescape(m.group(1))
+            if "\\(" not in k and re.search("[A-Za-z]{2}", k):
+                used.setdefault(k, f)
     for k, f in sorted(used.items()):
         if k in pairs:
             if SPEC.findall(k) != SPEC.findall(pairs[k]):

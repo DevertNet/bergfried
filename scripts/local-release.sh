@@ -12,7 +12,7 @@ out="${BERGFRIED_HOME:-$HOME/.bergfried}/local-update"
 echo "Building $ver …"
 make build VERSION="$ver"
 VERSION="$ver" app/build.sh
-( cd app/build && ditto -c -k --keepParent Bergfried.app "Bergfried-$ver-macos-arm64.zip" && shasum -a 256 "Bergfried-$ver-macos-arm64.zip" > SHA256SUMS )
+( cd app/build && ditto -c -k --norsrc --noextattr --noacl --keepParent Bergfried.app "Bergfried-$ver-macos-arm64.zip" && shasum -a 256 "Bergfried-$ver-macos-arm64.zip" > SHA256SUMS )
 mkdir -p "$out" && chmod 700 "$out"
 rm -f "$out"/Bergfried-*-macos-arm64.zip "$out"/SHA256SUMS
 mv "app/build/Bergfried-$ver-macos-arm64.zip" app/build/SHA256SUMS "$out/"

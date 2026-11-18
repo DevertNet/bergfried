@@ -11,3 +11,9 @@ VM: %@ (Lima)
 Claude
 git
 https://github.com/owner/repo
+iTerm
+github_pat_…
+~/work/…
+Name
+Base VM
+Shell / SSH
