@@ -854,7 +854,7 @@ struct RestartNeededLabel: View {
     var compact = false
     @Local private var open = false
     var body: some View {
-        // Hover shows the reason as a tooltip; a click opens it as a popover (tooltips are easy to miss on an inactive window).
+        // Hovering shows the reason at once as a popover (the system tooltip has a long delay); a click pins it.
         Button { open.toggle() } label: {
             if compact {
                 Image(systemName: "arrow.clockwise.circle.fill")
@@ -863,7 +863,10 @@ struct RestartNeededLabel: View {
             }
         }
         .buttonStyle(.plain)
-        .font(.caption).foregroundStyle(.orange).fixedSize().help(help)
+        .font(.caption).foregroundStyle(.orange).fixedSize()
+        .onHover { inside in
+            if inside { open = true } else { open = false }
+        }
         .popover(isPresented: $open, arrowEdge: .bottom) {
             Text(help).font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 300, alignment: .leading).padding(12)
         }
