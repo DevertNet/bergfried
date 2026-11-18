@@ -120,17 +120,24 @@ struct SandboxCard: View {
             }
             Divider()
             servicesSection
+                // Start/stop in progress: the cards would show stale state and their buttons would fail.
+                .opacity(transitioning ? 0.45 : 1).allowsHitTesting(!transitioning)
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
     }
 
+    var transitioning: Bool {
+        model.jobs(of: s.name).contains { $0.key.hasPrefix("start|") || $0.key.hasPrefix("stop|") }
+    }
+
     var header: some View {
         HStack(spacing: 10) {
-            Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
+            Circle().fill(busy != nil ? Color.orange : (s.running ? .green : .gray)).frame(width: 10, height: 10)
             Text(s.name).font(.title3.bold())
-            Text(LocalizedStringKey(s.status)).font(.callout).foregroundStyle(.secondary)
+            // While a start/stop job runs the busy label on the right says what happens; the old status would contradict it.
+            if busy == nil { Text(LocalizedStringKey(s.status)).font(.callout).foregroundStyle(.secondary) }
             Spacer()
             if let b = busy {
                 ProgressView().controlSize(.small)

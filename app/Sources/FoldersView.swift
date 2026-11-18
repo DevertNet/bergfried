@@ -98,11 +98,19 @@ struct FoldersCard: View {
 
     func load() async {
         guard s.running else { items = nil; loadError = nil; return }
-        do {
-            let r: FolderListResponse = try await model.api.get("/v1/folders?sandbox=\(s.name)")
-            items = r.folders
-            loadError = nil
-        } catch { loadError = error.localizedDescription }
+        // Right after a start the VM's SSH is often not ready yet: retry quietly and only show an error if it stays.
+        var lastError: Error?
+        for attempt in 0..<5 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            if Task.isCancelled { return }
+            do {
+                let r: FolderListResponse = try await model.api.get("/v1/folders?sandbox=\(s.name)")
+                items = r.folders
+                loadError = nil
+                return
+            } catch { lastError = error }
+        }
+        loadError = lastError?.localizedDescription
     }
 }
 
@@ -130,6 +138,7 @@ struct FolderRow: View {
         if !s.running { return (.gray, L("Sandbox stopped")) }
         guard let w else {
             if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
+            if s.claudeInstalled == nil || s.claudeLoggedIn == nil { return (.gray, L("checking …")) }
             if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
             return (.gray, L("no Claude"))
         }
@@ -141,6 +150,7 @@ struct FolderRow: View {
             return (.orange, L("Claude runs · Remote Control starting …"))
         }
         if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
+        if s.claudeInstalled == nil || s.claudeLoggedIn == nil { return (.gray, L("checking …")) }
         if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
         if sandboxBusy { return (.orange, L("starting …")) }
         return (.gray, L("Claude not started"))
