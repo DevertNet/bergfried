@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -111,10 +113,22 @@ func TestSandboxNamesAndBaseProtection(t *testing.T) {
 type shellFake struct {
 	out   string
 	calls []string
+	stdin []string
+	fail  string // commands containing this text fail
 }
 
 func (f *shellFake) Run(_ context.Context, a ...string) ([]byte, error) {
 	f.calls = append(f.calls, strings.Join(a, " "))
+	if f.fail != "" && strings.Contains(strings.Join(a, " "), f.fail) {
+		return nil, errors.New("fake failure: " + f.fail)
+	}
+	return []byte(f.out), nil
+}
+
+func (f *shellFake) RunStdin(_ context.Context, in io.Reader, a ...string) ([]byte, error) {
+	b, _ := io.ReadAll(in)
+	f.calls = append(f.calls, strings.Join(a, " "))
+	f.stdin = append(f.stdin, string(b))
 	return []byte(f.out), nil
 }
 
@@ -152,7 +166,7 @@ func TestClaudeRemoveKeepsFolder(t *testing.T) {
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "release_ssh", "task_id", "once per task", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "github_create_pr", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "propose_skill_change", "~/.claude/skills", "without restarting the assistant", "within a few seconds", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
@@ -196,10 +210,26 @@ func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
 	}
 }
 
-func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
+func TestGuidanceGitHubUsesGrantsAndNoStandingToken(t *testing.T) {
 	g := guidance("/out")
-	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Never print the token") {
-		t.Fatal(g)
+	for _, want := range []string{"request_git_access", "release_git_access", "github_merge_pr", "github_create_pr", "no standing token", "never print or store one"} {
+		if !strings.Contains(g, want) {
+			t.Errorf("guidance misses %q", want)
+		}
+	}
+	// the old token recipes must be gone: the assistant must not look for a token or call gh with one
+	for _, bad := range []string{"request_git_push", "gh auth login", "sed -E 's#https://x-access-token", "Authorization: Bearer $("} {
+		if strings.Contains(g, bad) {
+			t.Errorf("guidance still contains %q", bad)
+		}
+	}
+}
+
+func TestHelperScriptConfiguresTheCredentialHelper(t *testing.T) {
+	for _, want := range []string{"credential.https://github.com.helper", "bergfried-mcp git-credential", "useHttpPath"} {
+		if !strings.Contains(helperScript("x", "Claude", "shop"), want) {
+			t.Errorf("setup script misses %q", want)
+		}
 	}
 }
 
@@ -355,5 +385,136 @@ func TestOpenCodePairSetupAndLinkValidation(t *testing.T) {
 	}
 	if linkUsesPort("http://127.0.0.1:49374/auth/connect/abc", 42123) {
 		t.Fatal("default port must be rejected")
+	}
+}
+
+// startManager builds a Manager for sandbox "shop" with one entry whose Claude is stopped, so Start
+// goes through the helpers without opening tmux windows.
+func startManager(t *testing.T) (*Manager, *shellFake) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.AddSandbox(store.Sandbox{Name: "shop", VM: "bergfried-shop", TemplateVersion: 3, Created: time.Now()})
+	_ = st.AddWorktree(store.Worktree{Sandbox: "shop", Name: "api", Path: "~/work/api", ComposeProject: "shop-api", Created: time.Now()})
+	bin := filepath.Join(t.TempDir(), "bergfried-mcp")
+	if err := os.WriteFile(bin, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BERGFRIED_MCP_BIN", bin)
+	f := &shellFake{}
+	return &Manager{L: lima.Client{R: f}, S: st, Actor: "t", Home: t.TempDir()}, f
+}
+
+func findCall(calls []string, prefix string) int {
+	for i, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+func findAudit(t *testing.T, m *Manager, event string) (store.AuditEntry, bool) {
+	t.Helper()
+	entries, err := m.S.AuditList(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Event == event {
+			return e, true
+		}
+	}
+	return store.AuditEntry{}, false
+}
+
+func TestStartAddsSkillsMountWhenMissing(t *testing.T) {
+	limaHome := t.TempDir()
+	t.Setenv("LIMA_HOME", limaHome)
+	m, f := startManager(t)
+	dir := filepath.Join(m.Home, "sandboxes", "shop")
+	if err := os.MkdirAll(filepath.Join(limaHome, "bergfried-shop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "mounts:\n" +
+		"- location: " + filepath.Join(dir, "shared", "in") + "\n  mountPoint: " + filepath.Join(dir, "shared", "in") + "\n" +
+		"- location: " + filepath.Join(dir, "shared", "out") + "\n  mountPoint: " + filepath.Join(dir, "shared", "out") + "\n  writable: true\n"
+	if err := os.WriteFile(filepath.Join(limaHome, "bergfried-shop", "lima.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(context.Background(), "shop"); err != nil {
+		t.Fatal(err)
+	}
+	edit := findCall(f.calls, "edit ")
+	start := findCall(f.calls, "start ")
+	if edit < 0 || start < 0 || edit > start {
+		t.Fatalf("limactl edit must run before start: %v", f.calls)
+	}
+	if !strings.Contains(f.calls[edit], "edit --tty=false bergfried-shop") {
+		t.Fatalf("unexpected edit call: %s", f.calls[edit])
+	}
+	skillsDir := m.SkillsDir()
+	for _, want := range []string{
+		"--mount-only " + filepath.Join(dir, "shared", "in"),
+		"--mount-only " + filepath.Join(dir, "shared", "out") + ":w",
+		"--mount-only " + skillsDir,
+	} {
+		if !strings.Contains(f.calls[edit], want) {
+			t.Fatalf("%q missing in %s", want, f.calls[edit])
+		}
+	}
+	if strings.Contains(f.calls[edit], skillsDir+":w") {
+		t.Fatalf("skills must be read-only: %s", f.calls[edit])
+	}
+	e, ok := findAudit(t, m, "sandbox.skills_mount")
+	if !ok || e.Detail != "bergfried-shop" {
+		t.Fatalf("audit entry missing or wrong: %+v", e)
+	}
+	if _, err := os.Stat(skillsDir); err != nil {
+		t.Fatalf("skills folder was not created: %v", err)
+	}
+}
+
+func TestStartKeepsSkillsMountWhenPresent(t *testing.T) {
+	limaHome := t.TempDir()
+	t.Setenv("LIMA_HOME", limaHome)
+	m, f := startManager(t)
+	skillsDir := m.SkillsDir()
+	if _, err := skills.Ensure(m.Home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(limaHome, "bergfried-shop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "mounts:\n- location: " + skillsDir + "\n  mountPoint: " + skillsDir + "\n"
+	if err := os.WriteFile(filepath.Join(limaHome, "bergfried-shop", "lima.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(context.Background(), "shop"); err != nil {
+		t.Fatal(err)
+	}
+	if findCall(f.calls, "edit ") >= 0 {
+		t.Fatalf("no limactl edit expected: %v", f.calls)
+	}
+	if _, ok := findAudit(t, m, "sandbox.skills_mount"); ok {
+		t.Fatal("an existing mount must not be audited as added")
+	}
+}
+
+func TestStartContinuesWhenSkillsMountEditFails(t *testing.T) {
+	t.Setenv("LIMA_HOME", t.TempDir())
+	m, f := startManager(t)
+	f.fail = "edit"
+	if err := m.Start(context.Background(), "shop"); err != nil {
+		t.Fatalf("a failing edit must not fail the start: %v", err)
+	}
+	if findCall(f.calls, "edit ") < 0 || findCall(f.calls, "start ") < 0 {
+		t.Fatalf("edit and start expected: %v", f.calls)
+	}
+	e, ok := findAudit(t, m, "sandbox.skills_mount_failed")
+	if !ok || !strings.Contains(e.Detail, "fake failure: edit") {
+		t.Fatalf("audit entry missing or wrong: %+v", e)
 	}
 }

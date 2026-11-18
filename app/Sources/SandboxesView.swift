@@ -8,6 +8,47 @@ struct SandboxesView: View {
     @Local private var forceDeleteMsg: String?
     @Local private var forceDeleteFor: SandboxInfo?
     @Local private var baseBannerDismissed = false
+    @Local private var selection: String? = nil
+
+    func ensureSelection() {
+        let names = model.sandboxes.map(\.name) + creating.map(\.name)
+        if selection == nil || !names.contains(selection!) { selection = model.sandboxes.sorted { $0.name < $1.name }.first?.name ?? names.first }
+    }
+
+    var sandboxList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(creating, id: \.name) { c in listRow(name: c.name, color: .orange, sub: c.step) }
+                ForEach(model.sandboxes.sorted { $0.name < $1.name }) { sb in
+                    let job = model.jobs(of: sb.name).first
+                    let color: Color = job != nil ? .orange : (sb.running ? .green : .gray)
+                    let claudeN = sb.claudeSessions.filter { $0.running == true }.count
+                    let sub = job?.label ?? (sb.running ? (claudeN > 0 ? L("running in %lld folder(s)", claudeN) : L("Running")) : L("Stopped"))
+                    listRow(name: sb.name, color: color, sub: sub, badge: sb.pendingRequests)
+                }
+            }.padding(8)
+        }
+        .frame(width: 170)
+        .background(Color.secondary.opacity(0.05))
+    }
+
+    func listRow(name: String, color: Color, sub: String, badge: Int = 0) -> some View {
+        Button { selection = name } label: {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.callout.weight(selection == name ? .semibold : .regular)).lineLimit(1).truncationMode(.middle)
+                    Text(sub).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if badge > 0 { Text("\(badge)").font(.caption2.bold()).padding(.horizontal, 5).background(.red, in: Capsule()).foregroundStyle(.white) }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selection == name ? Color.accentColor.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
 
     var updateBannerText: String {
         guard let st = model.status else { return "" }
@@ -20,8 +61,9 @@ struct SandboxesView: View {
     /// Sandboxes that are being created and are not in the list yet (immediate feedback).
     var creating: [(name: String, step: String)] {
         model.running.compactMap { k, v in
-            guard k.hasPrefix("create-") else { return nil }
-            let n = String(k.dropFirst("create-".count))
+            let p = k.split(separator: "|", omittingEmptySubsequences: false)
+            guard p.count >= 2, p[0] == "create" else { return nil }
+            let n = String(p[1])
             return model.sandboxes.contains(where: { $0.name == n }) ? nil : (n, v)
         }.sorted { $0.name < $1.name }
     }
@@ -57,29 +99,38 @@ struct SandboxesView: View {
             if model.sandboxes.isEmpty && creating.isEmpty {
                 ContentUnavailableView("No sandboxes", systemImage: "shield", description: Text("Create an isolated VM with \"New sandbox\"."))
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(creating, id: \.name) { c in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 10) {
-                                    ProgressView().controlSize(.small)
-                                    Text(c.name).font(.headline)
-                                    Text(c.step).foregroundStyle(.secondary).lineLimit(1)
-                                    Spacer()
+                HStack(spacing: 0) {
+                    sandboxList
+                    Divider()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(creating, id: \.name) { c in
+                                if selection == c.name {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(spacing: 10) {
+                                            ProgressView().controlSize(.small)
+                                            Text(c.name).font(.headline)
+                                            Text(c.step).foregroundStyle(.secondary).lineLimit(1)
+                                            Spacer()
+                                        }
+                                        JobOutput(key: AppModel.jobKey("create", c.name))
+                                    }
+                                    .padding(16)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
                                 }
-                                JobOutput(key: "create-\(c.name)")
                             }
-                            .padding(16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
-                        }
-                        ForEach(model.sandboxes.sorted { $0.name < $1.name }) { s in
-                            SandboxCard(s: s, delete: { deleteFor = s })
-                        }
-                    }.padding(16)
+                            if let s = model.sandboxes.first(where: { $0.name == selection }) {
+                                SandboxCard(s: s, delete: { deleteFor = s })
+                            }
+                        }.padding(16)
+                    }
                 }
                 .transaction { $0.animation = nil }
+                .onAppear { ensureSelection() }
+                .onChange(of: model.sandboxes.map(\.name)) { _, _ in ensureSelection() }
+                .onChange(of: creating.map(\.name)) { _, new in if let n = new.first { selection = n } }
             }
         }
         .toolbar { Button { showCreate = true } label: { Label("New sandbox", systemImage: "plus") } }
@@ -96,10 +147,19 @@ struct SandboxesView: View {
     }
 
     func delete(_ s: SandboxInfo, force: Bool) async {
-        let err = await model.runJob("del-\(s.name)", L("Deleting %@ …", s.name), "/v1/sandboxes/delete", NameBody(name: s.name, force: force))
+        let err = await model.runJob(AppModel.jobKey("del", s.name), L("Deleting %@ …", s.name), "/v1/sandboxes/delete", NameBody(name: s.name, force: force))
         if let err {
             if err.contains("unpushed") { forceDeleteFor = s; forceDeleteMsg = err } else { model.setBanner(err) }
         }
+    }
+}
+
+extension AppModel {
+    /// The sandbox is fully started: running, no start/stop job, and the daemon's probe of the VM has answered.
+    /// Until then Claude/OpenCode state is not shown (it would be stale or an error from a VM that is still booting).
+    func isReady(_ s: SandboxInfo) -> Bool {
+        s.running && s.probeError == nil && s.claudeInstalled != nil
+            && !jobs(of: s.name).contains { $0.key.hasPrefix("start|") || $0.key.hasPrefix("stop|") }
     }
 }
 
@@ -107,29 +167,36 @@ struct SandboxCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
     let delete: () -> Void
-    var busy: String? { model.running.first(where: { $0.key.hasSuffix(s.name) })?.value }
+    var busy: String? { model.jobs(of: s.name).first?.label }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
             meta
-            if let k = model.running.keys.first(where: { $0.hasSuffix(s.name) }) { JobOutput(key: k) }
+            if let k = model.jobs(of: s.name).first?.key { JobOutput(key: k) }
             if s.probeError != nil, s.running {
                 Text("VM status currently unavailable (the VM may still be starting).").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             servicesSection
+                // Start/stop in progress: the cards would show stale state and their buttons would fail.
+                .opacity(transitioning ? 0.45 : 1).allowsHitTesting(!transitioning)
         }
         .padding(16)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.18)))
     }
 
+    var transitioning: Bool {
+        model.jobs(of: s.name).contains { $0.key.hasPrefix("start|") || $0.key.hasPrefix("stop|") }
+    }
+
     var header: some View {
         HStack(spacing: 10) {
-            Circle().fill(s.running ? .green : .gray).frame(width: 10, height: 10)
+            Circle().fill(busy != nil ? Color.orange : (s.running ? .green : .gray)).frame(width: 10, height: 10)
             Text(s.name).font(.title3.bold())
-            Text(LocalizedStringKey(s.status)).font(.callout).foregroundStyle(.secondary)
+            // While a start/stop job runs the busy label on the right says what happens; the old status would contradict it.
+            if busy == nil { Text(LocalizedStringKey(s.status)).font(.callout).foregroundStyle(.secondary) }
             Spacer()
             if let b = busy {
                 ProgressView().controlSize(.small)
@@ -155,15 +222,30 @@ struct SandboxCard: View {
                     if s.pendingRequests > 0 { Label(L("%lld open", s.pendingRequests), systemImage: "bell.fill").foregroundStyle(.red) }
                 }
             }
+            if s.running, s.hasGithubToken {
+                HStack(spacing: 8) {
+                    Label("This sandbox still holds a personal GitHub token in its VM.", systemImage: "key.horizontal.fill").foregroundStyle(.orange)
+                    Button("Switch to GitHub App") { Task { do { try await model.api.post("/v1/github/legacy/remove", NameBody(name: s.name)); await model.refresh() } catch { model.setBanner(error.localizedDescription) } } }
+                        .controlSize(.small)
+                        .help(L("Removes the token from the VM and from this Mac. Git then works through grants of your GitHub App (Settings → GitHub)."))
+                }
+            }
+            if s.running, s.skillsMount == false {
+                Label("Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(L("Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically."))
+            }
         }.font(.caption).foregroundStyle(.secondary)
     }
 
     var servicesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ClaudeServiceCard(s: s)
-            OpenCodeServiceCard(s: s)
-            Text(L("Claude and OpenCode can use the same folder, but not at the same time on the same files. For parallel work, add several Claude entries with different folders."))
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 10) {
+                ClaudeServiceCard(s: s)
+                OpenCodeServiceCard(s: s)
+            }.fixedSize(horizontal: false, vertical: true)
+            FoldersCard(s: s)
         }
     }
 
@@ -175,7 +257,7 @@ struct SandboxCard: View {
 
     @ViewBuilder var actions: some View {
         if s.running {
-            Button("Stop") { Task { report(await model.runJob("stop-\(s.name)", L("Stopping …"), "/v1/sandboxes/stop", NameBody(name: s.name))) } }
+            Button("Stop") { Task { report(await model.runJob(AppModel.jobKey("stop", s.name), L("Stopping …"), "/v1/sandboxes/stop", NameBody(name: s.name))) } }
             Menu {
                 Button(L("Shell in the VM (%@)", Terminal.appName)) { report(Terminal.shell(vm: s.vm)) }
                 Button("Copy SSH command") {
@@ -183,7 +265,7 @@ struct SandboxCard: View {
                 }
             } label: { Label("Shell / SSH", systemImage: "terminal") }
         } else {
-            Button("Start") { Task { report(await model.runJob("start-\(s.name)", L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
+            Button("Start") { Task { report(await model.runJob(AppModel.jobKey("start", s.name), L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
         }
         Button(role: .destructive, action: delete) { Image(systemName: "trash") }
     }
@@ -207,12 +289,15 @@ struct ClaudeServiceCard: View {
     let s: SandboxInfo
     @Local private var showStart = false
 
-    var canSignIn: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == false }
-    var canAdd: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
-    var sessions: [ClaudeInfo] { s.claudeSessions.sorted { $0.folder < $1.folder } }
+    var canSignIn: Bool { model.isReady(s) && s.claudeInstalled == true && s.claudeLoggedIn == false }
+    var canStart: Bool { model.isReady(s) && s.claudeInstalled == true && s.claudeLoggedIn == true }
+    var runningCount: Int { s.claudeSessions.filter { $0.running == true }.count }
+    var restartReasons: [String] { Array(Set(s.claudeSessions.filter { $0.running == true }.flatMap { $0.restartReasons ?? [] })).sorted() }
+    var busy: String? { model.jobs(of: s.name).first(where: { $0.key.hasPrefix("claude-") })?.label }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
+        if !model.isReady(s) { return (L("Sandbox is starting …"), .secondary) }
         switch s.claudeInstalled {
         case .some(false): return (L("not installed"), .secondary)
         case .some(true):
@@ -230,153 +315,45 @@ struct ClaudeServiceCard: View {
             HStack(alignment: .top, spacing: 10) {
                 RuntimeIcon(letter: "C", tint: .purple)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Claude Code").font(.callout.weight(.semibold))
-                    Text(status.0).font(.caption).foregroundStyle(status.1)
-                    Text(L("Runs in the folder you choose for this Claude session – no git worktree, no new branch."))
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Text(L("Remote Control is available for every running Claude."))
-                        .font(.caption2).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text("Claude Code").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
+                            .help(L("One Claude per folder, started in the folder list below – no git worktree, no new branch. Remote Control is available for every running Claude."))
+                        if !restartReasons.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues."))) }
+                    }
+                    if model.isReady(s) {
+                        HStack(spacing: 5) {
+                            Circle().fill(runningCount > 0 ? .green : Color.secondary).frame(width: 6, height: 6)
+                            Text(runningCount > 0 ? L("running in %lld folder(s)", runningCount) : L("not running"))
+                                .font(.caption2).foregroundStyle(runningCount > 0 ? .green : .secondary).lineLimit(1)
+                        }
+                    }
+                    Text(status.0).font(.caption).foregroundStyle(status.1).lineLimit(2)
                 }
-                Spacer(minLength: 4)
-                if canSignIn {
-                    Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small)
-                }
-                if canAdd {
-                    Button { showStart = true } label: { Label("Claude", systemImage: "plus") }
-                        .controlSize(.small).buttonStyle(.borderedProminent)
+                Spacer(minLength: 0)
+            }
+            if canSignIn {
+                HStack { Spacer(); Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "claude")) }.controlSize(.small) }
+            }
+            if canStart {
+                HStack(spacing: 8) {
+                    Spacer()
+                    if let b = busy {
+                        ProgressView().controlSize(.small)
+                        Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else {
+                        Button(L("Start Claude …")) { showStart = true }.controlSize(.small)
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             }
-            Divider().padding(.top, 2)
-            if sessions.isEmpty {
-                Text(L("No Claude sessions yet. Choose “+ Claude” and select a folder."))
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                HStack(spacing: 10) {
-                    Text(L("Folder").uppercased()).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(L("Status").uppercased()).frame(width: 260, alignment: .leading)
-                    Text(L("Actions").uppercased()).frame(width: 230, alignment: .trailing)
-                }.font(.caption2).foregroundStyle(.secondary)
-                ForEach(Array(sessions.enumerated()), id: \.element.name) { i, w in
-                    if i > 0 { Divider() }
-                    ClaudeRow(s: s, w: w)
-                }
-            }
-            Text(L("Existing worktrees remain as folders – Bergfried does not create new git worktrees. Removing an entry keeps the folder."))
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
         .sheet(isPresented: $showStart) { StartClaudeSheet(sandbox: s) }
     }
 }
-
-struct ClaudeRow: View {
-    @EnvironmentObject var model: AppModel
-    let s: SandboxInfo
-    let w: ClaudeInfo
-    @Local private var removeOpen = false
-
-    var running: Bool { w.running == true }
-    var canStart: Bool { s.running && s.claudeInstalled == true && s.claudeLoggedIn == true }
-    var label: String { w.folder.hasPrefix("work/") ? String(w.folder.dropFirst(5)) : w.folder }
-    var busy: String? { model.running.first(where: { $0.key.hasSuffix("-\(s.name)-\(w.name)") })?.value }
-    var sandboxBusy: Bool { model.running.keys.contains { $0.hasSuffix(s.name) } }
-
-    var state: (color: Color, text: String) {
-        if !s.running { return (.gray, L("Sandbox stopped")) }
-        if running {
-            if w.rc { return (.green, L("Claude runs · Remote Control active")) }
-            if w.rcAction == "failed" { return (.red, L("Remote Control cannot be activated – please restart")) }
-            if w.rcAction == "activating" { return (.orange, L("Activating Remote Control …")) }
-            if w.rcAction == "waiting" { return (.orange, L("Claude is probably waiting for input – open %@", Terminal.appName)) }
-            return (.orange, L("Claude runs · Remote Control starting …"))
-        }
-        if s.claudeInstalled == false { return (.gray, L("Claude is not installed")) }
-        if s.claudeLoggedIn != true { return (.orange, L("Claude is not signed in")) }
-        if sandboxBusy { return (.orange, L("starting …")) }
-        return (.gray, L("not started"))
-    }
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Circle().fill(state.color).frame(width: 8, height: 8)
-                    Text(label).font(.callout.bold()).lineLimit(1)
-                }
-                Text("~/"+w.folder).font(.caption2.monospaced()).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            Text(state.text).font(.caption).foregroundStyle(state.color)
-                .lineLimit(1).truncationMode(.tail)
-                .frame(width: 260, alignment: .leading).help(state.text)
-            actions.frame(width: 230, alignment: .trailing)
-        }
-        .padding(.vertical, 4)
-        .confirmationDialog(L("Remove Claude entry for “%@”?", label), isPresented: $removeOpen) {
-            Button(L("Remove entry"), role: .destructive) { remove() }
-            Button(L("Cancel"), role: .cancel) {}
-        } message: {
-            Text(L("Claude is stopped. The folder ~/%@ and its contents remain.", w.folder))
-        }
-    }
-
-    @ViewBuilder var actions: some View {
-        if let b = busy {
-            ProgressView().controlSize(.small)
-            Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        } else {
-            HStack(spacing: 8) {
-                if running {
-                    Button("Stop Claude") { job("stop", L("Stopping Claude …"), "/v1/claude/stop") }.controlSize(.small)
-                } else if canStart {
-                    Button("Start Claude") { job("start", L("Starting Claude …"), "/v1/claude/start") }
-                        .controlSize(.small).buttonStyle(.borderedProminent)
-                }
-                if running && w.window {
-                    Button { if let e = Terminal.attach(vm: s.vm, window: w.name) { model.setBanner(e) } } label: { Label(Terminal.appName, systemImage: "terminal") }
-                        .controlSize(.small)
-                        .help(L("Opens the Claude window for ~/%@ in %@", w.folder, Terminal.appName))
-                }
-                if s.running {
-                    Menu {
-                    if running, w.rc, !w.rcUrl.isEmpty {
-                        Button("Copy Remote Control link") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(w.rcUrl, forType: .string) }
-                        Divider()
-                    }
-                    if running, !w.rc {
-                        Button(L("Remote Control is running – mark as active")) {
-                            Task {
-                                do { try await model.api.post("/v1/claude/rc-ok", ClaudeBody(sandbox: s.name, folder: w.folder)); await model.refresh() }
-                                catch { model.setBanner(error.localizedDescription) }
-                            }
-                        }
-                    }
-                    if running {
-                        Button(L("Restart Claude")) { job("restart", L("Restarting Claude …"), "/v1/claude/restart") }
-                    }
-                    if s.running {
-                        Divider()
-                        Button(L("Remove Claude entry …"), role: .destructive) { removeOpen = true }
-                    }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).fixedSize()
-                }
-            }
-        }
-    }
-
-    func job(_ action: String, _ step: String, _ path: String) {
-        Task { if let e = await model.runJob("claude-\(action)-\(s.name)-\(w.name)", step, path, ClaudeBody(sandbox: s.name, folder: w.folder)) { model.setBanner(e) } }
-    }
-
-    func remove() {
-        Task { if let e = await model.runJob("claude-remove-\(s.name)-\(w.name)", L("Removing entry …"), "/v1/claude/remove", ClaudeRemoveBody(sandbox: s.name, folder: w.folder)) { model.setBanner(e) } }
-    }
-}
-
 struct OpenCodeServiceCard: View {
     @EnvironmentObject var model: AppModel
     let s: SandboxInfo
@@ -386,10 +363,12 @@ struct OpenCodeServiceCard: View {
     @Local private var pairError: String? = nil
 
     var serviceRunning: Bool { s.opencodeRunning == true }
-    var canSignIn: Bool { s.running && s.opencodeInstalled == true && s.opencodeLoggedIn == false }
+    var canSignIn: Bool { model.isReady(s) && s.opencodeInstalled == true && s.opencodeLoggedIn == false }
+    var busy: String? { model.jobs(of: s.name).first(where: { $0.key.hasPrefix("opencode-") })?.label }
 
     var status: (String, Color) {
         if !s.running { return (L("not checked – start the sandbox"), .secondary) }
+        if !model.isReady(s) { return (L("Sandbox is starting …"), .secondary) }
         switch s.opencodeInstalled {
         case .some(false): return (L("not installed – Start service installs it"), .secondary)
         case .some(true):
@@ -408,40 +387,51 @@ struct OpenCodeServiceCard: View {
                 RuntimeIcon(letter: "O", tint: .blue)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text("OpenCode").font(.callout.weight(.semibold))
-                        if s.running {
+                        Text("OpenCode").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
+                            .help(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
+                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu."))) }
+                    }
+                    if model.isReady(s) {
+                        HStack(spacing: 5) {
                             Circle().fill(serviceRunning ? .green : Color.secondary).frame(width: 6, height: 6)
                             Text(serviceRunning ? L("service running") : L("service stopped"))
-                                .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary)
+                                .font(.caption2).foregroundStyle(serviceRunning ? .green : .secondary).lineLimit(1)
                         }
                     }
-                    Text(status.0).font(.caption).foregroundStyle(status.1)
-                    Text(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
-                        .font(.caption2).foregroundStyle(.secondary)
+                    Text(status.0).font(.caption).foregroundStyle(status.1).lineLimit(2)
                 }
-                Spacer(minLength: 4)
-                if canSignIn {
-                    Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "opencode")) }.controlSize(.small)
-                }
+                Spacer(minLength: 0)
             }
-            if s.running {
+            if canSignIn {
+                HStack { Spacer(); Button("Sign in") { model.setBanner(Terminal.login(vm: s.vm, runtime: "opencode")) }.controlSize(.small) }
+            }
+            if model.isReady(s) {
                 HStack(spacing: 8) {
                     Spacer()
-                    if serviceRunning {
+                    if let b = busy {
+                        ProgressView().controlSize(.small)
+                        Text(b).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else if serviceRunning {
                         if pairing {
                             ProgressView().controlSize(.small).help(L("Preparing the connection …"))
                         } else {
-                            Button("Connect desktop") { pair() }.controlSize(.small)
+                            Button(L("Connect desktop")) { pair() }.controlSize(.small)
                         }
-                        Button("Stop service") { model.setBanner(nil); Task { if let e = await model.runJob("opencode-stop-\(s.name)", L("Stopping the OpenCode service …"), "/v1/opencode/stop", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
+                        Menu {
+                            Button(L("Stop service")) { model.setBanner(nil); Task { if let e = await model.runJob(AppModel.jobKey("opencode-stop", s.name), L("Stopping the OpenCode service …"), "/v1/opencode/stop", NameBody(name: s.name)) { model.setBanner(e) } } }
+                            Button(L("Restart service")) {
+                                Task { if let e = await model.runJob(AppModel.jobKey("opencode-restart", s.name), L("Restarting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } }
+                            }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).fixedSize()
                     } else {
-                        Button("Start service") { Task { if let e = await model.runJob("opencode-start-\(s.name)", L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small)
+                        Button("Start service") { Task { if let e = await model.runJob(AppModel.jobKey("opencode-start", s.name), L("Starting the OpenCode service …"), "/v1/opencode/start", NameBody(name: s.name)) { model.setBanner(e) } } }.controlSize(.small).buttonStyle(.borderedProminent)
                     }
                 }
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
         .sheet(isPresented: $showPairSheet) {
@@ -608,7 +598,7 @@ struct StartClaudeSheet: View {
                 Button(L("Start Claude")) {
                     let folder = chosen, name = sandbox.name
                     dismiss()
-                    Task { if let e = await model.runJob("claude-\(name)", L("Starting Claude …"), "/v1/claude/start", ClaudeBody(sandbox: name, folder: folder)) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob(AppModel.jobKey("claude-start", name, folder), L("Starting Claude …"), "/v1/claude/start", ClaudeBody(sandbox: name, folder: folder)) { model.setBanner(e) } }
                 }.disabled(chosen.isEmpty).keyboardShortcut(.defaultAction)
             }
         }
@@ -830,7 +820,7 @@ struct CreateSandboxSheet: View {
                 Button("Create") {
                     let n = name, r = source == 1 ? repo : "", f = source == 2 ? folder : ""
                     dismiss()
-                    Task { if let e = await model.runJob("create-\(n)", L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
+                    Task { if let e = await model.runJob(AppModel.jobKey("create", n), L("%@ is being created …", n), "/v1/sandboxes/create", NameBody(name: n, repo: r, importPath: f, githubToken: source == 1 ? token : "")) { model.setBanner(e) } }
                 }.disabled(!valid || !sourceOK).keyboardShortcut(.defaultAction)
             }
         }.padding(20).frame(width: 560).fixedSize(horizontal: false, vertical: true)
@@ -852,6 +842,41 @@ struct CreateSandboxSheet: View {
         Task {
             do { preview = try await model.api.send("POST", "/v1/import/preview", PathBody(path: url.path), as: ImportPreview.self) }
             catch { previewError = error.localizedDescription }
+        }
+    }
+}
+
+/// Tooltip of the "Restart needed" label: why a running assistant should be restarted and how.
+func restartHelp(tool: String, reasons: [String], footer: String) -> String {
+    var lines: [String] = []
+    if reasons.contains("unknown") { lines.append(L("%@ was started before Bergfried tracked which instructions and tools it uses. Stop and start it again to be sure the current ones apply.", tool)) }
+    if reasons.contains("guidance") { lines.append(L("The instructions for the assistant (bergfried.md) have changed.")) }
+    if reasons.contains("mcp") { lines.append(L("The Bergfried tool for the assistant (bergfried-mcp) was updated.")) }
+    lines.append(footer)
+    return lines.joined(separator: "\n")
+}
+
+struct RestartNeededLabel: View {
+    let help: String
+    /// Icon only where horizontal space is tight, for example in folder rows.
+    var compact = false
+    @Local private var open = false
+    var body: some View {
+        // Hovering shows the reason at once as a popover (the system tooltip has a long delay); a click pins it.
+        Button { open.toggle() } label: {
+            if compact {
+                Image(systemName: "arrow.clockwise.circle.fill")
+            } else {
+                Label("Restart needed", systemImage: "arrow.clockwise.circle.fill").lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.caption).foregroundStyle(.orange).fixedSize()
+        .onHover { inside in
+            if inside { open = true } else { open = false }
+        }
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            Text(help).font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 300, alignment: .leading).padding(12)
         }
     }
 }

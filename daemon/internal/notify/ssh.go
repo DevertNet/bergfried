@@ -42,7 +42,7 @@ type SSHDialog struct {
 var durations = []struct {
 	Label string
 	Min   int
-}{{"15 Minuten", 15}, {"1 Stunde", 60}, {"4 Stunden", 240}, {"24 Stunden", 1440}}
+}{{"10 minutes", 10}, {"20 minutes", 20}, {"30 minutes", 30}, {"40 minutes", 40}, {"50 minutes", 50}, {"1 hour", 60}, {"90 minutes", 90}, {"2 hours", 120}, {"4 hours", 240}, {"8 hours", 480}, {"24 hours", 1440}}
 
 func (d *SSHDialog) log(f string, a ...any) {
 	if d.Log != nil {
@@ -82,7 +82,7 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		no()
 		return
 	}
-	minutes := 15
+	minutes := 10
 	for _, x := range durations {
 		if x.Label == dl {
 			minutes = x.Min
@@ -110,18 +110,8 @@ func (d *SSHDialog) run(r store.Request, info broker.SSHInfo) {
 		no()
 		return
 	}
-	scope, ok := choose("Scope of the grant:", "This folder only (display/audit)", []string{"This folder only (display/audit)", "All folders of the sandbox"})
-	if !ok {
-		no()
-		return
-	}
-	mode, ok := choose("Signing:", "Silent within the window (logged only)", []string{"Silent within the window (logged only)", "Confirm every connection"})
-	if !ok {
-		no()
-		return
-	}
 	_, err = d.Decide(broker.Decision{ID: r.ID, Allow: true, Minutes: minutes, KeyFP: byLabel[kl], User: user,
-		AllFolders: strings.HasPrefix(scope, "Alle"), PerConn: strings.HasPrefix(mode, "Jede"), TrustUnknownHost: info.Source != "known_hosts"})
+		TrustUnknownHost: info.Source != "known_hosts"})
 	if err != nil {
 		d.log("SSH-Dialog #%d: %v", r.ID, err)
 	}

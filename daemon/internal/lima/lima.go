@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type outputKey struct{}
@@ -139,7 +141,57 @@ func (r ExecRunner) RunStdin(ctx context.Context, stdin io.Reader, args ...strin
 	return out, nil
 }
 
+// PipeRunner: optional capability of the runner to connect the stdout of one limactl call to the stdin of another (VM to VM, nothing is stored on the Mac).
+type PipeRunner interface {
+	RunPipe(ctx context.Context, from, to []string) error
+}
+
+func (r ExecRunner) RunPipe(ctx context.Context, from, to []string) error {
+	bin := r.Bin
+	if bin == "" {
+		bin = "limactl"
+	}
+	src := exec.CommandContext(ctx, bin, from...)
+	dst := exec.CommandContext(ctx, bin, to...)
+	var srcErr, dstErr bytes.Buffer
+	src.Stderr, dst.Stderr = &srcErr, &dstErr
+	pipe, err := src.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	dst.Stdin = pipe
+	if err := dst.Start(); err != nil {
+		return err
+	}
+	if err := src.Start(); err != nil {
+		_ = dst.Process.Kill()
+		_ = dst.Wait()
+		return err
+	}
+	srcWait := src.Wait() // closes the pipe after the source ended
+	dstWait := dst.Wait()
+	if srcWait != nil {
+		return fmt.Errorf("source: %w: %s", srcWait, strings.TrimSpace(srcErr.String()))
+	}
+	if dstWait != nil {
+		return fmt.Errorf("target: %w: %s", dstWait, strings.TrimSpace(dstErr.String()))
+	}
+	return nil
+}
+
 type Client struct{ R Runner }
+
+// ShellPipe runs srcCmd in srcVM and feeds its stdout into dstCmd in dstVM.
+func (c Client) ShellPipe(ctx context.Context, srcVM string, srcCmd []string, dstVM string, dstCmd []string) error {
+	pr, ok := c.R.(PipeRunner)
+	if !ok {
+		return fmt.Errorf("runner does not support piping")
+	}
+	sh := func(vm string, cmd []string) []string {
+		return append([]string{"shell", "--tty=false", vm, "--"}, cmd...)
+	}
+	return pr.RunPipe(ctx, sh(srcVM, srcCmd), sh(dstVM, dstCmd))
+}
 
 // ShellStdin runs a command in the VM and feeds stdin.
 func (c Client) ShellStdin(ctx context.Context, name string, stdin io.Reader, cmd ...string) ([]byte, error) {
@@ -158,15 +210,54 @@ type Instance struct {
 	Disk   int64  `json:"disk"`
 }
 
-// CreateArgs builds the limactl call: exactly two mounts, never home.
-func CreateArgs(name, template, inDir, outDir string) []string {
+// CreateArgs builds the limactl call: exactly three mounts (shared/in ro, shared/out rw, skills ro), never home.
+func CreateArgs(name, template, inDir, outDir, skills string) []string {
 	return []string{"create", "--name=" + name, "--tty=false",
-		"--mount", inDir, "--mount", outDir + ":w", template}
+		"--mount", inDir, "--mount", outDir + ":w", "--mount", skills, template}
 }
 
-func (c Client) Create(ctx context.Context, name, template, inDir, outDir string) error {
-	_, err := c.R.Run(ctx, CreateArgs(name, template, inDir, outDir)...)
+func (c Client) Create(ctx context.Context, name, template, inDir, outDir, skills string) error {
+	_, err := c.R.Run(ctx, CreateArgs(name, template, inDir, outDir, skills)...)
 	return err
+}
+
+// MountArgs is the --mount-only part of `limactl edit`/`limactl clone`: shared/in ro, shared/out rw, skills ro.
+func MountArgs(in, out, skills string) []string {
+	return []string{"--mount-only", in, "--mount-only", out + ":w", "--mount-only", skills}
+}
+
+// EditMounts replaces all mounts of a stopped instance (Lima refuses a running one).
+func (c Client) EditMounts(ctx context.Context, name, in, out, skills string) error {
+	args := append([]string{"edit", "--tty=false", name}, MountArgs(in, out, skills)...)
+	_, err := c.R.Run(ctx, args...)
+	return err
+}
+
+// HasMount reports whether the instance config (<instance dir>/lima.yaml) contains a mount with this location and writable flag.
+func HasMount(name, location string, writable bool) (bool, error) {
+	d, err := InstanceDir(name)
+	if err != nil {
+		return false, err
+	}
+	b, err := os.ReadFile(filepath.Join(d, "lima.yaml"))
+	if err != nil {
+		return false, err
+	}
+	var cfg struct {
+		Mounts []struct {
+			Location string `yaml:"location"`
+			Writable bool   `yaml:"writable"`
+		} `yaml:"mounts"`
+	}
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return false, err
+	}
+	for _, m := range cfg.Mounts {
+		if m.Location == location && m.Writable == writable {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 func (c Client) Start(ctx context.Context, name string) error {
 	_, err := c.RunLines(ctx, "start", "--tty=false", name)

@@ -77,6 +77,7 @@ func (m *Manager) OpenCodeStart(ctx context.Context, sandbox string) error {
 	if err := m.startOpenCodeService(ctx, s.VM, port); err != nil {
 		return err
 	}
+	m.recordStamp(sandbox, OpenCodeTarget)
 	if err := m.S.SetOpenCode(sandbox, true); err != nil {
 		return err
 	}
@@ -109,7 +110,11 @@ func (m *Manager) resumeOpenCode(ctx context.Context, vm, sandbox string) error 
 	if err != nil {
 		return err
 	}
-	return m.startOpenCodeService(ctx, vm, port)
+	if err := m.startOpenCodeService(ctx, vm, port); err != nil {
+		return err
+	}
+	m.recordStamp(sandbox, OpenCodeTarget)
+	return nil
 }
 
 // OpenCodeStop stops the sandbox-level OpenCode service. Installed versions and sessions remain.

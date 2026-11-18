@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var sandboxes: [SandboxInfo] = []
     @Published var requests: [RequestInfo] = []   // offene
     @Published var grants: [GrantInfo] = []       // aktive SSH-Freigaben
+    @Published var gitGrants: [GitGrantInfo] = [] // active git grants (GitHub App)
     @Published var pane: Pane? = .sandboxes
     @Published var banner: String?
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
@@ -19,6 +20,18 @@ final class AppModel: ObservableObject {
     var lastStep: [String: String] = [:]
     /// Output lines of running (and the last finished) jobs by job key, shown by JobOutput.
     @Published var logs: [String: [String]] = [:]
+
+    /// Job keys are "kind|sandbox|item" (or just "base", "update", "daemon" for global jobs), so a job belongs to
+    /// exactly one sandbox. Never match sandbox names with hasSuffix: sandbox "oc" would also pick up a folder "oc".
+    static func jobKey(_ kind: String, _ sandbox: String, _ item: String = "") -> String { [kind, sandbox, item].joined(separator: "|") }
+
+    /// Running jobs of one sandbox in a stable order (a dictionary's own order changes between redraws).
+    func jobs(of sandbox: String) -> [(key: String, label: String)] {
+        running.compactMap { k, v -> (key: String, label: String)? in
+            let p = k.split(separator: "|", omittingEmptySubsequences: false)
+            return p.count >= 2 && p[1] == sandbox ? (k, v) : nil
+        }.sorted { $0.key < $1.key }
+    }
 
     var pendingCount: Int { requests.count }
     private var started = false
@@ -49,7 +62,8 @@ final class AppModel: ObservableObject {
             let ss: [SandboxInfo] = try await api.get("/v1/sandboxes")
             let rq: [RequestInfo] = try await api.get("/v1/requests")
             let gr: [GrantInfo] = try await api.get("/v1/ssh/grants")
-            status = st; sandboxes = ss; requests = rq; grants = gr
+            let gg: [GitGrantInfo] = (try? await api.get("/v1/git/grants")) ?? []
+            status = st; sandboxes = ss; requests = rq; grants = gr; gitGrants = gg
             online = true
             // Do not notify about old items on the first load.
             for r in rq where !notified.contains(r.id) {
@@ -100,14 +114,18 @@ final class AppModel: ObservableObject {
         catch { return error.localizedDescription }
     }
 
-    /// Denies a request of any kind (file/folder, SSH, GitHub token) with an optional note for the assistant.
+    /// Denies a request of any kind (file/folder, SSH, GitHub token, skill) with an optional note for the assistant.
     func deny(_ r: RequestInfo, note: String = "") async {
         do {
             switch r.kind {
             case "ssh":
-                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allFolders: false, perConnection: false, trustUnknownHost: false, note: note))
+                try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: note))
             case "ghtoken":
                 try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
+            case "gitgrant", "ghaction":
+                try await api.post("/v1/git/decide", GitDecideBody(id: r.id, allow: false, note: note))
+            case "skill":
+                try await api.post("/v1/skills/decide", SkillDecideBody(id: r.id, allow: false, note: note))
             default:
                 try await api.post("/v1/requests/decide", DecideBody(id: r.id, allow: false, note: note))
             }
@@ -119,6 +137,27 @@ final class AppModel: ObservableObject {
     func decideGitHub(id: Int64, token: String) async -> String? {
         do { try await api.post("/v1/github/decide", GitHubDecideBody(id: id, allow: true, token: token)); await refresh(); return nil }
         catch { return error.localizedDescription }
+    }
+
+    /// Allows a git grant (minutes, write level the user chose) or a single GitHub action. Returns the error message.
+    func allowGit(id: Int64, minutes: Int, write: Bool) async -> String? {
+        do { try await api.post("/v1/git/decide", GitDecideBody(id: id, allow: true, minutes: minutes, write: write)); await refresh(); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    func revokeGit(_ g: GitGrantInfo) async {
+        do { try await api.post("/v1/git/revoke", IDBody(id: g.id)) } catch { banner = error.localizedDescription }
+        await refresh()
+    }
+
+    /// Allows or denies a skill proposal with an optional note. Returns the error message (the request then ends failed).
+    func decideSkill(id: Int64, allow: Bool, note: String) async -> String? {
+        do { try await api.post("/v1/skills/decide", SkillDecideBody(id: id, allow: allow, note: note)); await refresh(); return nil }
+        catch {
+            // The request ends "failed"; refresh so the dead request disappears from the open list.
+            await refresh()
+            return error.localizedDescription
+        }
     }
 
     func revoke(_ g: GrantInfo) async {

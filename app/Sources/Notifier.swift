@@ -74,16 +74,25 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         c.sound = .default
         switch r.kind {
         case "ssh":
-            c.title = L("SSH request: %@/%@", r.sandbox, r.folder)
+            c.title = r.hasFolder ? L("SSH request: %@/%@", r.sandbox, r.folder) : L("SSH request: %@", r.sandbox)
             c.body = L("Access to %@", r.path) + "\n\(clip(r.reason, 140))"
             let quick = r.ssh.map { $0.source == "known_hosts" && !$0.defaultKey.isEmpty } ?? false
             c.categoryIdentifier = quick ? "SSH_QUICK" : "OPEN"
         case "ghtoken":
-            c.title = L("GitHub access: %@/%@", r.sandbox, r.folder)
+            c.title = r.hasFolder ? L("GitHub access: %@/%@", r.sandbox, r.folder) : L("GitHub access: %@", r.sandbox)
+            c.body = "\(r.path)\n\(clip(r.reason, 140))"
+            c.categoryIdentifier = "OPEN"
+        case "gitgrant", "ghaction":
+            c.title = r.hasFolder ? L("Git request: %@/%@", r.sandbox, r.folder) : L("Git request: %@", r.sandbox)
+            c.body = "\(r.path)\n\(clip(r.reason, 140))"
+            c.categoryIdentifier = "OPEN" // the user decides in the app: duration, level and details are shown there
+        case "skill":
+            // No quick-allow: the user must see the diff in the app first.
+            c.title = r.hasFolder ? L("Skill proposal: %@/%@", r.sandbox, r.folder) : L("Skill proposal: %@", r.sandbox)
             c.body = "\(r.path)\n\(clip(r.reason, 140))"
             c.categoryIdentifier = "OPEN"
         default:
-            c.title = L("File request: %@/%@", r.sandbox, r.folder)
+            c.title = r.hasFolder ? L("File request: %@/%@", r.sandbox, r.folder) : L("File request: %@", r.sandbox)
             c.body = "~/\(r.path) (\(formatBytes(r.bytes)))\n\(clip(r.reason, 140))"
             c.categoryIdentifier = r.large ? "OPEN" : "FILE"
         }
@@ -105,7 +114,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
                 Task { await m.deny(r) }
             case "ssh-allow":
                 if let s = r.ssh, s.source == "known_hosts", !s.defaultKey.isEmpty {
-                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, allFolders: false, perConnection: false, trustUnknownHost: false)) }
+                    Task { _ = await m.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: s.suggestedMinutes, keyFingerprint: s.defaultKey, user: s.defaultUser, trustUnknownHost: false)) }
                 }
             default:
                 m.pane = .requests

@@ -48,13 +48,13 @@ Local test build with a version: `make build VERSION=1.2.3 && VERSION=1.2.3 app/
   a `known_hosts` test file with `[host.lima.internal]:2222`, daemon started with `--upstream-agent <test socket> --known-hosts <test file>`. Target from the VM: `host.lima.internal:2222`.
 - Simulate interactive `ssh` in the VM: `script -qec "ssh …" /dev/null` (stderr is then a TTY).
 - Call the MCP server without Claude: JSON-RPC over stdio (see [testing/files.md](testing/files.md)); identity = socket.
-- GitHub without real GitHub: `tools/fakegithub` ([testing/github.md](testing/github.md)). Never use real tokens or repos for tests.
+- GitHub without real GitHub: `tools/fakegithub` (legacy token flow) and in-process `httptest` stand-ins (GitHub App: `ghapp`, `gitaccess`), see [testing/github.md](testing/github.md). Never use real tokens, keys or repos for tests; the GitHub App key lives in `~/.bergfried/github-app` — use a temporary `BERGFRIED_HOME` in tests.
 
 ## Decisions worth knowing
 - **Claude login:** `claude setup-token` does **not** work with Remote Control ("requires a full-scope login token"). So: one login per VM (`claude auth login`, button in the app); credentials stay in the VM.
 - **No Xcode, no SwiftPM:** the dev Mac has only Command Line Tools (SwiftPM is broken there). `@State` is a macro without plugin in this SDK → replacement `@Local` (`app/Sources/Local.swift`). No third-party dependencies.
 - **App ↔ daemon over HTTP/JSON** instead of gRPC for Swift (grpc-swift needs SwiftPM). gRPC stays for VM ↔ daemon and CLI ↔ daemon.
-- **Import instead of mount** for existing folders (keeps "exactly two mounts", and performance).
+- **Import instead of mount** for existing folders (keeps the mounts limited to `shared/in`, `shared/out` and `skills`, and performance).
 - **Base VM named after the template hash:** a changed template means building a new base once; old base VMs are removed afterwards (only names matching `^bergfried-base-([0-9a-f]{8}|v[0-9]+)$`).
 - Go 1.26, pure Go (`modernc.org/sqlite`, no cgo).
 
@@ -86,6 +86,18 @@ Documentation is part of every change, not an afterthought:
 - `docs/SECURITY.md`, `docs/UPDATES.md`, `docs/GITHUB.md` — the corresponding contracts.
 - `docs/testing/*.md` — manual test steps; update them when a flow or a label changes.
 - `docs/design/*` — UI mockups/overviews; keep them in sync when the layout changes.
+### Screenshots
+Real app screenshots with made-up data come from `tools/demoapi` (canned daemon API, includes git grants, a GitHub action request, the GitHub App status and finished requests). A second copy of the app with its own bundle id runs next to your installed one, in English:
+```bash
+python3 tools/demoapi/demoapi.py /private/tmp/bft-demo &
+D=/private/tmp/bft-demo-app; mkdir -p $D && cp -R app/build/Bergfried.app $D/BergfriedDemo.app
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier de.einfach123.bergfried.demo" $D/BergfriedDemo.app/Contents/Info.plist
+for k in CFBundleShortVersionString CFBundleVersion; do /usr/libexec/PlistBuddy -c "Set :$k 1.0.0" $D/BergfriedDemo.app/Contents/Info.plist; done   # the demo daemon reports 1.0.0
+codesign --force --deep --sign - $D/BergfriedDemo.app
+open -n --env BERGFRIED_HOME=/private/tmp/bft-demo $D/BergfriedDemo.app --args -AppleLanguages "(en)" -AppleLocale en_US
+```
+Screenshots in `docs/img/` are 920×612 window captures (`sandboxes.png` = webshop selected in the Sandboxes pane, `requests.png`, `requests-grants.png`, `settings-github.png`, `git-grant-sheet.png`). The SVG mockups in `docs/design/` are hand-drawn; their PNGs are rendered with headless Chrome at 2× (`--force-device-scale-factor=2 --window-size=1280,900`, a system font replaces Inter if it is not installed). Never screenshot your real daemon: it shows real sandbox names and reasons.
+
 Update the relevant file in the same commit/PR. Do not leave stale screenshots or feature lists; replace them or mark them clearly as outdated. The rule is also in `CLAUDE.md`.
 
 ## Remote Control detection (monitor)

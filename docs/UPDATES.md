@@ -6,6 +6,7 @@ Bergfried updates itself from **GitHub releases** of this repository. One releas
 Settings → Updates → **Update channel**:
 - **Stable** (default): releases tagged `vX.Y.Z`.
 - **Dev**: pre-releases `vX.Y.Z-dev.N` built from every push to the branch `dev` (`.github/workflows/dev-release.yml`; X.Y.Z = next patch after the latest stable tag, N = CI run number), **plus** stable releases. The highest version wins (`0.1.0 < 0.1.1-dev.3 < 0.1.1-dev.17 < 0.1.1`). There is no automatic downgrade: after `0.1.1-dev.17` you stay on dev until `0.1.1` or newer is published. Only the newest 10 dev pre-releases are kept.
+- **Local**: for developing on the Mac. `scripts/local-release.sh` builds this checkout (`<X.Y.Z>-local.<timestamp>`), and writes zip + `SHA256SUMS` to `~/.bergfried/local-update/`; the daemon offers the newest zip there instead of asking GitHub (stable and dev releases are ignored). Any version that differs from the running one is offered, also an older one. The install path is the same as for releases (checksum, bundle id, version, signature, backup, swap), so there is always exactly one Bergfried running. Whoever can write that directory can ship code to the app — it is inside your home, so no new trust is needed.
 The channel is stored in `~/.bergfried/settings.json`. The daemon asks `GET /repos/<owner>/<repo>/releases` (the `/latest` endpoint never returns pre-releases) and ignores drafts.
 
 ## Rollback

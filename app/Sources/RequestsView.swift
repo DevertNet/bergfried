@@ -7,13 +7,19 @@ struct RequestsView: View {
     @Local private var sshFor: RequestInfo?
     @Local private var largeFor: RequestInfo?
     @Local private var gitFor: RequestInfo?
+    @Local private var gitGrantFor: RequestInfo?
+    @Local private var skillFor: RequestInfo?
     @Local private var denyFor: RequestInfo?
 
     var body: some View {
         List {
             Section("Open requests") {
                 if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
-                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, deny: { denyFor = r }) }
+                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, decideGitGrant: { gitGrantFor = r }, reviewSkill: { skillFor = r }, deny: { denyFor = r }) }
+            }
+            Section("Active git grants") {
+                if model.gitGrants.isEmpty { Text("No active git grants.").foregroundStyle(.secondary) }
+                ForEach(model.gitGrants, id: \.listID) { g in GitGrantRow(g: g) }
             }
             Section("Active SSH grants") {
                 if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
@@ -28,6 +34,8 @@ struct RequestsView: View {
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
         .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
+        .sheet(item: $gitGrantFor) { r in GitGrantSheet(r: r) }
+        .sheet(item: $skillFor) { r in SkillProposalSheet(r: r) }
         .sheet(item: $denyFor) { r in DenyRequestSheet(r: r, onDeny: { note in Task { await model.deny(r, note: note) } }) }
         .confirmationDialog("Large approval", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
             Button(L("Yes, copy %@", largeFor.map { formatBytes($0.bytes) } ?? "")) { if let r = largeFor { Task { await model.decideFile(r, allow: true, confirmLarge: true) } } }
@@ -39,12 +47,20 @@ struct RequestsView: View {
     }
 }
 
+extension RequestInfo {
+    /// The assistant's tool sends "unknown" (or nothing) when it cannot name a folder: show only the sandbox then.
+    var hasFolder: Bool { !folder.isEmpty && folder != "unknown" }
+    var origin: String { hasFolder ? "\(sandbox) / \(folder)" : sandbox }
+}
+
 struct PendingRow: View {
     @EnvironmentObject var model: AppModel
     let r: RequestInfo
     let decideSSH: () -> Void
     let confirmLarge: () -> Void
     let decideGit: () -> Void
+    let decideGitGrant: () -> Void
+    let reviewSkill: () -> Void
     let deny: () -> Void
 
     var icon: String {
@@ -52,6 +68,9 @@ struct PendingRow: View {
         case "ssh": return "key.fill"
         case "folder": return "folder"
         case "ghtoken": return "key.horizontal.fill"
+        case "gitgrant": return "arrow.triangle.branch"
+        case "ghaction": return "arrow.triangle.merge"
+        case "skill": return "book.closed"
         default: return "doc"
         }
     }
@@ -60,7 +79,7 @@ struct PendingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: icon)
-                Text("\(r.sandbox) / \(r.folder)").font(.headline)
+                Text(r.origin).font(.headline)
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -70,14 +89,32 @@ struct PendingRow: View {
                 else if r.github?.hasToken == true { LT("needs access to the repo **%@** (the sandbox's token does not reach it yet)", r.path) }
                 else { LT("needs a **GitHub token** and access to **%@**", r.path) }
             }
+            else if r.kind == "gitgrant" {
+                if r.git?.write == true { LT("wants **git access (read and write)** to **%@**", r.path) }
+                else { LT("wants **git access (read only)** to **%@**", r.path) }
+            }
+            else if r.kind == "ghaction" {
+                LT("wants to do this on GitHub in **%@**:", r.git?.repo ?? r.path)
+                ForEach(r.git?.summary ?? [], id: \.self) { Text($0).font(.callout.bold()).textSelection(.enabled) }
+            }
+            else if r.kind == "skill" { LT("wants to change the shared skill(s) **%@** (%lld file(s))", r.path, r.files) }
             else { LT(r.kind == "folder" ? "wants the folder **~/%@** (%lld file(s), %@)" : "wants the file **~/%@** (%lld file(s), %@)", r.path, r.files, formatBytes(r.bytes)) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             HStack {
                 if r.kind == "ghtoken" {
                     Button("Set up …", action: decideGit).buttonStyle(.borderedProminent)
                     Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "gitgrant" {
+                    Button("Decide …", action: decideGitGrant).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "ghaction" {
+                    Button("Allow once") { Task { _ = await model.allowGit(id: r.id, minutes: 0, write: false) } }.buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
                 } else if r.kind == "ssh" {
                     Button("Decide …", action: decideSSH).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "skill" {
+                    Button("Review changes …", action: reviewSkill).buttonStyle(.borderedProminent)
                     Button("Deny", role: .destructive, action: deny)
                 } else {
                     Button("Allow") { if r.large { confirmLarge() } else { Task { await model.decideFile(r, allow: true) } } }.buttonStyle(.borderedProminent)
@@ -90,16 +127,34 @@ struct PendingRow: View {
 
 struct HistoryRow: View {
     let r: RequestInfo
-    var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" ? .red : .secondary) }
+    var color: Color { r.status == "allowed" ? .green : (r.status == "blocked" || r.status == "failed" ? .red : .secondary) }
     var body: some View {
-        HStack {
-            Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal"][r.kind] ?? "doc").foregroundStyle(.secondary)
-            Text("\(r.sandbox)/\(r.folder)")
-            Text(["ssh", "ghtoken"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
-            Spacer()
-            Text(LocalizedStringKey(r.status)).foregroundStyle(color)
-            Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
-        }.font(.callout)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "gitgrant": "arrow.triangle.branch", "ghaction": "arrow.triangle.merge", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(.secondary)
+                Text(r.origin)
+                Text(["ssh", "ghtoken", "gitgrant", "ghaction", "skill"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Text(LocalizedStringKey(r.status)).foregroundStyle(color)
+                Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
+            }.font(.callout)
+            ForEach(r.git?.summary ?? [], id: \.self) { Text($0).font(.caption.bold()).foregroundStyle(.secondary) }
+            if !r.reason.isEmpty {
+                Text(L("Assistant's reason (unchecked): %@", r.reason))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(4).help(r.reason).textSelection(.enabled)
+            }
+        }
+    }
+}
+
+/// The assistant's reason below an active grant (confirmed request), so it stays visible while the grant runs.
+struct GrantReason: View {
+    let reason: String?
+    var body: some View {
+        if let r = reason, !r.isEmpty {
+            Text(L("Assistant's reason (unchecked): %@", r)).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+        }
     }
 }
 
@@ -110,8 +165,10 @@ struct GrantRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(g.user)@\(g.host)").font(.headline)
-                Text(L("Sandbox %@ · %@ · %@", g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder), g.perConnection ? L("every connection individually") : L("silent within the window"))).font(.caption).foregroundStyle(.secondary)
+                Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder))
+                    + (g.perConnection ? " · " + L("every connection individually") : "")).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                GrantReason(reason: g.reason)
             }
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -135,14 +192,14 @@ struct SSHDecisionSheet: View {
     @Local private var keys: [KeyInfo] = []
     @Local private var keyErr: String?
     @Local private var key = ""
-    @Local private var minutes = 15
+    @Local private var minutes = 10
     @Local private var user = ""
-    @Local private var allFolders = false
-    @Local private var perConn = false
     @Local private var trust = false
     @Local private var passphrase = ""
     @Local private var note = ""
     @Local private var error: String?
+
+    static let durationSteps: [(minutes: Int, label: String)] = [(10, "10 minutes"), (20, "20 minutes"), (30, "30 minutes"), (40, "40 minutes"), (50, "50 minutes"), (60, "1 hour"), (90, "90 minutes"), (120, "2 hours"), (240, "4 hours"), (480, "8 hours"), (1440, "24 hours")]
 
     func keyLabel(_ k: KeyInfo) -> String {
         let name = k.comment.isEmpty ? k.type : k.comment
@@ -151,6 +208,7 @@ struct SSHDecisionSheet: View {
     }
 
     var unknownHost: Bool { (r.ssh?.source ?? "") != "known_hosts" }
+    var title: String { r.hasFolder ? L("SSH access for %@/%@", r.sandbox, r.folder) : L("SSH access for %@", r.sandbox) }
     var selectedKey: KeyInfo? { keys.first { $0.fingerprint == key } }
     var notLoaded: Bool { selectedKey.map { $0.loaded == false } ?? false }
     var needsPassphrase: Bool { notLoaded && selectedKey?.encrypted == true }
@@ -163,11 +221,88 @@ struct SSHDecisionSheet: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    var sheetContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            section("Request") {
+                Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+
+            if unknownHost {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) {
+                        Text($0).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                    Toggle("I know this host key", isOn: $trust)
+                    Text("Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            section("Access") {
+                LabeledContent("Duration") {
+                    Picker("Duration", selection: $minutes) {
+                        ForEach(Self.durationSteps.indices, id: \.self) { i in
+                            Text(LocalizedStringKey(Self.durationSteps[i].label)).tag(Self.durationSteps[i].minutes)
+                        }
+                    }.labelsHidden().fixedSize()
+                }
+                LabeledContent("User") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
+                        if let ru = r.ssh?.requestedUser, !ru.isEmpty {
+                            Text(ru == user ? L("Requested by the assistant.") : L("Requested by the assistant: %@", ru))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                LabeledContent("Key") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Picker("Key", selection: $key) {
+                            ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
+                        }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                        if let k = selectedKey {
+                            Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                if needsPassphrase {
+                    SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
+                }
+            }
+
+            if notLoaded {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("Key not loaded in your ssh-agent", systemImage: "key.slash")
+                        .font(.caption.bold()).foregroundStyle(.orange)
+                    Text("Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            section("Note for the assistant (optional)") {
+                TextEditor(text: $note)
+                    .font(.callout)
+                    .frame(minHeight: 62, maxHeight: 90)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                Text("Shown to the assistant with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(.trailing, 6)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(L("SSH access for %@/%@", r.sandbox, r.folder)).font(.title3.bold())
+                    Text(title).font(.title3.bold())
                     LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -178,86 +313,9 @@ struct SSHDecisionSheet: View {
             }
             Divider().padding(.vertical, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    section("Request") {
-                        Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason))
-                            .font(.callout).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    }
-
-                    if unknownHost {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("Host key is new (not in your known_hosts)", systemImage: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                            ForEach(r.ssh?.hostKeyFingerprints ?? [], id: \.self) {
-                                Text($0).font(.caption.monospaced()).textSelection(.enabled)
-                            }
-                            Toggle("I know this host key", isOn: $trust)
-                            Text("Only tick this if the fingerprint matches what the server owner told you. Bergfried records it for this host after the grant.")
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    section("Access") {
-                        LabeledContent("Duration") {
-                            Picker("Duration", selection: $minutes) {
-                                Text("15 minutes").tag(15); Text("1 hour").tag(60); Text("4 hours").tag(240); Text("24 hours").tag(1440)
-                            }.labelsHidden().fixedSize()
-                        }
-                        LabeledContent("User") {
-                            VStack(alignment: .leading, spacing: 3) {
-                                TextField("", text: $user).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
-                                if let ru = r.ssh?.requestedUser, !ru.isEmpty {
-                                    Text(ru == user ? L("Requested by the assistant.") : L("Requested by the assistant: %@", ru))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        LabeledContent("Key") {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Picker("Key", selection: $key) {
-                                    ForEach(keys) { Text(keyLabel($0)).tag($0.fingerprint) }
-                                }.labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
-                                if let k = selectedKey {
-                                    Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                        .textSelection(.enabled).lineLimit(1).truncationMode(.middle)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
-                        if needsPassphrase {
-                            SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
-                        }
-                    }
-
-                    if notLoaded {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Label("Key not loaded in your ssh-agent", systemImage: "key.slash")
-                                .font(.caption.bold()).foregroundStyle(.orange)
-                            Text("Bergfried decrypts it from its file in ~/.ssh and keeps it in memory only until this grant ends (expiry or revoke). It is not loaded into your ssh-agent, never written anywhere, and the passphrase is not stored. A new grant needs the passphrase again.")
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    section("Options") {
-                        Toggle("For all folders of the sandbox", isOn: $allFolders)
-                        Text("Without the checkmark the grant applies to this folder for display only; technically the boundary is the sandbox.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Toggle("Confirm every connection (not yet available in the app)", isOn: $perConn).disabled(true)
-                    }
-
-                    section("Note for the assistant (optional)") {
-                        TextEditor(text: $note)
-                            .font(.callout)
-                            .frame(minHeight: 62, maxHeight: 90)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-                        Text("Shown to the assistant with the answer – useful when denying, e.g. \"use the staging host instead\" or \"ask me again tomorrow\". Max. 500 characters.")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                }.padding(.trailing, 6)
+            ViewThatFits(in: .vertical) {
+                sheetContent
+                ScrollView { sheetContent }
             }
 
             if let error {
@@ -273,24 +331,24 @@ struct SSHDecisionSheet: View {
                 Button("Deny", role: .destructive) {
                     passphrase = ""
                     let n = note
-                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", allFolders: false, perConnection: false, trustUnknownHost: false, note: n)); dismiss() }
+                    Task { _ = await model.decideSSH(SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: n)); dismiss() }
                 }
                 Button("Approve") {
                     let pw = passphrase
                     passphrase = ""   // do not keep it in the view; after a wrong passphrase it has to be typed again
                     let n = note
                     Task {
-                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, allFolders: allFolders, perConnection: perConn, trustUnknownHost: trust, passphrase: pw, note: n))
+                        let e = await model.decideSSH(SSHDecideBody(id: r.id, allow: true, minutes: minutes, keyFingerprint: key, user: user, trustUnknownHost: trust, passphrase: pw, note: n))
                         if let e { error = e } else { dismiss() }
                     }
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 680, height: 720)
+        .padding(20).frame(width: 680).frame(maxHeight: 720)
         .task {
             // Precedence: the request's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
-            minutes = [15, 60, 240, 1440].last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 15) }) ?? 15
+            minutes = Self.durationSteps.map { $0.minutes }.last(where: { $0 <= (r.ssh?.suggestedMinutes ?? 10) }) ?? 10
             if let resp: KeysResponse = try? await model.api.get("/v1/ssh/keys") {
                 keys = resp.keys; keyErr = resp.error
                 key = resp.keys.first(where: { $0.fingerprint == r.ssh?.defaultKey })?.fingerprint ?? resp.keys.first?.fingerprint ?? ""
@@ -308,7 +366,7 @@ struct DenyRequestSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L("Deny request")).font(.title3.bold())
-            Text("\(r.sandbox) / \(r.folder)").font(.callout).foregroundStyle(.secondary)
+            Text(r.origin).font(.callout).foregroundStyle(.secondary)
             Text("Optional note for the assistant: why denied, what to do instead.").font(.callout)
             TextEditor(text: $note)
                 .font(.callout)
@@ -337,7 +395,7 @@ struct GitHubTokenSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L("GitHub access for %@ / %@", r.sandbox, r.folder)).font(.headline)
+            Text(r.hasFolder ? L("GitHub access for %@ / %@", r.sandbox, r.folder) : L("GitHub access for %@", r.sandbox)).font(.headline)
             if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
@@ -385,5 +443,76 @@ struct GitHubTokenSteps: View {
             SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
             Text("The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+struct GitGrantRow: View {
+    @EnvironmentObject var model: AppModel
+    let g: GitGrantInfo
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(g.repo).font(.headline)
+                Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.write ? L("read and write") : L("read only"))
+                    + (g.folder.isEmpty || g.folder == "unknown" ? "" : " · " + L("Folder %@", g.folder))).font(.caption).foregroundStyle(.secondary)
+                GrantReason(reason: g.reason)
+            }
+            Spacer()
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let left = max(0, Date(timeIntervalSince1970: TimeInterval(g.expiresUnix)).timeIntervalSince(ctx.date))
+                Text(String(format: "%d:%02d:%02d", Int(left) / 3600, Int(left) % 3600 / 60, Int(left) % 60)).monospacedDigit().foregroundStyle(left < 120 ? .red : .primary)
+            }
+            Button("Revoke", role: .destructive) { Task { await model.revokeGit(g) } }
+        }
+    }
+}
+
+/// The user's decision on a git grant: duration and level (never above what the assistant asked for).
+struct GitGrantSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let r: RequestInfo
+    @Local private var minutes = 15
+    @Local private var write = true
+    @Local private var error: String?
+
+    static let steps: [(minutes: Int, label: String)] = [(5, "5 minutes"), (10, "10 minutes"), (15, "15 minutes"), (30, "30 minutes"), (45, "45 minutes"), (60, "1 hour")]
+    var asked: Bool { r.git?.write ?? false }
+    var title: String { r.hasFolder ? L("Git access for %@/%@", r.sandbox, r.folder) : L("Git access for %@", r.sandbox) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            Text(r.path).font(.title3.bold()).textSelection(.enabled)
+            Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
+            Picker("Duration", selection: $minutes) {
+                ForEach(Self.steps.filter { $0.minutes <= (r.git?.maxMinutes ?? 60) }, id: \.minutes) { Text(L($0.label)).tag($0.minutes) }
+            }
+            if asked {
+                Toggle("Allow push (write access)", isOn: $write)
+            } else {
+                Text("Read only: clone, fetch and pull.").font(.callout)
+            }
+            if let others = r.git?.others, !others.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Other active git grants of this sandbox share the same token while they run:").font(.caption).foregroundStyle(.secondary)
+                    ForEach(others, id: \.self) { Text($0).font(.caption) }
+                }
+            }
+            Text("The token lives only for this grant, covers only this repository (and the other granted ones of the same owner) and is revoked on GitHub when the grant ends. Within the time the assistant can push to any branch of the repository, including main, unless GitHub protects it.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Allow") {
+                    Task {
+                        if let e = await model.allowGit(id: r.id, minutes: minutes, write: asked && write) { error = e } else { dismiss() }
+                    }
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 480)
+        .onAppear { minutes = min(max(r.git?.minutes ?? 15, 5), r.git?.maxMinutes ?? 60); write = asked }
     }
 }

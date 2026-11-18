@@ -17,7 +17,9 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/importer"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
@@ -25,6 +27,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/notify"
 	"github.com/DevertNet/bergfried/daemon/internal/rpc"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
@@ -323,6 +326,11 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	if err != nil {
 		return err
 	}
+	skillsDir, err := skills.Ensure(home)
+	if err != nil {
+		return err
+	}
+	skillSvc := skills.NewService(m.S, skillsDir)
 	// The first index build makes macOS ask for folder access: the app explains that first (see index.Gate).
 	_, bundleErr := update.RunningBundle()
 	gate := index.NewGate(filepath.Join(home, "index-ack"), api.Version, bundleErr == nil)
@@ -387,7 +395,26 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	m.SaveToken = tokStore.Set
 	m.DropToken = tokStore.Delete
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	// GitHub App: the user's own app; key and tokens stay on the Mac (see docs/GITHUB.md).
+	appStore := ghapp.Store{Dir: filepath.Join(home, "github-app")}
+	appClient := ghapp.NewClient(appStore)
+	setup := ghapp.NewSetup(appStore)
+	if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // development/tests only: local GitHub stand-in
+		appClient.Base, setup.API = v, v
+	}
+	if v := os.Getenv("BERGFRIED_GITHUB_WEB"); v != "" {
+		setup.Web = v
+	}
+	setup.Log = func(event, detail string) { _ = m.S.Audit("app", event, "", "", detail) }
+	gitSvc := gitaccess.NewService(m.S, appClient)
+	gitSvc.Client = mkClient
+	gitSvc.InstallHint = func() string {
+		if cfg, _, err := appStore.Load(); err == nil {
+			return "Installation page: https://github.com/apps/" + cfg.Slug + "/installations/new"
+		}
+		return ""
+	}
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, Git: gitSvc, Skills: skillSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
@@ -401,7 +428,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Git: gitSvc, GitApp: appClient, GitSetup: setup, Skills: skillSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)
@@ -495,7 +522,7 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 	defer conn.Close()
 	c := pb.NewAdminClient(conn)
 	if len(args) == 0 {
-		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--all-folders] [--per-connection] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
+		return errors.New("nutze: ssh keys | grants [--all] | allow <id> [--minutes N] [--key SHA256:…] [--user U] [--trust-host-key] | deny <id> | revoke <grant> | extend <grant> --minutes N")
 	}
 	num := func(i int) (int64, error) {
 		var n int64
@@ -555,12 +582,10 @@ func sshCmd(ctx context.Context, home string, args []string) error {
 		minutes := fs.Int("minutes", 15, "Dauer")
 		key := fs.String("key", "", "key fingerprint (SHA256:…); otherwise the host default")
 		user := fs.String("user", "", "user on the target (default: claude)")
-		allWt := fs.Bool("all-folders", false, "for all folders of the sandbox")
-		per := fs.Bool("per-connection", false, "confirm every connection individually")
 		trust := fs.Bool("trust-host-key", false, "confirm a new host key")
 		_ = fs.Parse(args[2:])
 		r, err := c.DecideSSH(ctx, &pb.DecideSSHRequest{Id: id, Allow: args[0] == "allow", Minutes: int32(*minutes), KeyFingerprint: *key,
-			User: *user, AllFolders: *allWt, PerConnection: *per, TrustUnknownHost: *trust})
+			User: *user, TrustUnknownHost: *trust})
 		if err != nil {
 			return err
 		}

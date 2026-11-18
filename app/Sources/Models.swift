@@ -38,6 +38,7 @@ struct ClaudeInfo: Codable, Hashable {
     var rc: Bool
     var rcUrl: String
     var rcAction: String   // "", "activating", "failed", "waiting"
+    var restartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
 }
 
 struct SandboxInfo: Codable, Identifiable, Hashable {
@@ -58,12 +59,14 @@ struct SandboxInfo: Codable, Identifiable, Hashable {
     var claudeInstalled: Bool?
     var opencodeInstalled: Bool?
     var opencodeRunning: Bool?
+    var opencodeRestartReasons: [String]?   // "unknown", "guidance", "mcp"; empty when nothing to do
     var opencodePort: Int?
     var hostDiskUsed: Int64
     var guestDiskUsed: Int64
     var guestDiskSize: Int64
     var probeError: String?
     var hasGithubToken: Bool
+    var skillsMount: Bool?   // false: the VM is running without the shared-skills mount (stop/start adds it)
     var id: String { name }
     var running: Bool { status == "Running" }
 }
@@ -84,6 +87,49 @@ struct GitHubDetail: Codable, Hashable {
     var hint: String
 }
 
+/// Detail of a git request (kind gitgrant or ghaction), see docs/GITHUB.md.
+struct GitDetail: Codable, Hashable {
+    var kind: String
+    var repo: String
+    var write: Bool?
+    var minutes: Int?
+    var action: String?
+    var summary: [String]?
+    var others: [String]?
+    var maxMinutes: Int?
+}
+
+struct GitGrantInfo: Codable, Identifiable, Hashable {
+    var id: Int64
+    var sandbox: String
+    var folder: String
+    var repo: String
+    var write: Bool
+    var reason: String
+    var expiresUnix: Int64
+    var listID: String { "git-\(id)" }
+}
+
+struct GitHubAppInstallation: Codable, Hashable { var id: Int64; var account: String }
+struct GitHubAppStatus: Codable, Hashable {
+    var configured: Bool
+    var name: String?
+    var slug: String?
+    var appId: Int64?
+    var installUrl: String?
+    var settingsUrl: String?
+    var installations: [GitHubAppInstallation]
+    var error: String?
+}
+struct URLResult: Codable { var url: String }
+struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var minutes: Int = 0; var write: Bool = false; var note: String = "" }
+
+struct SkillFileDetail: Codable, Hashable {
+    var path: String
+    var op: String     // create, modify, delete, unchanged
+    var diff: String   // unified-style text: "+"/"-"/" " lines and "@@" headers
+}
+
 struct RequestInfo: Codable, Identifiable, Hashable {
     var id: Int64
     var sandbox: String
@@ -98,6 +144,8 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var large: Bool
     var ssh: SSHInfo?
     var github: GitHubDetail?
+    var git: GitDetail?
+    var skill: [SkillFileDetail]?
     var pending: Bool { status == "pending" }
     // Request and grant ids come from different tables and can be equal: give the list rows distinct identities.
     var listID: String { "request-\(id)" }
@@ -116,6 +164,7 @@ struct GrantInfo: Codable, Identifiable, Hashable {
     var revoked: Bool
     var active: Bool
     var hostKeyFingerprints: [String]
+    var reason: String?
     var listID: String { "grant-\(id)" }
 }
 
@@ -151,8 +200,6 @@ struct SSHDecideBody: Encodable {
     var minutes: Int
     var keyFingerprint: String
     var user: String
-    var allFolders: Bool
-    var perConnection: Bool
     var trustUnknownHost: Bool
     var passphrase: String = ""   // only for a key that is not loaded in the agent; never stored
     var note: String = ""         // optional message shown to the agent with the decision
@@ -177,6 +224,17 @@ struct ClaudeRemoveBody: Encodable { var sandbox: String; var folder: String }
 struct PairLink: Codable { var url: String }
 struct FolderEntry: Codable, Hashable { var folder: String; var label: String }
 struct FolderBrowseResponse: Codable { var path: String; var parent: String; var folders: [FolderEntry] }
+struct FolderItem: Codable, Hashable { var folder: String; var name: String; var git: Bool; var branch: String; var dirty: Bool; var modified: Int64 }
+struct FolderListResponse: Codable { var folders: [FolderItem] }
+struct FolderBody: Encodable {
+    var sandbox: String
+    var folder: String = ""
+    var name: String = ""
+    var gitUrl: String = ""
+    var target: String = ""
+    var move: Bool = false
+    var force: Bool = false
+}
 struct NewFolderBody: Encodable { var sandbox: String; var parent: String; var name: String }
 struct NewFolderResult: Codable { var path: String }
 
@@ -184,3 +242,6 @@ func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount
 
 struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String; var note: String = "" }
 struct GitHubLink: Codable { var url: String; var hint: String }
+struct SkillDecideBody: Encodable { var id: Int64; var allow: Bool; var note: String = "" }
+
+struct EmptyBody: Encodable {}

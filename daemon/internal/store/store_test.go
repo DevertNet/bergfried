@@ -69,6 +69,54 @@ func TestSeededAndDeleteWorktree(t *testing.T) {
 	}
 }
 
+func TestHelperStamps(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.AddSandbox(Sandbox{Name: "a", VM: "bergfried-a", TemplateVersion: 1, Created: time.Now()})
+	st, err := s.ListHelperStamps("a")
+	if err != nil || st == nil || len(st) != 0 {
+		t.Fatalf("unknown sandbox must give an empty, non-nil map: %v %v", st, err)
+	}
+	_ = s.AddWorktree(Worktree{Sandbox: "a", Name: "main", Path: "work/main", ComposeProject: "a-main", Created: time.Now()})
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g1", MCP: "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetHelperStamp("a", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.ListHelperStamps("a")
+	if err != nil || len(st) != 2 {
+		t.Fatalf("%v %v", st, err)
+	}
+	if st["claude:main"] != (HelperStamp{Guidance: "g1", MCP: "m1"}) || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("%v", st)
+	}
+	// replace
+	if err := s.SetHelperStamp("a", "claude:main", HelperStamp{Guidance: "g3", MCP: "m3"}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = s.ListHelperStamps("a")
+	if len(st) != 2 || st["claude:main"] != (HelperStamp{Guidance: "g3", MCP: "m3"}) {
+		t.Fatalf("replace failed: %v", st)
+	}
+	// a deleted worktree loses its Claude stamp
+	_ = s.DeleteWorktree("a", "main")
+	st, _ = s.ListHelperStamps("a")
+	if _, ok := st["claude:main"]; ok || len(st) != 1 {
+		t.Fatalf("stamp of the deleted worktree must be gone: %v", st)
+	}
+	// a deleted sandbox loses all stamps
+	if err := s.DeleteSandbox("a"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.ListHelperStamps("a")
+	if err != nil || len(st) != 0 {
+		t.Fatalf("stamps of the deleted sandbox: %v %v", st, err)
+	}
+}
+
 func TestMigrateLegacySessionNames(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d")
 	s, err := Open(dir)
@@ -117,6 +165,74 @@ func TestMigrateLegacySessionNames(t *testing.T) {
 	}
 	if _, err := s.AddRequest(Request{Sandbox: "alt", Worktree: "main", Kind: "file", Path: "x", Status: "pending"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLegacySkillsStampColumnIsIgnored(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d")
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A database from the version that still had the skills column: rows carry a value there.
+	for _, q := range []string{
+		`DROP TABLE helper_stamps`,
+		`CREATE TABLE helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, skills TEXT NOT NULL DEFAULT '', PRIMARY KEY(sandbox,target))`,
+		`INSERT INTO helper_stamps(sandbox,target,guidance,mcp,skills) VALUES('alt','opencode','g','m','old-skills-hash')`,
+	} {
+		if _, err := s.DB.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	s.DB.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("a database with the old skills column must open: %v", err)
+	}
+	st, err := s.ListHelperStamps("alt")
+	if err != nil || len(st) != 1 || st["opencode"] != (HelperStamp{Guidance: "g", MCP: "m"}) {
+		t.Fatalf("old stamp after migration: %v %v", st, err)
+	}
+	if err := s.SetHelperStamp("alt", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
+		t.Fatalf("writing a stamp with the legacy column present: %v", err)
+	}
+	st, err = s.ListHelperStamps("alt")
+	if err != nil || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("stamp after write: %v %v", st, err)
+	}
+}
+
+func TestHelperStampWithoutSkillsColumn(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "d")
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An even older helper_stamps table without the skills column at all.
+	for _, q := range []string{
+		`DROP TABLE helper_stamps`,
+		`CREATE TABLE helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target))`,
+		`INSERT INTO helper_stamps(sandbox,target,guidance,mcp) VALUES('alt','opencode','g','m')`,
+	} {
+		if _, err := s.DB.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	s.DB.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatalf("a database without the skills column must open: %v", err)
+	}
+	st, err := s.ListHelperStamps("alt")
+	if err != nil || len(st) != 1 || st["opencode"] != (HelperStamp{Guidance: "g", MCP: "m"}) {
+		t.Fatalf("old stamp: %v %v", st, err)
+	}
+	if err := s.SetHelperStamp("alt", "opencode", HelperStamp{Guidance: "g2", MCP: "m2"}); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.ListHelperStamps("alt")
+	if err != nil || st["opencode"] != (HelperStamp{Guidance: "g2", MCP: "m2"}) {
+		t.Fatalf("stamp after write: %v %v", st, err)
 	}
 }
 
@@ -201,5 +317,36 @@ func TestMigrateAddsClaudeAndPort(t *testing.T) {
 	}
 	if x, _ := s2.GetSandbox("alt"); x.OpenCodePort != 42123 || !x.OpenCode {
 		t.Fatal("column missing")
+	}
+}
+
+func TestSSHGrantKeepsTheReasonAndOldDatabasesAreMigrated(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.AddGrant(SSHGrant{Sandbox: "shop", Host: "h", KeyFP: "SHA256:x", User: "u", Expires: time.Now().Add(time.Hour), Reason: "deploy the fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := s.GetGrant(id); g.Reason != "deploy the fix" {
+		t.Fatalf("%+v", g)
+	}
+	// a database from before the column existed: opening it adds the column, old rows get an empty reason
+	if _, err := s.DB.Exec(`ALTER TABLE ssh_grants DROP COLUMN reason`); err != nil {
+		t.Skip("this SQLite cannot drop columns:", err)
+	}
+	s.DB.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.GetGrant(id)
+	if err != nil || g.Reason != "" || g.Host != "h" {
+		t.Fatalf("%+v %v", g, err)
+	}
+	if _, err := s.AddGrant(SSHGrant{Sandbox: "shop", Host: "h2", KeyFP: "k", User: "u", Expires: time.Now().Add(time.Hour), Reason: "again"}); err != nil {
+		t.Fatal(err)
 	}
 }

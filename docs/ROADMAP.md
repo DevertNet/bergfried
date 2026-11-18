@@ -8,7 +8,9 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] SSH broker: ssh-agent protocol with destination constraints, grants with expiry, `ssh` hook with interactive wait
 - [x] macOS control app (SwiftUI, no Xcode): sandboxes, Claude folders, requests, grants, audit log, VM template editor, notifications, menu bar
 - [x] Claude entries per sandbox (folder + session), Remote Control monitor/automation
-- [x] GitHub: one fine-grained token per sandbox in the VM, guided creation, `request_github_token`
+- [x] GitHub: one fine-grained token per sandbox in the VM, guided creation, `request_github_token` (legacy since the GitHub App)
+- [x] GitHub App per user: manifest setup, time-limited git grants with a credential helper, merge/PR/CI actions executed by the daemon per approval (not yet verified against real GitHub)
+- [x] Shared skills: one folder for all sandboxes, read-only in the VM, links into `~/.claude/skills`; assistants can propose changes (`propose_skill_change`) that the user approves with a diff
 - [x] Rename "session" → "sandbox" everywhere, migration of existing installs
 - [x] English repository, app in English and German
 - [x] Updates from GitHub releases (build by CI, install button in the app, step-by-step progress and errors)
@@ -20,10 +22,10 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Sandbox overview with Claude card (+ Claude and folder list) and OpenCode card (service, Start/Stop, Connect); settings with a secondary sidebar and cards
 - [x] Update checks show the download size; base-build output follows new lines but pauses when scrolling up
 - [x] Claude works in chosen folders: no new git worktrees/branches; existing worktrees remain as folders; OpenCode is one sandbox service
+- [x] Folders card: all folders of `~/work` with or without Claude, create (empty/clone), delete, copy and move between sandboxes (VM to VM, verified)
 - [x] Documentation refresh; assistants must update README/docs in the same change (rule in `CLAUDE.md`)
 
 ## Next
-- [ ] Per-connection SSH confirmation as its own app request (currently only in the legacy dialog mode)
 - [ ] Port overview per sandbox ("open shop on localhost:8080") — Lima already forwards guest ports to `127.0.0.1`
 - [ ] Resource limits and idle auto-stop, `caffeinate` option
 - [ ] Update Claude Code in all VMs from the app
@@ -35,7 +37,10 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [ ] macOS sandboxes / second VM template (postponed; CI builds replace it for now): [design/macos-sandboxes.md](design/macos-sandboxes.md)
 - [ ] Assistant template proposals: [design/template-proposals.md](design/template-proposals.md)
 - [ ] File browser/editor and "open in VS Code"
-- [ ] Several GitHub owners/accounts per sandbox ([GITHUB.md](GITHUB.md))
+- [ ] Verify the GitHub App flow against real GitHub ([GITHUB.md](GITHUB.md) "Verified and open", [testing/github.md](testing/github.md))
+- [ ] Per-push approval with the real diff (git remote helper), once the grant model proves too coarse
+- [ ] Remove the legacy personal-token flow (`ghtoken`, `request_github_token`) when all sandboxes are migrated
+- [ ] Several GitHub accounts and GitHub Enterprise ([GITHUB.md](GITHUB.md))
 - [ ] Signed releases (or a separate releases repository) — see the trust notes in [UPDATES.md](UPDATES.md)
 - [ ] Developer ID signing and notarisation (keeps macOS permissions across updates)
 - [ ] Xcode project around the same sources once Xcode is available

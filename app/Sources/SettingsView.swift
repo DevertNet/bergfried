@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, updates, baseVM, notifications, files, terminal, advanced
+    case general, updates, baseVM, notifications, files, terminal, github, advanced
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: return "Notifications"
         case .files: return "Files & index"
         case .terminal: return "Terminal"
+        case .github: return "GitHub"
         case .advanced: return "Advanced"
         }
     }
@@ -23,7 +24,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: return "macOS notifications for requests"
         case .files: return "Blocklist, index and data paths"
         case .terminal: return "Terminal app for shell and login"
-        case .advanced: return "Template editor, GitHub and SSH notes"
+        case .github: return "Your own GitHub App for git access"
+        case .advanced: return "Template editor and SSH notes"
         }
     }
     var icon: String {
@@ -34,6 +36,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: return "bell"
         case .files: return "folder"
         case .terminal: return "terminal"
+        case .github: return "arrow.triangle.branch"
         case .advanced: return "slider.horizontal.3"
         }
     }
@@ -75,6 +78,9 @@ struct SettingsView: View {
     @Local private var upd: UpdateInfo?
     @Local private var updMsg: String?
     @Local private var confirmUpdate = false
+    @Local private var ghApp: GitHubAppStatus?
+    @Local private var ghMsg: String?
+    @Local private var confirmForget = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -105,6 +111,7 @@ struct SettingsView: View {
             Button("Install and restart", role: .destructive) { Task { await installUpdate() } }
         } message: { Text("Releases are not signed: the update is only checked against its checksum. Install only if you trust this repository and its maintainers. The daemon and the app restart; running sandboxes keep running.") }
         .task { await loadAndRefresh() }
+        .task { await loadGitHubApp() }
     }
 
     @ViewBuilder var page: some View {
@@ -115,6 +122,7 @@ struct SettingsView: View {
         case .notifications: notificationsPage
         case .files: filesPage
         case .terminal: terminalPage
+        case .github: githubPage
         case .advanced: advancedPage
         }
     }
@@ -161,7 +169,12 @@ struct SettingsView: View {
                 Picker("Channel", selection: Binding(get: { upd?.channel ?? "stable" }, set: { v in Task { await setChannel(v) } })) {
                     Text("Stable").tag("stable")
                     Text("Dev (builds from the development branch)").tag("dev")
+                    Text("Local (build from this Mac)").tag("local")
                 }.labelsHidden().frame(maxWidth: 260)
+            }
+            if upd?.channel == "local" {
+                Text("Local builds come from scripts/local-release.sh in the Bergfried repository on this Mac, not from GitHub. Any build that differs from the installed version is offered, also an older one.")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if upd?.channel == "dev" {
                 Text("Dev builds come from the development branch, may be broken and are not reviewed like stable releases. Switching back to stable only takes effect with the next stable release.")
@@ -316,6 +329,69 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - GitHub
+
+    func loadGitHubApp() async {
+        ghApp = try? await model.api.get("/v1/githubapp")
+    }
+
+    @ViewBuilder var githubPage: some View {
+        SettingsCard("Your GitHub App") {
+            Text("Bergfried uses a GitHub App that belongs to you. Its private key stays on this Mac, never in a VM. For git an assistant asks for a time-limited grant per task; merging, opening pull requests and re-running CI are asked every single time.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let a = ghApp, a.configured {
+                LabeledContent("App") { Text(a.name ?? a.slug ?? "") }
+                if a.installations.isEmpty {
+                    Label("The app is not installed anywhere yet.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout)
+                } else {
+                    LabeledContent("Installed for") { Text(a.installations.map { $0.account }.joined(separator: ", ")) }
+                }
+                if let e = a.error { Text(e).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+                // two rows: four buttons in one row get their labels cut off in the narrow settings pane
+                HStack {
+                    Button("Install on GitHub …") { if let u = a.installUrl.flatMap(URL.init(string:)) { NSWorkspace.shared.open(u) } }.buttonStyle(.borderedProminent).fixedSize()
+                    Button("Open app settings …") { if let u = a.settingsUrl.flatMap(URL.init(string:)) { NSWorkspace.shared.open(u) } }.fixedSize()
+                }
+                HStack {
+                    Button("Check again") { Task { await loadGitHubApp() } }.fixedSize()
+                    Button("Forget the app", role: .destructive) { confirmForget = true }.fixedSize()
+                }
+                Text("Choose \"Only select repositories\" when installing: the app can only ever reach the repositories you select there.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("No app yet. Setup opens GitHub in your browser; you confirm creating the app there and then install it for the repositories your assistants may use.").font(.callout)
+                Button("Set up GitHub App …") { Task { await startGitHubSetup() } }.buttonStyle(.borderedProminent)
+                Text("The app asks for the permissions Contents, Pull requests and Actions (write) and Metadata (read). It does not get Workflows or Administration: assistants cannot change workflow files or create repositories.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let ghMsg { Text(ghMsg).font(.callout) }
+        }
+        SettingsCard("Older sandboxes with a personal token") {
+            Text("Sandboxes created before the GitHub App keep their personal access token in the VM. The assistant can read it, so it cannot be limited per action. Switch such a sandbox to the app in the sandbox details; the token is then removed from the VM.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .confirmationDialog(L("Forget the GitHub App?"), isPresented: $confirmForget) {
+            Button("Forget and end all git grants", role: .destructive) { Task { await forgetGitHubApp() } }
+        } message: { Text("The private key is deleted from this Mac and all running git grants end. The app itself stays on GitHub; delete it there if you no longer need it.") }
+    }
+
+    func startGitHubSetup() async {
+        ghMsg = nil
+        do {
+            let r: URLResult = try await model.api.send("POST", "/v1/githubapp/setup", EmptyBody())
+            if let u = URL(string: r.url) { NSWorkspace.shared.open(u) }
+            ghMsg = L("GitHub opened in your browser. Confirm creating the app there, install it, then come back here.")
+            // the page picks up the new app as soon as GitHub has redirected back
+            for _ in 0..<150 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await loadGitHubApp()
+                if ghApp?.configured == true { ghMsg = nil; return }
+            }
+        } catch { ghMsg = error.localizedDescription }
+    }
+
+    func forgetGitHubApp() async {
+        do { try await model.api.post("/v1/githubapp/forget", EmptyBody()); await loadGitHubApp() } catch { ghMsg = error.localizedDescription }
+    }
+
     // MARK: - Advanced
 
     @ViewBuilder var advancedPage: some View {
@@ -343,11 +419,6 @@ struct SettingsView: View {
                 Button("Discard changes") { tplText = tpl?.yaml ?? ""; tplErr = nil; tplMsg = nil }.disabled(tplText == tpl?.yaml)
                 Button("Reset to the bundled template", role: .destructive) { Task { await resetTemplate() } }
             }
-        }
-
-        SettingsCard("GitHub") {
-            Text("The GitHub token belongs to the sandbox: it is asked for when creating a sandbox with a git repo, or set up on the assistant's request (\"Requests\" tab), and it lives in the VM. There is no global setting here.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
 
         SettingsCard("SSH grants") {

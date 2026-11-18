@@ -21,10 +21,13 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
@@ -41,6 +44,10 @@ type Server struct {
 	Upstream      string
 	Mon           *Monitor
 	GH            *ghtoken.Service
+	Git           *gitaccess.Service
+	GitApp        *ghapp.Client
+	GitSetup      *ghapp.Setup
+	Skills        *skills.Service
 	Upd           *update.Service
 
 	Home string      // ~/.bergfried (log files)
@@ -130,39 +137,42 @@ func decode(r *http.Request, v any) error {
 }
 
 type claudeJ struct {
-	Name     string `json:"name"`
-	Folder   string `json:"folder"`
-	Window   bool   `json:"window"`
-	Running  bool   `json:"running"`
-	RC       bool   `json:"rc"`
-	RCURL    string `json:"rc_url"`
-	RCAction string `json:"rc_action"` // "", "activating", "failed", "waiting"
+	Name           string   `json:"name"`
+	Folder         string   `json:"folder"`
+	Window         bool     `json:"window"`
+	Running        bool     `json:"running"`
+	RC             bool     `json:"rc"`
+	RCURL          string   `json:"rc_url"`
+	RCAction       string   `json:"rc_action"` // "", "activating", "failed", "waiting"
+	RestartReasons []string `json:"restart_reasons"`
 }
 
 type sandboxJ struct {
-	Name              string    `json:"name"`
-	VM                string    `json:"vm"`
-	Status            string    `json:"status"`
-	Repo              string    `json:"repo"`
-	TemplateVersion   int       `json:"template_version"`
-	Created           int64     `json:"created_unix"`
-	CPUs              int       `json:"cpus"`
-	Memory            int64     `json:"memory"`
-	Disk              int64     `json:"disk"`
-	ClaudeSessions    []claudeJ `json:"claude_sessions"`
-	ClaudeLoggedIn    *bool     `json:"claude_logged_in"`
-	OpenCodeLoggedIn  *bool     `json:"opencode_logged_in"`
-	ClaudeInstalled   *bool     `json:"claude_installed"`
-	OpenCodeInstalled *bool     `json:"opencode_installed"`
-	OpenCodeRunning   *bool     `json:"opencode_running"`
-	OpenCodePort      int       `json:"opencode_port"`
-	HostDiskUsed      int64     `json:"host_disk_used"`
-	GuestDiskUsed     int64     `json:"guest_disk_used"`
-	GuestDiskSize     int64     `json:"guest_disk_size"`
-	ProbeError        string    `json:"probe_error,omitempty"`
-	ActiveGrants      int       `json:"active_grants"`
-	Pending           int       `json:"pending_requests"`
-	HasToken          bool      `json:"has_github_token"`
+	Name                   string    `json:"name"`
+	VM                     string    `json:"vm"`
+	Status                 string    `json:"status"`
+	Repo                   string    `json:"repo"`
+	TemplateVersion        int       `json:"template_version"`
+	Created                int64     `json:"created_unix"`
+	CPUs                   int       `json:"cpus"`
+	Memory                 int64     `json:"memory"`
+	Disk                   int64     `json:"disk"`
+	ClaudeSessions         []claudeJ `json:"claude_sessions"`
+	ClaudeLoggedIn         *bool     `json:"claude_logged_in"`
+	OpenCodeLoggedIn       *bool     `json:"opencode_logged_in"`
+	ClaudeInstalled        *bool     `json:"claude_installed"`
+	OpenCodeInstalled      *bool     `json:"opencode_installed"`
+	OpenCodeRunning        *bool     `json:"opencode_running"`
+	OpenCodeRestartReasons []string  `json:"opencode_restart_reasons"`
+	OpenCodePort           int       `json:"opencode_port"`
+	HostDiskUsed           int64     `json:"host_disk_used"`
+	GuestDiskUsed          int64     `json:"guest_disk_used"`
+	GuestDiskSize          int64     `json:"guest_disk_size"`
+	ProbeError             string    `json:"probe_error,omitempty"`
+	ActiveGrants           int       `json:"active_grants"`
+	Pending                int       `json:"pending_requests"`
+	HasToken               bool      `json:"has_github_token"`
+	SkillsMount            bool      `json:"skills_mount"`
 }
 type sshInfoJ struct {
 	HostKeyFPs       []string `json:"host_key_fingerprints"`
@@ -173,19 +183,21 @@ type sshInfoJ struct {
 	SuggestedMinutes int      `json:"suggested_minutes"`
 }
 type requestJ struct {
-	ID      int64           `json:"id"`
-	Sandbox string          `json:"sandbox"`
-	Folder  string          `json:"folder"`
-	Kind    string          `json:"kind"`
-	Path    string          `json:"path"`
-	Reason  string          `json:"reason"`
-	Status  string          `json:"status"`
-	Created int64           `json:"created_unix"`
-	Bytes   int64           `json:"bytes"`
-	Files   int64           `json:"files"`
-	Large   bool            `json:"large"`
-	SSH     *sshInfoJ       `json:"ssh,omitempty"`
-	GitHub  *ghtoken.Detail `json:"github,omitempty"`
+	ID      int64               `json:"id"`
+	Sandbox string              `json:"sandbox"`
+	Folder  string              `json:"folder"`
+	Kind    string              `json:"kind"`
+	Path    string              `json:"path"`
+	Reason  string              `json:"reason"`
+	Status  string              `json:"status"`
+	Created int64               `json:"created_unix"`
+	Bytes   int64               `json:"bytes"`
+	Files   int64               `json:"files"`
+	Large   bool                `json:"large"`
+	SSH     *sshInfoJ           `json:"ssh,omitempty"`
+	GitHub  *ghtoken.Detail     `json:"github,omitempty"`
+	Git     *gitaccess.Detail   `json:"git,omitempty"`
+	Skill   []skills.FileDetail `json:"skill,omitempty"`
 }
 type grantJ struct {
 	ID         int64    `json:"id"`
@@ -199,6 +211,7 @@ type grantJ struct {
 	Revoked    bool     `json:"revoked"`
 	Active     bool     `json:"active"`
 	HostKeyFPs []string `json:"host_key_fingerprints"`
+	Reason     string   `json:"reason"`
 }
 type auditJ struct {
 	TS      int64  `json:"ts_unix"`
@@ -221,6 +234,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/claude/folders", s.claudeFolders)
 	mux.HandleFunc("GET /v1/claude/browse", s.claudeBrowse)
 	mux.HandleFunc("POST /v1/claude/mkdir", s.claudeMkdir)
+	mux.HandleFunc("GET /v1/folders", s.foldersList)
+	mux.HandleFunc("POST /v1/folders/create", s.folderCreate)
+	mux.HandleFunc("POST /v1/folders/delete", s.folderDelete)
+	mux.HandleFunc("POST /v1/folders/transfer", s.folderTransfer)
 	mux.HandleFunc("POST /v1/claude/start", s.claudeStart)
 	mux.HandleFunc("POST /v1/claude/stop", s.claudeStop)
 	mux.HandleFunc("POST /v1/claude/restart", s.claudeRestart)
@@ -229,6 +246,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/opencode/start", s.simple("opencode.start", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStart(ctx, n) }))
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
+	mux.HandleFunc("GET /v1/githubapp", s.githubAppStatus)
+	mux.HandleFunc("POST /v1/githubapp/setup", s.githubAppSetup)
+	mux.HandleFunc("POST /v1/githubapp/forget", s.githubAppForget)
+	mux.HandleFunc("POST /v1/github/legacy/remove", s.githubLegacyRemove)
+	mux.HandleFunc("GET /v1/git/grants", s.gitGrants)
+	mux.HandleFunc("POST /v1/git/revoke", s.gitRevoke)
+	mux.HandleFunc("POST /v1/git/decide", s.gitDecide)
+	mux.HandleFunc("POST /v1/skills/decide", s.skillsDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/log", s.logTail)
 	mux.HandleFunc("GET /v1/update", s.updateInfo)
@@ -300,6 +325,26 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, st)
 }
 
+// restartReasonsFor reports why a running helper should be restarted. Not running means no
+// reasons (an empty, non-nil slice); a running helper without a stored stamp is "unknown".
+func restartReasonsFor(running bool, stamps map[string]store.HelperStamp, target string, current store.HelperStamp) []string {
+	if !running {
+		return []string{}
+	}
+	stamp, ok := stamps[target]
+	return sandbox.RestartReasons(ok, stamp, current)
+}
+
+// opencodeRestartReasons reports why the sandbox-level OpenCode service should be restarted. The
+// hint only applies when the service is wanted (the sandbox's opencode flag): a sandbox that never
+// asked for the service must not show a restart hint just because some opencode process runs.
+func opencodeRestartReasons(wanted, running bool, stamps map[string]store.HelperStamp, current store.HelperStamp) []string {
+	if !wanted {
+		return []string{}
+	}
+	return restartReasonsFor(running, stamps, sandbox.OpenCodeTarget, current)
+}
+
 func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	ss, err := s.M.S.ListSandboxes()
 	if err != nil {
@@ -319,20 +364,30 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 	pend, _ := s.M.S.ListRequests(true, 500)
 	out := []sandboxJ{}
 	for _, x := range ss {
-		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", ClaudeSessions: []claudeJ{}}
+		j := sandboxJ{Name: x.Name, VM: x.VM, Repo: x.Repo, TemplateVersion: x.TemplateVersion, Created: x.Created.Unix(), Status: "missing", ClaudeSessions: []claudeJ{}, OpenCodeRestartReasons: []string{}}
 		if i, ok := byVM[x.VM]; ok {
 			v := vms[i]
 			j.Status, j.CPUs, j.Memory, j.Disk = v.Status, v.CPUs, v.Memory, v.Disk
 		}
+		j.SkillsMount, _ = lima.HasMount(x.VM, s.M.SkillsDir(), false)
 		var ps SandboxState
 		var havePS bool
 		if s.Mon != nil && j.Status == "Running" {
 			ps, havePS = s.Mon.Get(x.Name)
 		}
+		// stamps are the stored stamps of this sandbox, cur the stamp that would be installed now;
+		// haveStamps is false when the current stamp cannot be computed (reasons stay empty then).
+		var stamps map[string]store.HelperStamp
+		var cur store.HelperStamp
+		var haveStamps bool
 		if havePS {
 			j.ClaudeLoggedIn, j.OpenCodeLoggedIn = ps.ClaudeLoggedIn, ps.OpenCodeLoggedIn
 			j.ClaudeInstalled, j.OpenCodeInstalled, j.OpenCodeRunning = boolPtr(ps.ClaudeInstalled), boolPtr(ps.OpenCodeInstalled), boolPtr(ps.OpenCodeRunning)
 			j.GuestDiskUsed, j.GuestDiskSize, j.ProbeError = ps.GuestUsed, ps.GuestSize, ps.Err
+			stamps, _ = s.M.S.ListHelperStamps(x.Name)
+			if c, err := s.M.CurrentStamp(x.Name); err == nil {
+				cur, haveStamps = c, true
+			}
 		}
 		j.HostDiskUsed = hostDiskUsed(x.VM)
 		j.OpenCodePort = x.OpenCodePort
@@ -342,7 +397,14 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		wts, _ := s.M.S.ListWorktrees(x.Name)
 		for _, w := range wts {
 			ws := ps.Worktrees[w.Name]
-			j.ClaudeSessions = append(j.ClaudeSessions, claudeJ{Name: w.Name, Folder: sandbox.FolderOf(w.Path), Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action})
+			c := claudeJ{Name: w.Name, Folder: sandbox.FolderOf(w.Path), Window: ws.Window, Running: ws.Running, RC: ws.RC, RCURL: ws.URL, RCAction: ws.Action, RestartReasons: []string{}}
+			if haveStamps {
+				c.RestartReasons = restartReasonsFor(ws.Running, stamps, sandbox.ClaudeTarget(w.Name), cur)
+			}
+			j.ClaudeSessions = append(j.ClaudeSessions, c)
+		}
+		if haveStamps {
+			j.OpenCodeRestartReasons = opencodeRestartReasons(x.OpenCode, ps.OpenCodeRunning, stamps, cur)
 		}
 		for _, g := range grants {
 			if g.Sandbox == x.Name {
@@ -478,6 +540,87 @@ func (s *Server) claudeMkdir(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"path": path})
 }
 
+// foldersList lists every folder under ~/work of a sandbox (with or without a Claude entry).
+func (s *Server) foldersList(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("sandbox")
+	if sandbox.ValidName(name) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	list, err := s.M.ListFolders(r.Context(), name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	out := []map[string]any{}
+	for _, f := range list {
+		out = append(out, map[string]any{"folder": f.Path, "name": f.Name, "git": f.Git, "branch": f.Branch, "dirty": f.Dirty, "modified": f.Modified})
+	}
+	writeJSON(w, 200, map[string]any{"folders": out})
+}
+
+type folderReq struct {
+	Sandbox string `json:"sandbox"`
+	Folder  string `json:"folder"`
+	Name    string `json:"name"`
+	GitURL  string `json:"git_url"`
+	Target  string `json:"target"`
+	Move    bool   `json:"move"`
+	Force   bool   `json:"force"`
+}
+
+func (s *Server) folderJob(w http.ResponseWriter, r *http.Request, kind string, f func(ctx context.Context, q folderReq) error) {
+	var q folderReq
+	if err := decode(r, &q); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if sandbox.ValidName(q.Sandbox) != nil {
+		fail(w, 400, fmt.Errorf("invalid sandbox"))
+		return
+	}
+	writeJSON(w, 202, s.jobFor(kind, q.Sandbox, func(ctx context.Context) error {
+		err := f(ctx, q)
+		if s.Mon != nil {
+			s.Mon.Poke(q.Sandbox)
+			if q.Target != "" {
+				s.Mon.Poke(q.Target)
+			}
+		}
+		return err
+	}))
+}
+
+func (s *Server) folderCreate(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.create", func(ctx context.Context, q folderReq) error {
+		_, err := s.M.FolderCreate(ctx, q.Sandbox, q.Name, q.GitURL)
+		return err
+	})
+}
+
+func (s *Server) folderDelete(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.delete", func(ctx context.Context, q folderReq) error {
+		err := s.M.FolderDelete(ctx, q.Sandbox, q.Folder, q.Force)
+		if err == nil && s.Mon != nil {
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
+		}
+		return err
+	})
+}
+
+func (s *Server) folderTransfer(w http.ResponseWriter, r *http.Request) {
+	s.folderJob(w, r, "folder.transfer", func(ctx context.Context, q folderReq) error {
+		if sandbox.ValidName(q.Target) != nil {
+			return fmt.Errorf("invalid target sandbox")
+		}
+		err := s.M.FolderTransfer(ctx, q.Sandbox, q.Folder, q.Target, q.Name, q.Move)
+		if err == nil && q.Move && s.Mon != nil {
+			s.Mon.ResetClaude(q.Sandbox, q.Folder)
+		}
+		return err
+	})
+}
+
 func (s *Server) claudeStart(w http.ResponseWriter, r *http.Request) {
 	s.claudeAction(w, r, "claude.start", func(ctx context.Context, sandbox, folder string) error {
 		return s.M.ClaudeStart(ctx, sandbox, folder)
@@ -593,6 +736,24 @@ func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 		_ = s.M.S.Audit("app", "update.install", "", "", "to "+s.Upd.Last().Latest+" from "+s.Upd.Current)
 		return nil
 	}))
+}
+
+func (s *Server) skillsDecide(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ID    int64  `json:"id"`
+		Allow bool   `json:"allow"`
+		Note  string `json:"note"`
+	}
+	if err := decode(r, &q); err != nil || s.Skills == nil {
+		fail(w, 400, fmt.Errorf("invalid request"))
+		return
+	}
+	status, err := s.Skills.Decide(r.Context(), q.ID, q.Allow, q.Note)
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": status})
 }
 
 func (s *Server) githubDecide(w http.ResponseWriter, r *http.Request) {
@@ -788,6 +949,15 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(q.Extra), &d) == nil {
 				j.GitHub = &d
 			}
+		case "gitgrant", "ghaction":
+			var d gitaccess.Detail
+			if json.Unmarshal([]byte(q.Extra), &d) == nil {
+				j.Git = &d
+			}
+		case "skill":
+			if d, err := skills.DetailOf(q.Extra); err == nil {
+				j.Skill = d
+			}
 		}
 		if q.Kind == "ssh" && q.Status == "pending" {
 			if info, ok := s.SSH.PendingInfo(q.ID); ok {
@@ -825,8 +995,6 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		Minutes          int    `json:"minutes"`
 		Key              string `json:"key_fingerprint"`
 		User             string `json:"user"`
-		AllFolders       bool   `json:"all_folders"`
-		PerConn          bool   `json:"per_connection"`
 		TrustUnknownHost bool   `json:"trust_unknown_host"`
 		Passphrase       string `json:"passphrase"` // only for a key that is not loaded in the agent; never stored or logged
 		Note             string `json:"note"`       // optional message for the agent
@@ -836,7 +1004,7 @@ func (s *Server) sshDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg, err := s.SSH.DecideSSH(broker.Decision{ID: q.ID, Allow: q.Allow, Minutes: q.Minutes, KeyFP: q.Key, User: q.User,
-		AllFolders: q.AllFolders, PerConn: q.PerConn, TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
+		TrustUnknownHost: q.TrustUnknownHost, Passphrase: []byte(q.Passphrase), Note: q.Note})
 	if err != nil {
 		fail(w, 409, err)
 		return
@@ -854,7 +1022,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	for _, g := range gs {
 		out = append(out, grantJ{g.ID, g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
-			!g.Revoked && g.Expires.After(now), g.HostKeys})
+			!g.Revoked && g.Expires.After(now), g.HostKeys, g.Reason})
 	}
 	writeJSON(w, 200, out)
 }

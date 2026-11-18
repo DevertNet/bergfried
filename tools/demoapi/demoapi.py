@@ -7,6 +7,7 @@ Lets you look at (and take screenshots of) the app without any VM or real data:
     BERGFRIED_HOME=/private/tmp/bft-demo app/build/Bergfried.app/Contents/MacOS/Bergfried
 
 All names, hosts and files are made up. Read-only: every write returns 200 with an empty object.
+The demo daemon reports version 1.0.0: run the app copy with that version (see docs/DEVELOPMENT.md, "Screenshots"), otherwise it shows a version-mismatch banner.
 """
 import json, os, socketserver, sys, time
 from http.server import BaseHTTPRequestHandler
@@ -35,8 +36,8 @@ def sandbox(name, status, claude_sessions, grants=0, pending=0, token=True, logg
 
 
 SANDBOXES = [
-    sandbox("webshop", "Running", [claude("work/main"), claude("work/checkout"), claude("work/docs", running=False, rc=False, window=False)], grants=1, pending=2, oc=True),
-    sandbox("blog", "Running", [claude("work/main")]),
+    sandbox("webshop", "Running", [claude("work/main"), claude("work/checkout"), claude("work/docs", running=False, rc=False, window=False)], grants=1, pending=3, token=False, oc=True),
+    sandbox("blog", "Running", [claude("work/main")]),  # still holds a personal token: shows "Switch to GitHub App"
     sandbox("data-pipeline", "Stopped", [claude("work/main", running=False, rc=False, window=False)], token=False),
 ]
 
@@ -53,11 +54,38 @@ REQUESTS = [
     req(2, "webshop", "work/checkout", "ssh", "staging.example.com", "Deploy the new checkout build to the staging server.",
         ssh={"host_key_fingerprints": [FP], "source": "known_hosts", "default_key": KEY, "default_user": "deploy",
              "requested_user": "deploy", "suggested_minutes": 30}),
-    req(1, "webshop", "work/docs", "ghtoken", "acme/shop-docs", "git clone failed with 'Repository not found'.",
-        github={"repo": "acme/shop-docs", "has_token": True, "link": "https://github.com/settings/personal-access-tokens/new", "hint": ""}),
+    req(1, "webshop", "work/docs", "gitgrant", "acme/shop-docs", "Push the updated API docs to a branch.",
+        git={"kind": "grant", "repo": "acme/shop-docs", "write": True, "minutes": 15, "max_minutes": 60,
+             "others": ["acme/shop (write, until 14:20)"]}),
+    req(4, "webshop", "work/checkout", "ghaction", "pr_merge acme/shop", "The checkout PR is reviewed and CI is green.",
+        git={"kind": "action", "repo": "acme/shop", "action": "pr_merge",
+             "summary": ["Merge #42: Add PayPal checkout", "feature/paypal \u2192 main (squash)"]}),
 ]
+def done(i, sb, wt, kind, path, reason, status, **kw):
+    r = req(i, sb, wt, kind, path, reason, **kw)
+    r["status"], r["created_unix"] = status, now - 3600 * i
+    return r
+
+
+HISTORY = [
+    done(12, "webshop", "work/main", "gitgrant", "acme/shop", "Push the feature branch for the PayPal checkout.", "allowed",
+         git={"kind": "grant", "repo": "acme/shop", "write": True, "minutes": 15, "max_minutes": 60}),
+    done(11, "webshop", "work/checkout", "ghaction", "pr_create acme/shop", "Open the PR for the PayPal checkout.", "allowed",
+         git={"kind": "action", "repo": "acme/shop", "action": "pr_create",
+              "summary": ["Open a pull request: Add PayPal checkout", "feature/paypal \u2192 main"]}),
+    done(10, "webshop", "work/main", "ssh", "build.example.com", "Run the nightly build script on the build server.", "allowed"),
+    done(9, "blog", "work/main", "file", "Documents/Invoices/2024-Q2.pdf", "I need the invoice layout to build the PDF export.", "denied", files=1, bytes=170_000),
+]
+
 GRANTS = [{"id": 1, "sandbox": "webshop", "folder": "work/main", "host": "build.example.com", "key_fingerprint": KEY, "user": "deploy",
-           "expires_unix": now + 22 * 60, "per_connection": False, "revoked": False, "active": True, "host_key_fingerprints": [FP]}]
+           "expires_unix": now + 22 * 60, "per_connection": False, "revoked": False, "active": True, "host_key_fingerprints": [FP],
+           "reason": "Run the nightly build script on the build server."}]
+GIT_GRANTS = [{"id": 7, "sandbox": "webshop", "folder": "work/main", "repo": "acme/shop", "write": True,
+               "reason": "Push the feature branch for the PayPal checkout.", "expires_unix": now + 11 * 60}]
+GITHUB_APP = {"configured": True, "name": "Bergfried-3fa9c1", "slug": "bergfried-3fa9c1", "app_id": 1234567,
+              "install_url": "https://github.com/apps/bergfried-3fa9c1/installations/new",
+              "settings_url": "https://github.com/settings/apps/bergfried-3fa9c1",
+              "installations": [{"id": 1, "account": "acme"}]}
 AUDIT = [{"ts_unix": now - 60 * i, "actor": a, "event": e, "sandbox": "webshop", "folder": g, "detail": d} for i, (a, e, g, d) in enumerate([
     ("claude", "request.created", "work/main", "id=3 file Documents/Invoices/2024-Q3.pdf"),
     ("app", "ssh.grant_created", "main", "grant=1 host=build.example.com minutes=30"),
@@ -67,8 +95,13 @@ AUDIT = [{"ts_unix": now - 60 * i, "actor": a, "event": e, "sandbox": "webshop",
 ROUTES = {
     "/v1/status": {"version": "1.0.0", "base_ready": True, "base_name": "bergfried-base-demo", "template_version": 3,
                    "index_ready": True, "upstream_agent": True, "sandboxes": len(SANDBOXES)},
-    "/v1/sandboxes": SANDBOXES, "/v1/requests": REQUESTS, "/v1/ssh/grants": GRANTS, "/v1/audit": AUDIT,
+    "/v1/sandboxes": SANDBOXES, "/v1/requests": REQUESTS, "/v1/ssh/grants": GRANTS, "/v1/git/grants": GIT_GRANTS, "/v1/githubapp": GITHUB_APP, "/v1/audit": AUDIT,
     "/v1/claude/folders": {"folders": [{"folder": "work/main", "label": "main"}, {"folder": "work/checkout", "label": "checkout"}, {"folder": "work/docs", "label": "docs"}]},
+    "/v1/folders": {"folders": [
+        {"folder": "work/checkout", "name": "checkout", "git": True, "branch": "paypal", "dirty": False, "modified": now - 3600},
+        {"folder": "work/docs", "name": "docs", "git": True, "branch": "main", "dirty": True, "modified": now - 86400},
+        {"folder": "work/main", "name": "main", "git": True, "branch": "main", "dirty": False, "modified": now - 600},
+        {"folder": "work/scratch", "name": "scratch", "git": False, "branch": "", "dirty": False, "modified": now - 5 * 86400}]},
     "/v1/blocklist": {"paths": [".ssh", "Library", ".config", ".gnupg"], "names": [".env", ".env.*", "id_rsa"]},
     "/v1/update": {"current": "1.0.0", "latest": "1.0.0", "available": False, "notes": "", "url": "", "checked_unix": now, "updatable": True},
 }
@@ -88,6 +121,8 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(b)
 
     def do_GET(self):
+        if self.path.startswith("/v1/requests") and "all=1" in self.path:
+            return self._send(REQUESTS + HISTORY)
         self._send(ROUTES.get(self.path.split("?")[0], {}))
 
     def do_POST(self):

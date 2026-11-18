@@ -13,6 +13,7 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
+	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 )
 
@@ -124,6 +125,7 @@ type Monitor struct {
 	last      map[string]time.Time // last attempt per worktree
 	actions   map[string]string    // display state per worktree
 	installed map[string]bool      // helpers in this VM refreshed since daemon start
+	linked    map[string]string    // hash of the skills folder linked into this VM since daemon start
 	sticky    map[string]stickyRC  // active RC seen once per worktree, bound to the Claude PID
 	pids      map[string]int       // last seen Claude PID per worktree
 }
@@ -190,7 +192,14 @@ func (mo *Monitor) MarkRC(name, worktree string) error {
 
 func NewMonitor(m *sandbox.Manager) *Monitor {
 	return &Monitor{M: m, state: map[string]*SandboxState{}, inflight: map[string]bool{}, hold: map[string]int{},
-		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+		failures: map[string]int{}, norc: map[string]int{}, attempts: map[string]int{}, last: map[string]time.Time{}, actions: map[string]string{}, installed: map[string]bool{}, linked: map[string]string{}, sticky: map[string]stickyRC{}, pids: map[string]int{}}
+}
+
+// skillsRelinkNeeded reports whether the skills links of a sandbox must be refreshed: the skills
+// folder changed since the last refresh, or it was never linked since the daemon started.
+// linked only holds hashes whose relink succeeded, so a failure is retried at the next check.
+func skillsRelinkNeeded(linked map[string]string, name, hash string) bool {
+	return linked[name] != hash
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
@@ -377,6 +386,28 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.state[name] = &st
 	mo.mu.Unlock()
 
+	// The skills of the shared folder are linked into the VM: refresh the links when the folder
+	// changed (and once per daemon start). A failure is retried at the next check; the relink
+	// runs in the background so the rest of the check is not delayed.
+	if hash, err := skills.Hash(mo.M.SkillsDir()); err == nil {
+		mo.mu.Lock()
+		needed := skillsRelinkNeeded(mo.linked, name, hash)
+		mo.mu.Unlock()
+		if needed {
+			go func() {
+				lctx, lcancel := context.WithTimeout(ctx, 30*time.Second)
+				defer lcancel()
+				if err := mo.M.RelinkSkills(lctx, vm); err != nil {
+					fmt.Fprintln(os.Stderr, "linking skills in", name, ":", err)
+					return
+				}
+				mo.mu.Lock()
+				mo.linked[name] = hash
+				mo.mu.Unlock()
+			}()
+		}
+	}
+
 	// Worktrees where Claude is not wanted must not have a window: this also terminates the
 	// old OpenCode TUI windows of migrated sandboxes.
 	for w, a := range st.Worktrees {
@@ -553,6 +584,7 @@ func (mo *Monitor) tick(ctx context.Context) {
 		if !running[s.VM] {
 			mo.mu.Lock()
 			delete(mo.state, s.Name)
+			delete(mo.linked, s.Name)
 			mo.mu.Unlock()
 			continue
 		}
