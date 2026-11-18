@@ -96,7 +96,7 @@ for k in CFBundleShortVersionString CFBundleVersion; do /usr/libexec/PlistBuddy 
 codesign --force --deep --sign - $D/BergfriedDemo.app
 open -n --env BERGFRIED_HOME=/private/tmp/bft-demo $D/BergfriedDemo.app --args -AppleLanguages "(en)" -AppleLocale en_US
 ```
-Screenshots in `docs/img/` are 920×612 window captures (`requests.png`, `requests-grants.png`, `settings-github.png`, `git-grant-sheet.png`). The SVG mockups in `docs/design/` are hand-drawn; their PNGs are rendered with headless Chrome at 2× (`--force-device-scale-factor=2 --window-size=1280,900`, a system font replaces Inter if it is not installed). Never screenshot your real daemon: it shows real sandbox names and reasons.
+Screenshots in `docs/img/` are 920×612 window captures (`sandboxes.png` = webshop selected in the Sandboxes pane, `requests.png`, `requests-grants.png`, `settings-github.png`, `git-grant-sheet.png`). The SVG mockups in `docs/design/` are hand-drawn; their PNGs are rendered with headless Chrome at 2× (`--force-device-scale-factor=2 --window-size=1280,900`, a system font replaces Inter if it is not installed). Never screenshot your real daemon: it shows real sandbox names and reasons.
 
 Update the relevant file in the same commit/PR. Do not leave stale screenshots or feature lists; replace them or mark them clearly as outdated. The rule is also in `CLAUDE.md`.
 

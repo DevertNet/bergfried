@@ -2,9 +2,9 @@
 
 **Run Claude Code and OpenCode in isolated VMs on your Mac — and decide, one request at a time, what they may touch.**
 
-![Bergfried app: sandboxes with their folders and Claude](docs/design/folders-overview-mockup.png)
+![Bergfried app: sandbox list, Claude and OpenCode cards and the folders of the selected sandbox](docs/img/sandboxes.png)
 
-<sub>Design mockup with made-up data; the live app follows this layout (try it without a daemon with [tools/demoapi](tools/demoapi/demoapi.py)).</sub>
+<sub>Screenshot of the app with made-up data (try it without a daemon with [tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
 Bergfried gives every project its own Linux VM (a **sandbox**) with Claude Code and the OpenCode service inside. Control Claude from your phone with Claude Code Remote Control and OpenCode from the OpenCode desktop app; the assistants
 see nothing of your Mac until you say so: files, SSH access and GitHub access are **requests you approve in a native macOS app**.
@@ -101,7 +101,7 @@ Updates installed from inside the app are not quarantined. Only do this if you t
 Built by and for the author on macOS; **young software, not audited**. Releases come in two channels (stable and dev, see [docs/UPDATES.md](docs/UPDATES.md)); open work is in [docs/ROADMAP.md](docs/ROADMAP.md). The app is ad-hoc signed, so macOS asks for folder access again after each update. A Debian VPS host is designed but postponed.
 
 ## Documentation
-[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/design/folders-overview-mockup.png) · [Folder browser](docs/design/claude-folder-browser-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
+[Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [GitHub access](docs/GITHUB.md) · [Updates](docs/UPDATES.md) · [Development](docs/DEVELOPMENT.md) · [Roadmap](docs/ROADMAP.md) · [Manual tests](docs/testing/) · [UI overview](docs/img/sandboxes.png) · [Folder browser](docs/design/claude-folder-browser-mockup.png) · [Settings overview](docs/design/settings-overview-mockup.png) · [Project rules](CLAUDE.md)
 
 ## License
 Not chosen yet — until a license file is added, all rights are reserved.
