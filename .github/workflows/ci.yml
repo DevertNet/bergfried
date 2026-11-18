@@ -1,13 +1,18 @@
 name: ci
 
-# Tests and a macOS app build on every branch and pull request (no release is published here).
+# Tests and a macOS app build on every push to every branch (no release is published here). Pull requests are covered by the
+# push run of their branch: a separate pull_request trigger would run the same jobs a second time.
 on:
   push:
     branches: ["**"]
-  pull_request:
 
 permissions:
   contents: read
+
+# A newer push to a work branch makes the older run pointless; dev and main always run to the end (dev-release, release checks).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
 
 jobs:
   go:
@@ -29,9 +34,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # app/build.sh builds the Go helpers (darwin and linux) itself, so they are not built a second time here.
       - name: Build daemon, MCP server and app
-        run: |
-          mkdir -p bin
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o bin/bergfriedd ./daemon/cmd/bergfriedd
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/bergfried-mcp ./mcp/cmd/bergfried-mcp
-          app/build.sh
+        run: app/build.sh
