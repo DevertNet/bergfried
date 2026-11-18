@@ -175,7 +175,7 @@ func (s *Service) RequestGrant(ctx context.Context, sandbox, folder, repo string
 	}
 	d := Detail{Kind: "grant", Repo: gr.String(), Write: write, Minutes: minutes, Max: MaxMinutes, Others: s.othersLine(sandbox)}
 	extra, _ := json.Marshal(d)
-	id, err := s.S.AddRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "gitgrant", Path: gr.String(), Reason: clean(reason, 300), Status: "pending", Extra: string(extra)})
+	id, err := s.addRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "gitgrant", Path: gr.String(), Reason: clean(reason, 300), Status: "pending", Extra: string(extra)})
 	if err != nil {
 		return GrantResult{}, err
 	}
@@ -202,11 +202,23 @@ func (s *Service) RequestGrant(ctx context.Context, sandbox, folder, repo string
 		Message: fmt.Sprintf("Git access to %s granted (%s) until %s. Use plain git now; when the task is finished call release_git_access with task_id %d.", gr, mode, o.expires.Local().Format("15:04"), o.grant)}, nil
 }
 
-// wait registers a waiter for a request and blocks until it is decided.
-func (s *Service) wait(ctx context.Context, id int64, sandbox, folder, event string) (outcome, error) {
-	ch := make(chan outcome, 1)
+// addRequest stores a pending request and registers its waiter in one step (under s.mu), so that Decide never sees a request
+// whose requester is not yet waiting.
+func (s *Service) addRequest(r store.Request) (int64, error) {
 	s.mu.Lock()
-	s.waiters[id] = ch
+	defer s.mu.Unlock()
+	id, err := s.S.AddRequest(r)
+	if err != nil {
+		return 0, err
+	}
+	s.waiters[id] = make(chan outcome, 1)
+	return id, nil
+}
+
+// wait blocks until a request created with addRequest is decided.
+func (s *Service) wait(ctx context.Context, id int64, sandbox, folder, event string) (outcome, error) {
+	s.mu.Lock()
+	ch := s.waiters[id]
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.waiters, id); s.mu.Unlock() }()
 	timer := time.NewTimer(s.Timeout)
@@ -227,16 +239,16 @@ func (s *Service) wait(ctx context.Context, id int64, sandbox, folder, event str
 
 // Decide is the user's answer from the app. For grants minutes and write may be changed by the user.
 func (s *Service) Decide(ctx context.Context, id int64, allow bool, minutes int, write bool, note string) error {
+	s.mu.Lock() // together with addRequest: a visible request always has its waiter
 	r, err := s.S.GetRequest(id)
+	ch, ok := s.waiters[id]
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
 	if (r.Kind != "gitgrant" && r.Kind != "ghaction") || r.Status != "pending" {
 		return fmt.Errorf("request %d is not an open git request", id)
 	}
-	s.mu.Lock()
-	ch, ok := s.waiters[id]
-	s.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("request %d is no longer waiting (the requester gave up)", id)
 	}

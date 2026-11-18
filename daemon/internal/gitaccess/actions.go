@@ -155,7 +155,7 @@ func (s *Service) Action(ctx context.Context, sandbox, folder string, a ActionRe
 	}
 	d := Detail{Kind: "action", Repo: gr.String(), Action: a.Action, Summary: sum, Others: nil}
 	extra, _ := json.Marshal(d)
-	id, err := s.S.AddRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "ghaction", Path: a.Action + " " + gr.String(), Reason: clean(a.Reason, 300), Status: "pending", Extra: string(extra)})
+	id, err := s.addRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "ghaction", Path: a.Action + " " + gr.String(), Reason: clean(a.Reason, 300), Status: "pending", Extra: string(extra)})
 	if err != nil {
 		return ActionRes{}, err
 	}
