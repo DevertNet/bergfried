@@ -310,7 +310,7 @@ struct ClaudeServiceCard: View {
                     HStack(spacing: 6) {
                         Text("Claude Code").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
                             .help(L("One Claude per folder, started in the folder list below – no git worktree, no new branch. Remote Control is available for every running Claude."))
-                        if !restartReasons.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues.")), compact: true) }
+                        if !restartReasons.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "Claude", reasons: restartReasons, footer: L("Use “Restart Claude” in the folder's menu; the conversation continues."))) }
                     }
                     if model.isReady(s) {
                         HStack(spacing: 5) {
@@ -381,7 +381,7 @@ struct OpenCodeServiceCard: View {
                     HStack(spacing: 6) {
                         Text("OpenCode").font(.callout.weight(.semibold)).lineLimit(1).fixedSize()
                             .help(L("One service for the whole sandbox. Opens the folders as projects in the desktop app."))
-                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu.")), compact: true) }
+                        if serviceRunning, let r = s.opencodeRestartReasons, !r.isEmpty { RestartNeededLabel(help: L("Restart needed") + " – " + restartHelp(tool: "OpenCode", reasons: r, footer: L("Use “Restart service” in the menu."))) }
                     }
                     if model.isReady(s) {
                         HStack(spacing: 5) {
@@ -850,16 +850,22 @@ func restartHelp(tool: String, reasons: [String], footer: String) -> String {
 
 struct RestartNeededLabel: View {
     let help: String
-    /// Icon only (tooltip carries the text) where horizontal space is tight, for example in folder rows.
+    /// Icon only where horizontal space is tight, for example in folder rows.
     var compact = false
+    @Local private var open = false
     var body: some View {
-        Group {
+        // Hover shows the reason as a tooltip; a click opens it as a popover (tooltips are easy to miss on an inactive window).
+        Button { open.toggle() } label: {
             if compact {
                 Image(systemName: "arrow.clockwise.circle.fill")
             } else {
                 Label("Restart needed", systemImage: "arrow.clockwise.circle.fill").lineLimit(1)
             }
         }
+        .buttonStyle(.plain)
         .font(.caption).foregroundStyle(.orange).fixedSize().help(help)
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            Text(help).font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 300, alignment: .leading).padding(12)
+        }
     }
 }
