@@ -325,6 +325,9 @@ type Daemon struct {
 	Skills    *skills.Service
 	AdminSock string
 	L         lima.Client
+	// VMs lists the VMs for Reconcile (the monitor's short-lived cache, so the 5 s loop does not start a
+	// limactl process every time); nil: ask L directly.
+	VMs func(ctx context.Context) ([]lima.Instance, error)
 
 	mu      sync.Mutex
 	servers map[string]*runtime // Sandbox -> Server + ssh-agent socket
@@ -411,7 +414,11 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	vms, err := d.L.List(ctx)
+	list := d.L.List
+	if d.VMs != nil {
+		list = d.VMs
+	}
+	vms, err := list(ctx)
 	if err != nil {
 		return err
 	}
