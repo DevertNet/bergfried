@@ -101,6 +101,7 @@ Screenshots in `docs/img/` are 920×612 window captures (`sandboxes.png` = websh
 Update the relevant file in the same commit/PR. Do not leave stale screenshots or feature lists; replace them or mark them clearly as outdated. The rule is also in `CLAUDE.md`.
 
 ## Remote Control detection (monitor)
+- Probe cost: every probe is a `limactl shell`; the login/version checks start Node/Bun binaries in the VM and are the expensive part. Keep new checks that start binaries inside the `%[1]d = 1` (full probe) gate of `probeScript`, and keep the intervals in `pollInterval`/`needFullProbe` (`monitor.go`, tests in `monitor_test.go`) in step with `docs/ARCHITECTURE.md`. Not verified on real VMs: the energy effect was not measured yet (`powermetrics` before/after).
 - The banner "/remote-control is active" appears at the **start** of the output and scrolls away. The monitor reads the whole tmux scrollback (`history-limit 20000`) and remembers active RC **per claude PID** (`stickyRC`): the same process still running means RC is active.
 - `/remote-control` while RC is active **opens a dialog** ("This session is available in the Claude mobile app …", with "Disconnect this session"). The monitor treats it as "RC active" and closes it with **Escape** (never Enter).
   Escape hatch in the app: Claude row menu → "Remote Control is running – mark as active".

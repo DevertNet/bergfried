@@ -109,6 +109,8 @@ func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *J
 		}
 		if sess != "" && s.Mon != nil {
 			s.Mon.Release(sess)
+		} else if s.Mon != nil {
+			s.Mon.InvalidateVMs() // the job may have created, started or deleted VMs
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -277,7 +279,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/audit.csv", s.auditCSV)
 	mux.HandleFunc("GET /v1/blocklist", s.getBlocklist)
 	mux.HandleFunc("PUT /v1/blocklist", s.putBlocklist)
-	return mux
+	if s.Mon == nil {
+		return mux
+	}
+	// Every API call comes from the app: the monitor polls faster while the app is connected.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Mon.Touch()
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// vmList is `limactl list`, taken from the monitor's short-lived cache when there is one.
+func (s *Server) vmList(ctx context.Context) ([]lima.Instance, error) {
+	if s.Mon != nil {
+		return s.Mon.VMs(ctx)
+	}
+	return s.M.L.List(ctx)
 }
 
 // Serve listens on the unix socket (directory 0700, socket 0600).
@@ -303,7 +320,7 @@ func (s *Server) Serve(ctx context.Context, sock string) error {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	vms, err := s.M.L.List(r.Context())
+	vms, err := s.vmList(r.Context())
 	if err != nil {
 		fail(w, 500, err)
 		return
@@ -351,7 +368,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
-	vms, err := s.M.L.List(r.Context())
+	vms, err := s.vmList(r.Context())
 	if err != nil {
 		fail(w, 500, err)
 		return
@@ -867,7 +884,7 @@ func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, e
 	if err != nil {
 		return templateJ{}, err
 	}
-	vms, _ := s.M.L.List(r.Context())
+	vms, _ := s.vmList(r.Context())
 	ready := false
 	for _, v := range vms {
 		if v.Name == s.M.BaseName() {

@@ -20,15 +20,22 @@ import (
 // probeScript runs in the VM and reports logins, disk usage and, per tmux window, the Claude
 // process and its Remote Control status. The OpenCode service is sandbox-wide: only its
 // installed/running state is reported here.
+//
+// The script has a cheap part (file tests, pgrep, df, tmux) and an expensive part that starts the
+// Claude and OpenCode binaries (version and login checks, several Node/Bun processes). The
+// expensive part only runs for a full probe (%[1]d = 1, see needFullProbe); a cheap probe leaves
+// those fields out and check() keeps the previous values.
 const probeScript = `export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 echo "inst_claude=$([ -x "$HOME/.local/bin/claude" ] && echo true || echo false)"
-echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
 echo "oc_service=$(pgrep -x opencode >/dev/null 2>&1 && echo true || echo false)"
-if [ %[1]d = 1 ]; then echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"; fi
-OC="$HOME/.opencode/bin/opencode"
-if [ -x "$OC" ]; then
-  echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
-else echo "login_opencode=false"; fi
+if [ %[1]d = 1 ]; then
+  echo "inst_opencode=$([ -x "$HOME/.opencode/bin/opencode" ] && "$HOME/.opencode/bin/opencode" --version >/dev/null 2>&1 && echo true || echo false)"
+  echo "login_claude=$(claude auth status 2>/dev/null | jq -r '.loggedIn // false' 2>/dev/null || echo false)"
+  OC="$HOME/.opencode/bin/opencode"
+  if [ -x "$OC" ]; then
+    echo "login_opencode=$("$OC" auth list --format json 2>/dev/null | jq -r '[.[]?.connections[]?] | length > 0' 2>/dev/null || echo false)"
+  else echo "login_opencode=false"; fi
+fi
 df -B1 --output=used,size / | tail -1 | awk '{print "disk="$1" "$2}'
 if tmux has-session -t bf 2>/dev/null; then
   for w in $(tmux list-windows -t bf -F '#W'); do
@@ -109,13 +116,71 @@ type SandboxState struct {
 	GuestSize         int64
 	Worktrees         map[string]WorktreeState
 	Checked           time.Time
+	FullChecked       time.Time // last probe that also ran the expensive login/version checks
 	Err               string
+}
+
+// Polling rhythm. Every probe is a `limactl shell` into the VM and every VM listing a `limactl`
+// process, so the intervals are tuned for energy: fast while the app is connected or while the
+// monitor still has work to do (Remote Control activation), slow otherwise.
+const (
+	appActiveWindow = 15 * time.Second // the app counts as connected if it called the API this recently
+	intervalFast    = 5 * time.Second  // something is not settled yet (login, Remote Control, a failing probe)
+	intervalCalm    = 20 * time.Second // settled Claude windows: still watched, they can exit
+	intervalIdle    = 60 * time.Second // no Claude window at all and nobody looks: nothing to do for the monitor
+	fullProbeIdle   = 5 * time.Minute  // without the app, login/version checks are refreshed this rarely
+	listTTLActive   = 5 * time.Second  // cache of `limactl list` while the app polls
+	listTTLIdle     = 15 * time.Second // ... and while it does not
+)
+
+// pollInterval is the time between two probes of a sandbox. With the app connected the monitor
+// keeps its old rhythm (the UI shows login and install state). Without the app only the Remote
+// Control automation matters: it needs a fast rhythm while a Claude window is unsettled and no
+// rhythm at all without Claude windows. gaveUp tells whether the automation has given up on a
+// worktree (then it is not unsettled any more); failing is true while probes fail (VM booting).
+func pollInterval(st *SandboxState, active, failing bool, gaveUp func(worktree string) bool) time.Duration {
+	if st == nil {
+		return 0
+	}
+	if failing {
+		return intervalFast
+	}
+	if active {
+		if st.stable() {
+			return intervalCalm
+		}
+		return intervalFast
+	}
+	if len(st.Worktrees) == 0 {
+		return intervalIdle
+	}
+	for w, a := range st.Worktrees {
+		if !a.RC && (gaveUp == nil || !gaveUp(w)) {
+			return intervalFast
+		}
+	}
+	return intervalCalm
+}
+
+// needFullProbe: with the app connected every probe is a full one (a login in the VM must show
+// up quickly); without it the expensive checks are only refreshed every fullProbeIdle. The first
+// probe of a sandbox is always full.
+func needFullProbe(st *SandboxState, active bool, now time.Time) bool {
+	if st == nil || st.FullChecked.IsZero() {
+		return true
+	}
+	return active || now.Sub(st.FullChecked) >= fullProbeIdle
 }
 
 type Monitor struct {
 	M *sandbox.Manager
 
+	fetchMu sync.Mutex // serialises `limactl list` calls so concurrent callers share one result
+
 	mu        sync.Mutex
+	touched   time.Time       // last API call of the app
+	listAt    time.Time       // when listVMs was fetched; zero = stale
+	listVMs   []lima.Instance // cached `limactl list`
 	state     map[string]*SandboxState
 	inflight  map[string]bool
 	hold      map[string]int       // sandboxes with a running job: do not poll
@@ -203,17 +268,79 @@ func skillsRelinkNeeded(linked map[string]string, name, hash string) bool {
 }
 
 // Hold/Release: during a job (start, stop, create …) the sandbox is not polled.
-func (mo *Monitor) Hold(name string) { mo.mu.Lock(); mo.hold[name]++; mo.mu.Unlock() }
+func (mo *Monitor) Hold(name string) {
+	mo.mu.Lock()
+	mo.hold[name]++
+	mo.listAt = time.Time{} // a job usually changes the VM state
+	mo.mu.Unlock()
+}
 func (mo *Monitor) Release(name string) {
 	mo.mu.Lock()
 	mo.hold[name]--
 	mo.Poke2(name)
 	mo.mu.Unlock()
 }
+
+// Poke2 forces a full re-check of the sandbox and a fresh VM list (caller holds mo.mu).
 func (mo *Monitor) Poke2(name string) {
+	mo.listAt = time.Time{}
 	if s, ok := mo.state[name]; ok {
 		s.Checked = time.Time{}
+		s.FullChecked = time.Time{}
 	}
+}
+
+// InvalidateVMs drops the cached VM list so the next caller sees the current state.
+func (mo *Monitor) InvalidateVMs() {
+	mo.mu.Lock()
+	mo.listAt = time.Time{}
+	mo.mu.Unlock()
+}
+
+func (mo *Monitor) activeLocked(now time.Time) bool {
+	return !mo.touched.IsZero() && now.Sub(mo.touched) < appActiveWindow
+}
+
+// Touch records that the app is connected (called for every API request). The first call after a
+// quiet period makes every sandbox due at once with a full probe, so the app does not show state
+// that is minutes old.
+func (mo *Monitor) Touch() {
+	now := time.Now()
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	wasIdle := !mo.activeLocked(now)
+	mo.touched = now
+	if wasIdle {
+		for name := range mo.state {
+			mo.Poke2(name)
+		}
+	}
+}
+
+// VMs returns `limactl list`, cached for a few seconds: the app polls the API every two seconds
+// and the monitor ticks every three, and each listing starts a limactl process.
+func (mo *Monitor) VMs(ctx context.Context) ([]lima.Instance, error) {
+	mo.fetchMu.Lock()
+	defer mo.fetchMu.Unlock()
+	mo.mu.Lock()
+	ttl := listTTLIdle
+	if mo.activeLocked(time.Now()) {
+		ttl = listTTLActive
+	}
+	if !mo.listAt.IsZero() && time.Since(mo.listAt) < ttl {
+		vms := append([]lima.Instance(nil), mo.listVMs...)
+		mo.mu.Unlock()
+		return vms, nil
+	}
+	mo.mu.Unlock()
+	vms, err := mo.M.L.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mo.mu.Lock()
+	mo.listVMs, mo.listAt = append([]lima.Instance(nil), vms...), time.Now()
+	mo.mu.Unlock()
+	return vms, nil
 }
 
 // ResetClaude resets a Claude folder's automatic RC activation (e.g. after a manual restart).
@@ -261,10 +388,17 @@ func (mo *Monitor) Get(name string) (SandboxState, bool) {
 // Poke forces a prompt re-check.
 func (mo *Monitor) Poke(name string) {
 	mo.mu.Lock()
-	if s, ok := mo.state[name]; ok {
-		s.Checked = time.Time{}
-	}
+	mo.Poke2(name)
 	mo.mu.Unlock()
+}
+
+// carryExpensive copies the fields only a full probe reports from the previous state into the
+// result of a cheap probe.
+func carryExpensive(st, prev SandboxState) SandboxState {
+	st.ClaudeLoggedIn, st.OpenCodeLoggedIn = prev.ClaudeLoggedIn, prev.OpenCodeLoggedIn
+	st.OpenCodeInstalled = prev.OpenCodeInstalled
+	st.FullChecked = prev.FullChecked
+	return st
 }
 
 func (s *SandboxState) stable() bool {
@@ -334,7 +468,9 @@ func parseProbe(out string) SandboxState {
 	return st
 }
 
-func (mo *Monitor) check(ctx context.Context, name, vm string) {
+// check probes one sandbox. full also runs the expensive login/version checks; otherwise those
+// values are carried over from the previous probe.
+func (mo *Monitor) check(ctx context.Context, name, vm string, full bool) {
 	cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
 	registered, _ := mo.M.S.ListWorktrees(name)
@@ -342,7 +478,7 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	for _, w := range registered {
 		byName[w.Name] = w
 	}
-	script := fmt.Sprintf(probeScript, 1)
+	script := fmt.Sprintf(probeScript, boolInt(full))
 	out, err := mo.M.L.Shell(cctx, vm, "bash", "-c", script)
 	mo.mu.Lock()
 	prev := mo.state[name]
@@ -363,6 +499,11 @@ func (mo *Monitor) check(ctx context.Context, name, vm string) {
 	mo.failures[name] = 0
 	st := parseProbe(string(out))
 	st.Checked = time.Now()
+	if full || prev == nil {
+		st.FullChecked = st.Checked
+	} else {
+		st = carryExpensive(st, *prev)
+	}
 	// Only registered worktrees count (no tmux default window "bash"/"shell").
 	for w := range st.Worktrees {
 		if _, ok := byName[w]; !ok {
@@ -566,7 +707,7 @@ func (mo *Monitor) tick(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	vms, err := mo.M.L.List(ctx)
+	vms, err := mo.VMs(ctx)
 	if err != nil {
 		return
 	}
@@ -590,7 +731,11 @@ func (mo *Monitor) tick(ctx context.Context) {
 		}
 		mo.mu.Lock()
 		st := mo.state[s.Name]
-		due := st == nil || time.Since(st.Checked) > map[bool]time.Duration{true: 20 * time.Second, false: 5 * time.Second}[st.stable()]
+		now := time.Now()
+		active := mo.activeLocked(now)
+		gaveUp := func(w string) bool { return mo.attempts[s.Name+"/"+w] >= rcMaxAttempts }
+		due := st == nil || now.Sub(st.Checked) > pollInterval(st, active, mo.failures[s.Name] > 0, gaveUp)
+		full := needFullProbe(st, active, now)
 		busy := mo.inflight[s.Name]
 		if due && !busy {
 			mo.inflight[s.Name] = true
@@ -600,7 +745,7 @@ func (mo *Monitor) tick(ctx context.Context) {
 			name, vm := s.Name, s.VM
 			go func() {
 				defer func() { mo.mu.Lock(); delete(mo.inflight, name); mo.mu.Unlock() }()
-				mo.check(ctx, name, vm)
+				mo.check(ctx, name, vm, full)
 			}()
 		}
 	}
