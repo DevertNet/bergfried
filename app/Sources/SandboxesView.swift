@@ -236,7 +236,7 @@ struct SandboxCard: View {
             HStack(alignment: .top, spacing: 10) {
                 ClaudeServiceCard(s: s)
                 OpenCodeServiceCard(s: s)
-            }
+            }.fixedSize(horizontal: false, vertical: true)
             FoldersCard(s: s)
         }
     }
@@ -340,7 +340,7 @@ struct ClaudeServiceCard: View {
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
         .sheet(isPresented: $showStart) { StartClaudeSheet(sandbox: s) }
@@ -423,7 +423,7 @@ struct OpenCodeServiceCard: View {
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.secondary.opacity(0.14)))
         .sheet(isPresented: $showPairSheet) {
