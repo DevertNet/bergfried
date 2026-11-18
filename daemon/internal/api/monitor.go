@@ -181,6 +181,7 @@ type Monitor struct {
 	touched   time.Time       // last API call of the app
 	listAt    time.Time       // when listVMs was fetched; zero = stale
 	listVMs   []lima.Instance // cached `limactl list`
+	listGen   int             // bumped on every invalidation: a listing that started before it must not be cached
 	state     map[string]*SandboxState
 	inflight  map[string]bool
 	hold      map[string]int       // sandboxes with a running job: do not poll
@@ -271,7 +272,7 @@ func skillsRelinkNeeded(linked map[string]string, name, hash string) bool {
 func (mo *Monitor) Hold(name string) {
 	mo.mu.Lock()
 	mo.hold[name]++
-	mo.listAt = time.Time{} // a job usually changes the VM state
+	mo.invalidateLocked() // a job usually changes the VM state
 	mo.mu.Unlock()
 }
 func (mo *Monitor) Release(name string) {
@@ -283,7 +284,7 @@ func (mo *Monitor) Release(name string) {
 
 // Poke2 forces a full re-check of the sandbox and a fresh VM list (caller holds mo.mu).
 func (mo *Monitor) Poke2(name string) {
-	mo.listAt = time.Time{}
+	mo.invalidateLocked()
 	if s, ok := mo.state[name]; ok {
 		s.Checked = time.Time{}
 		s.FullChecked = time.Time{}
@@ -293,8 +294,13 @@ func (mo *Monitor) Poke2(name string) {
 // InvalidateVMs drops the cached VM list so the next caller sees the current state.
 func (mo *Monitor) InvalidateVMs() {
 	mo.mu.Lock()
-	mo.listAt = time.Time{}
+	mo.invalidateLocked()
 	mo.mu.Unlock()
+}
+
+func (mo *Monitor) invalidateLocked() {
+	mo.listAt = time.Time{}
+	mo.listGen++
 }
 
 func (mo *Monitor) activeLocked(now time.Time) bool {
@@ -332,13 +338,16 @@ func (mo *Monitor) VMs(ctx context.Context) ([]lima.Instance, error) {
 		mo.mu.Unlock()
 		return vms, nil
 	}
+	gen := mo.listGen
 	mo.mu.Unlock()
 	vms, err := mo.M.L.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 	mo.mu.Lock()
-	mo.listVMs, mo.listAt = append([]lima.Instance(nil), vms...), time.Now()
+	if gen == mo.listGen { // not invalidated while limactl ran, else the result may already be outdated
+		mo.listVMs, mo.listAt = append([]lima.Instance(nil), vms...), time.Now()
+	}
 	mo.mu.Unlock()
 	return vms, nil
 }

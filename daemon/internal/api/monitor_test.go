@@ -1,10 +1,15 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 )
 
 func TestParseProbe(t *testing.T) {
@@ -273,7 +278,7 @@ func TestNeedFullProbe(t *testing.T) {
 }
 
 func TestCheapProbeKeepsExpensiveFields(t *testing.T) {
-	full := now()
+	full := time.Now()
 	prev := SandboxState{ClaudeLoggedIn: boolPtr(true), OpenCodeLoggedIn: boolPtr(true), OpenCodeInstalled: true, FullChecked: full}
 	// A cheap probe reports neither login nor the OpenCode version.
 	cheap := parseProbe("inst_claude=true\noc_service=false\ndisk=1 2\nwin=main rc=1 cpid=5\n")
@@ -288,8 +293,6 @@ func TestCheapProbeKeepsExpensiveFields(t *testing.T) {
 		t.Fatalf("cheap fields must come from the new probe: %+v", got)
 	}
 }
-
-func now() time.Time { return time.Now() }
 
 func TestProbeScriptCheapPartSkipsBinaries(t *testing.T) {
 	cheap := fmt.Sprintf(probeScript, 0)
@@ -329,5 +332,47 @@ func TestMonitorTouchAndVMCache(t *testing.T) {
 	mo.InvalidateVMs()
 	if !mo.listAt.IsZero() {
 		t.Fatal("InvalidateVMs")
+	}
+}
+
+// countingRunner answers `limactl list --json` with one VM and counts the calls; hook runs inside
+// the call (used to invalidate the cache while a listing is in flight).
+type countingRunner struct {
+	n    atomic.Int32
+	hook func()
+}
+
+func (r *countingRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	r.n.Add(1)
+	if r.hook != nil {
+		r.hook()
+	}
+	return []byte(`{"name":"vm","status":"Running"}` + "\n"), nil
+}
+
+func TestVMsCacheAndInvalidation(t *testing.T) {
+	r := &countingRunner{}
+	mo := NewMonitor(&sandbox.Manager{L: lima.Client{R: r}})
+	for i := 0; i < 3; i++ {
+		if vms, err := mo.VMs(context.Background()); err != nil || len(vms) != 1 {
+			t.Fatalf("%v %v", vms, err)
+		}
+	}
+	if r.n.Load() != 1 {
+		t.Fatalf("three calls within the TTL must run limactl once, ran %d", r.n.Load())
+	}
+	mo.InvalidateVMs()
+	_, _ = mo.VMs(context.Background())
+	if r.n.Load() != 2 {
+		t.Fatal("an invalidated cache must be refreshed")
+	}
+	// Invalidation while limactl runs: the (possibly outdated) result is returned but not cached.
+	mo.InvalidateVMs()
+	r.hook = func() { mo.InvalidateVMs() }
+	_, _ = mo.VMs(context.Background())
+	r.hook = nil
+	_, _ = mo.VMs(context.Background())
+	if r.n.Load() != 4 {
+		t.Fatalf("a listing that raced with an invalidation must not be cached, runs=%d", r.n.Load())
 	}
 }
