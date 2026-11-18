@@ -27,6 +27,10 @@ const (
 	SandboxAPI_ReleaseSSH_FullMethodName         = "/bergfried.v1.SandboxAPI/ReleaseSSH"
 	SandboxAPI_SSHAttempt_FullMethodName         = "/bergfried.v1.SandboxAPI/SSHAttempt"
 	SandboxAPI_RequestGitHubToken_FullMethodName = "/bergfried.v1.SandboxAPI/RequestGitHubToken"
+	SandboxAPI_RequestGitAccess_FullMethodName   = "/bergfried.v1.SandboxAPI/RequestGitAccess"
+	SandboxAPI_ReleaseGitAccess_FullMethodName   = "/bergfried.v1.SandboxAPI/ReleaseGitAccess"
+	SandboxAPI_GitCredential_FullMethodName      = "/bergfried.v1.SandboxAPI/GitCredential"
+	SandboxAPI_GitHubAction_FullMethodName       = "/bergfried.v1.SandboxAPI/GitHubAction"
 	SandboxAPI_ProposeSkillChange_FullMethodName = "/bergfried.v1.SandboxAPI/ProposeSkillChange"
 )
 
@@ -51,6 +55,14 @@ type SandboxAPIClient interface {
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
 	// in the app; blocks until the user has decided.
 	RequestGitHubToken(ctx context.Context, in *GitHubTokenRequest, opts ...grpc.CallOption) (*GitHubTokenResult, error)
+	// GitHub through the user's own GitHub App (docs/GITHUB.md). A git grant is time-limited, like an SSH grant: the user allows it,
+	// the credential helper in the VM then receives a narrow installation token, ReleaseGitAccess ends it.
+	RequestGitAccess(ctx context.Context, in *GitAccessRequest, opts ...grpc.CallOption) (*GitAccessResult, error)
+	ReleaseGitAccess(ctx context.Context, in *GitReleaseRequest, opts ...grpc.CallOption) (*GitReleaseResult, error)
+	// Called by the git credential helper in the VM. Returns no credentials without an active grant for the repository.
+	GitCredential(ctx context.Context, in *GitCredentialRequest, opts ...grpc.CallOption) (*GitCredentialResult, error)
+	// One GitHub API action executed by the daemon (merge, pull request, CI). Changes ask the user every time.
+	GitHubAction(ctx context.Context, in *GitHubActionRequest, opts ...grpc.CallOption) (*GitHubActionResult, error)
 	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
 	ProposeSkillChange(ctx context.Context, in *SkillProposalRequest, opts ...grpc.CallOption) (*SkillProposalResult, error)
 }
@@ -143,6 +155,46 @@ func (c *sandboxAPIClient) RequestGitHubToken(ctx context.Context, in *GitHubTok
 	return out, nil
 }
 
+func (c *sandboxAPIClient) RequestGitAccess(ctx context.Context, in *GitAccessRequest, opts ...grpc.CallOption) (*GitAccessResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitAccessResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_RequestGitAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxAPIClient) ReleaseGitAccess(ctx context.Context, in *GitReleaseRequest, opts ...grpc.CallOption) (*GitReleaseResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitReleaseResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_ReleaseGitAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxAPIClient) GitCredential(ctx context.Context, in *GitCredentialRequest, opts ...grpc.CallOption) (*GitCredentialResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitCredentialResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_GitCredential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxAPIClient) GitHubAction(ctx context.Context, in *GitHubActionRequest, opts ...grpc.CallOption) (*GitHubActionResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitHubActionResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_GitHubAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *sandboxAPIClient) ProposeSkillChange(ctx context.Context, in *SkillProposalRequest, opts ...grpc.CallOption) (*SkillProposalResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SkillProposalResult)
@@ -174,6 +226,14 @@ type SandboxAPIServer interface {
 	// GitHub access (token per sandbox, lives in the VM): if the token or access to a repo is missing this starts the token flow
 	// in the app; blocks until the user has decided.
 	RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error)
+	// GitHub through the user's own GitHub App (docs/GITHUB.md). A git grant is time-limited, like an SSH grant: the user allows it,
+	// the credential helper in the VM then receives a narrow installation token, ReleaseGitAccess ends it.
+	RequestGitAccess(context.Context, *GitAccessRequest) (*GitAccessResult, error)
+	ReleaseGitAccess(context.Context, *GitReleaseRequest) (*GitReleaseResult, error)
+	// Called by the git credential helper in the VM. Returns no credentials without an active grant for the repository.
+	GitCredential(context.Context, *GitCredentialRequest) (*GitCredentialResult, error)
+	// One GitHub API action executed by the daemon (merge, pull request, CI). Changes ask the user every time.
+	GitHubAction(context.Context, *GitHubActionRequest) (*GitHubActionResult, error)
 	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
 	ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error)
 	mustEmbedUnimplementedSandboxAPIServer()
@@ -209,6 +269,18 @@ func (UnimplementedSandboxAPIServer) SSHAttempt(context.Context, *SSHAttemptRequ
 }
 func (UnimplementedSandboxAPIServer) RequestGitHubToken(context.Context, *GitHubTokenRequest) (*GitHubTokenResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestGitHubToken not implemented")
+}
+func (UnimplementedSandboxAPIServer) RequestGitAccess(context.Context, *GitAccessRequest) (*GitAccessResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestGitAccess not implemented")
+}
+func (UnimplementedSandboxAPIServer) ReleaseGitAccess(context.Context, *GitReleaseRequest) (*GitReleaseResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseGitAccess not implemented")
+}
+func (UnimplementedSandboxAPIServer) GitCredential(context.Context, *GitCredentialRequest) (*GitCredentialResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitCredential not implemented")
+}
+func (UnimplementedSandboxAPIServer) GitHubAction(context.Context, *GitHubActionRequest) (*GitHubActionResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method GitHubAction not implemented")
 }
 func (UnimplementedSandboxAPIServer) ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProposeSkillChange not implemented")
@@ -378,6 +450,78 @@ func _SandboxAPI_RequestGitHubToken_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxAPI_RequestGitAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).RequestGitAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_RequestGitAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).RequestGitAccess(ctx, req.(*GitAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxAPI_ReleaseGitAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitReleaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).ReleaseGitAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_ReleaseGitAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).ReleaseGitAccess(ctx, req.(*GitReleaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxAPI_GitCredential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitCredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).GitCredential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_GitCredential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).GitCredential(ctx, req.(*GitCredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxAPI_GitHubAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitHubActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).GitHubAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_GitHubAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).GitHubAction(ctx, req.(*GitHubActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SandboxAPI_ProposeSkillChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SkillProposalRequest)
 	if err := dec(in); err != nil {
@@ -434,6 +578,22 @@ var SandboxAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestGitHubToken",
 			Handler:    _SandboxAPI_RequestGitHubToken_Handler,
+		},
+		{
+			MethodName: "RequestGitAccess",
+			Handler:    _SandboxAPI_RequestGitAccess_Handler,
+		},
+		{
+			MethodName: "ReleaseGitAccess",
+			Handler:    _SandboxAPI_ReleaseGitAccess_Handler,
+		},
+		{
+			MethodName: "GitCredential",
+			Handler:    _SandboxAPI_GitCredential_Handler,
+		},
+		{
+			MethodName: "GitHubAction",
+			Handler:    _SandboxAPI_GitHubAction_Handler,
 		},
 		{
 			MethodName: "ProposeSkillChange",

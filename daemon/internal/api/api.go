@@ -21,7 +21,9 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
@@ -42,6 +44,9 @@ type Server struct {
 	Upstream      string
 	Mon           *Monitor
 	GH            *ghtoken.Service
+	Git           *gitaccess.Service
+	GitApp        *ghapp.Client
+	GitSetup      *ghapp.Setup
 	Skills        *skills.Service
 	Upd           *update.Service
 
@@ -191,6 +196,7 @@ type requestJ struct {
 	Large   bool                `json:"large"`
 	SSH     *sshInfoJ           `json:"ssh,omitempty"`
 	GitHub  *ghtoken.Detail     `json:"github,omitempty"`
+	Git     *gitaccess.Detail   `json:"git,omitempty"`
 	Skill   []skills.FileDetail `json:"skill,omitempty"`
 }
 type grantJ struct {
@@ -205,6 +211,7 @@ type grantJ struct {
 	Revoked    bool     `json:"revoked"`
 	Active     bool     `json:"active"`
 	HostKeyFPs []string `json:"host_key_fingerprints"`
+	Reason     string   `json:"reason"`
 }
 type auditJ struct {
 	TS      int64  `json:"ts_unix"`
@@ -239,6 +246,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/opencode/start", s.simple("opencode.start", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStart(ctx, n) }))
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
+	mux.HandleFunc("GET /v1/githubapp", s.githubAppStatus)
+	mux.HandleFunc("POST /v1/githubapp/setup", s.githubAppSetup)
+	mux.HandleFunc("POST /v1/githubapp/forget", s.githubAppForget)
+	mux.HandleFunc("POST /v1/github/legacy/remove", s.githubLegacyRemove)
+	mux.HandleFunc("GET /v1/git/grants", s.gitGrants)
+	mux.HandleFunc("POST /v1/git/revoke", s.gitRevoke)
+	mux.HandleFunc("POST /v1/git/decide", s.gitDecide)
 	mux.HandleFunc("POST /v1/skills/decide", s.skillsDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/log", s.logTail)
@@ -935,6 +949,11 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(q.Extra), &d) == nil {
 				j.GitHub = &d
 			}
+		case "gitgrant", "ghaction":
+			var d gitaccess.Detail
+			if json.Unmarshal([]byte(q.Extra), &d) == nil {
+				j.Git = &d
+			}
 		case "skill":
 			if d, err := skills.DetailOf(q.Extra); err == nil {
 				j.Skill = d
@@ -1003,7 +1022,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	for _, g := range gs {
 		out = append(out, grantJ{g.ID, g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
-			!g.Revoked && g.Expires.After(now), g.HostKeys})
+			!g.Revoked && g.Expires.After(now), g.HostKeys, g.Reason})
 	}
 	writeJSON(w, 200, out)
 }

@@ -222,6 +222,14 @@ struct SandboxCard: View {
                     if s.pendingRequests > 0 { Label(L("%lld open", s.pendingRequests), systemImage: "bell.fill").foregroundStyle(.red) }
                 }
             }
+            if s.running, s.hasGithubToken {
+                HStack(spacing: 8) {
+                    Label("This sandbox still holds a personal GitHub token in its VM.", systemImage: "key.horizontal.fill").foregroundStyle(.orange)
+                    Button("Switch to GitHub App") { Task { do { try await model.api.post("/v1/github/legacy/remove", NameBody(name: s.name)); await model.refresh() } catch { model.setBanner(error.localizedDescription) } } }
+                        .controlSize(.small)
+                        .help(L("Removes the token from the VM and from this Mac. Git then works through grants of your GitHub App (Settings → GitHub)."))
+                }
+            }
             if s.running, s.skillsMount == false {
                 Label("Shared skills are not mounted in this VM yet. Stop and start the VM once; the mount is added automatically.", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)

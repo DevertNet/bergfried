@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
@@ -153,5 +155,47 @@ func TestProposeSkillChangeWithoutService(t *testing.T) {
 	s := &sandboxServer{sandbox: "shop"}
 	if _, err := s.ProposeSkillChange(context.Background(), &pb.SkillProposalRequest{}); err == nil || !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// The sandbox is derived from the socket: a sandbox cannot use or end the git grants of another one.
+func TestGitCredentialAndReleaseAreScopedToTheSandbox(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid, err := st.AddGitGrant(store.GitGrant{Sandbox: "shop", Repo: "o/r", Write: true, Expires: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// no app configured: the helper gets no credentials (not an error), tools say so
+	gs := gitaccess.NewService(st, ghapp.NewClient(ghapp.Store{Dir: t.TempDir()}))
+	blog := &sandboxServer{sandbox: "blog", git: gs, st: st}
+	r, err := blog.GitCredential(context.Background(), &pb.GitCredentialRequest{Host: "github.com", Path: "o/r.git"})
+	if err != nil || r.Password != "" || r.Username != "" || r.Message == "" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	rel, err := blog.ReleaseGitAccess(context.Background(), &pb.GitReleaseRequest{TaskId: gid})
+	if err != nil || rel.Released {
+		t.Fatalf("a foreign sandbox must not end the grant: %+v %v", rel, err)
+	}
+	if g, _ := st.GetGitGrant(gid); g.Ended != 0 {
+		t.Fatal("grant of another sandbox was ended")
+	}
+	if _, err := (&sandboxServer{sandbox: "shop", st: st}).RequestGitAccess(context.Background(), &pb.GitAccessRequest{Repo: "o/r"}); err == nil {
+		t.Fatal("without the git service the request must fail clearly")
+	}
+}
+
+// A refused request has no expiry: the zero time must not leak out as a huge negative number.
+func TestRequestGitAccessRefusedHasNoExpiry(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "d"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := gitaccess.NewService(st, ghapp.NewClient(ghapp.Store{Dir: t.TempDir()})) // no app configured
+	r, err := (&sandboxServer{sandbox: "shop", git: gs, st: st}).RequestGitAccess(context.Background(), &pb.GitAccessRequest{Repo: "o/r", Write: true})
+	if err != nil || r.Verdict != pb.Verdict_VERDICT_DENIED || r.ExpiresUnix != 0 || r.TaskId != 0 || !strings.Contains(r.Message, "No GitHub App") {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

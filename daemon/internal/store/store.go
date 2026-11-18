@@ -135,6 +135,7 @@ func (s *Store) migrate() error {
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN seeded INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode_port INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE ssh_grants ADD COLUMN reason TEXT`)
 		// Leftovers of the former Mac-push concept (the token now lives in the VM, see docs/GITHUB.md).
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS git_pushes`)
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS ci_grants`)
@@ -145,7 +146,9 @@ CREATE TABLE IF NOT EXISTS worktrees(sandbox TEXT NOT NULL, name TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, kind TEXT NOT NULL, path TEXT NOT NULL, reason TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, files INTEGER NOT NULL DEFAULT 0, extra TEXT);
 CREATE TABLE IF NOT EXISTS ssh_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, host TEXT NOT NULL, key_fp TEXT NOT NULL, user TEXT NOT NULL, hostkeys TEXT NOT NULL, expires INTEGER NOT NULL, per_conn INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, event TEXT NOT NULL, sandbox TEXT, worktree TEXT, detail TEXT);
-CREATE TABLE IF NOT EXISTS helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target));`)
+CREATE TABLE IF NOT EXISTS helper_stamps(sandbox TEXT NOT NULL, target TEXT NOT NULL, guidance TEXT NOT NULL, mcp TEXT NOT NULL, PRIMARY KEY(sandbox,target));
+CREATE TABLE IF NOT EXISTS git_grants(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, worktree TEXT, repo TEXT NOT NULL, write INTEGER NOT NULL, reason TEXT, expires INTEGER NOT NULL, ended INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS git_tokens(id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox TEXT NOT NULL, owner TEXT NOT NULL, token TEXT NOT NULL, repos TEXT NOT NULL, write INTEGER NOT NULL, expires INTEGER NOT NULL, revoke_at INTEGER NOT NULL DEFAULT 0);`)
 	return err
 }
 
@@ -192,6 +195,13 @@ func (s *Store) DeleteSandbox(name string) error {
 		return err
 	}
 	if _, err := s.DB.Exec(`DELETE FROM helper_stamps WHERE sandbox=?`, name); err != nil {
+		return err
+	}
+	// Git tokens of the sandbox stay until the daemon has revoked them (git_tokens.revoke_at); grants end with the sandbox.
+	if _, err := s.DB.Exec(`UPDATE git_tokens SET revoke_at=? WHERE sandbox=? AND revoke_at=0`, time.Now().Unix(), name); err != nil {
+		return err
+	}
+	if _, err := s.DB.Exec(`UPDATE git_grants SET ended=1 WHERE sandbox=? AND ended=0`, name); err != nil {
 		return err
 	}
 	_, err := s.DB.Exec(`DELETE FROM sandboxes WHERE name=?`, name)
@@ -388,24 +398,25 @@ type SSHGrant struct {
 	Expires                 time.Time
 	PerConn, Revoked        bool
 	Created                 time.Time
+	Reason                  string // the assistant's reason of the request that led to the grant (display text)
 }
 
 func (s *Store) AddGrant(g SSHGrant) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO ssh_grants(sandbox,worktree,host,key_fp,user,hostkeys,expires,per_conn,created) VALUES(?,?,?,?,?,?,?,?,?)`,
-		g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, strings.Join(g.HostKeys, ","), g.Expires.Unix(), g.PerConn, time.Now().Unix())
+	res, err := s.DB.Exec(`INSERT INTO ssh_grants(sandbox,worktree,host,key_fp,user,hostkeys,expires,per_conn,created,reason) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, strings.Join(g.HostKeys, ","), g.Expires.Unix(), g.PerConn, time.Now().Unix(), g.Reason)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-const grantCols = `id,sandbox,COALESCE(worktree,''),host,key_fp,user,hostkeys,expires,per_conn,revoked,created`
+const grantCols = `id,sandbox,COALESCE(worktree,''),host,key_fp,user,hostkeys,expires,per_conn,revoked,created,COALESCE(reason,'')`
 
 func scanGrant(sc interface{ Scan(...any) error }) (SSHGrant, error) {
 	var g SSHGrant
 	var hk string
 	var exp, cr int64
-	err := sc.Scan(&g.ID, &g.Sandbox, &g.Worktree, &g.Host, &g.KeyFP, &g.User, &hk, &exp, &g.PerConn, &g.Revoked, &cr)
+	err := sc.Scan(&g.ID, &g.Sandbox, &g.Worktree, &g.Host, &g.KeyFP, &g.User, &hk, &exp, &g.PerConn, &g.Revoked, &cr, &g.Reason)
 	if hk != "" {
 		g.HostKeys = strings.Split(hk, ",")
 	}

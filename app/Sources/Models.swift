@@ -87,6 +87,43 @@ struct GitHubDetail: Codable, Hashable {
     var hint: String
 }
 
+/// Detail of a git request (kind gitgrant or ghaction), see docs/GITHUB.md.
+struct GitDetail: Codable, Hashable {
+    var kind: String
+    var repo: String
+    var write: Bool?
+    var minutes: Int?
+    var action: String?
+    var summary: [String]?
+    var others: [String]?
+    var maxMinutes: Int?
+}
+
+struct GitGrantInfo: Codable, Identifiable, Hashable {
+    var id: Int64
+    var sandbox: String
+    var folder: String
+    var repo: String
+    var write: Bool
+    var reason: String
+    var expiresUnix: Int64
+    var listID: String { "git-\(id)" }
+}
+
+struct GitHubAppInstallation: Codable, Hashable { var id: Int64; var account: String }
+struct GitHubAppStatus: Codable, Hashable {
+    var configured: Bool
+    var name: String?
+    var slug: String?
+    var appId: Int64?
+    var installUrl: String?
+    var settingsUrl: String?
+    var installations: [GitHubAppInstallation]
+    var error: String?
+}
+struct URLResult: Codable { var url: String }
+struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var minutes: Int = 0; var write: Bool = false; var note: String = "" }
+
 struct SkillFileDetail: Codable, Hashable {
     var path: String
     var op: String     // create, modify, delete, unchanged
@@ -107,6 +144,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var large: Bool
     var ssh: SSHInfo?
     var github: GitHubDetail?
+    var git: GitDetail?
     var skill: [SkillFileDetail]?
     var pending: Bool { status == "pending" }
     // Request and grant ids come from different tables and can be equal: give the list rows distinct identities.
@@ -126,6 +164,7 @@ struct GrantInfo: Codable, Identifiable, Hashable {
     var revoked: Bool
     var active: Bool
     var hostKeyFingerprints: [String]
+    var reason: String?
     var listID: String { "grant-\(id)" }
 }
 
@@ -204,3 +243,5 @@ func formatBytes(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount
 struct GitHubDecideBody: Encodable { var id: Int64; var allow: Bool; var token: String; var note: String = "" }
 struct GitHubLink: Codable { var url: String; var hint: String }
 struct SkillDecideBody: Encodable { var id: Int64; var allow: Bool; var note: String = "" }
+
+struct EmptyBody: Encodable {}
