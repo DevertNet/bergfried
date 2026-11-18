@@ -597,3 +597,4 @@
 "Use “Restart Claude” in the folder's menu; the conversation continues." = "Nutze „Claude neu starten“ im Menü des Ordners; die Unterhaltung geht weiter.";
 "One Claude per folder, started in the folder list below – no git worktree, no new branch. Remote Control is available for every running Claude." = "Ein Claude pro Ordner, gestartet in der Ordnerliste unten – kein Git-Worktree, kein neuer Branch. Remote Control gibt es für jedes laufende Claude.";
 "Start Claude …" = "Claude starten …";
+"Sandbox is starting …" = "Sandbox startet …";
