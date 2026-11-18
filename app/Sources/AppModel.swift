@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var sandboxes: [SandboxInfo] = []
     @Published var requests: [RequestInfo] = []   // offene
     @Published var grants: [GrantInfo] = []       // aktive SSH-Freigaben
+    @Published var gitGrants: [GitGrantInfo] = [] // active git grants (GitHub App)
     @Published var pane: Pane? = .sandboxes
     @Published var banner: String?
     @Published var running: [String: String] = [:] // Aktion -> Beschriftung (laufende Jobs)
@@ -61,7 +62,8 @@ final class AppModel: ObservableObject {
             let ss: [SandboxInfo] = try await api.get("/v1/sandboxes")
             let rq: [RequestInfo] = try await api.get("/v1/requests")
             let gr: [GrantInfo] = try await api.get("/v1/ssh/grants")
-            status = st; sandboxes = ss; requests = rq; grants = gr
+            let gg: [GitGrantInfo] = (try? await api.get("/v1/git/grants")) ?? []
+            status = st; sandboxes = ss; requests = rq; grants = gr; gitGrants = gg
             online = true
             // Do not notify about old items on the first load.
             for r in rq where !notified.contains(r.id) {
@@ -120,6 +122,8 @@ final class AppModel: ObservableObject {
                 try await api.post("/v1/ssh/decide", SSHDecideBody(id: r.id, allow: false, minutes: 0, keyFingerprint: "", user: "", trustUnknownHost: false, note: note))
             case "ghtoken":
                 try await api.post("/v1/github/decide", GitHubDecideBody(id: r.id, allow: false, token: "", note: note))
+            case "gitgrant", "ghaction":
+                try await api.post("/v1/git/decide", GitDecideBody(id: r.id, allow: false, note: note))
             case "skill":
                 try await api.post("/v1/skills/decide", SkillDecideBody(id: r.id, allow: false, note: note))
             default:
@@ -133,6 +137,17 @@ final class AppModel: ObservableObject {
     func decideGitHub(id: Int64, token: String) async -> String? {
         do { try await api.post("/v1/github/decide", GitHubDecideBody(id: id, allow: true, token: token)); await refresh(); return nil }
         catch { return error.localizedDescription }
+    }
+
+    /// Allows a git grant (minutes, write level the user chose) or a single GitHub action. Returns the error message.
+    func allowGit(id: Int64, minutes: Int, write: Bool) async -> String? {
+        do { try await api.post("/v1/git/decide", GitDecideBody(id: id, allow: true, minutes: minutes, write: write)); await refresh(); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    func revokeGit(_ g: GitGrantInfo) async {
+        do { try await api.post("/v1/git/revoke", IDBody(id: g.id)) } catch { banner = error.localizedDescription }
+        await refresh()
     }
 
     /// Allows or denies a skill proposal with an optional note. Returns the error message (the request then ends failed).

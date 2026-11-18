@@ -319,3 +319,34 @@ func TestMigrateAddsClaudeAndPort(t *testing.T) {
 		t.Fatal("column missing")
 	}
 }
+
+func TestSSHGrantKeepsTheReasonAndOldDatabasesAreMigrated(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.AddGrant(SSHGrant{Sandbox: "shop", Host: "h", KeyFP: "SHA256:x", User: "u", Expires: time.Now().Add(time.Hour), Reason: "deploy the fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := s.GetGrant(id); g.Reason != "deploy the fix" {
+		t.Fatalf("%+v", g)
+	}
+	// a database from before the column existed: opening it adds the column, old rows get an empty reason
+	if _, err := s.DB.Exec(`ALTER TABLE ssh_grants DROP COLUMN reason`); err != nil {
+		t.Skip("this SQLite cannot drop columns:", err)
+	}
+	s.DB.Close()
+	s, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.GetGrant(id)
+	if err != nil || g.Reason != "" || g.Host != "h" {
+		t.Fatalf("%+v %v", g, err)
+	}
+	if _, err := s.AddGrant(SSHGrant{Sandbox: "shop", Host: "h2", KeyFP: "k", User: "u", Expires: time.Now().Add(time.Hour), Reason: "again"}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -32,7 +32,7 @@ flowchart LR
 |---|---|---|
 | `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
 | `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, folders and Claude, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
-| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `release_ssh`, `request_github_token`, `propose_skill_change`) plus the `ssh-hook` subcommand. |
+| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `release_ssh`, `request_github_token` (legacy), `request_git_access`, `release_git_access`, `github_create_pr`, `github_merge_pr`, `github_rerun_ci`, `github_pr_view`, `github_ci_status`, `propose_skill_change`) plus the `ssh-hook` and `git-credential` (git credential helper) subcommands. |
 | Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
 | `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
 
@@ -70,7 +70,7 @@ only while a grant is active (time window, key, target host key).
    A root-owned `Match exec` hook in the VM turns a plain `ssh host` into a request; interactive `ssh` waits for your decision.
    Keys that are not in the ssh-agent (passphrase-protected key files in `~/.ssh`) are offered too: the passphrase typed for the grant decrypts the key into the daemon's memory for the length of the grant (`broker/localkeys.go`; see [SECURITY.md](SECURITY.md)).
    `RequestSSH` returns the grant id as `task_id`; one grant belongs to one task. When the task is finished the assistant calls `ReleaseSSH` (`release_ssh`) with that `task_id` and the daemon revokes exactly that grant of the calling sandbox (rewrite the VM config, terminate running `ssh`).
-6. **GitHub:** one fine-grained token per sandbox, stored in the VM (`~/.git-credentials`, also used to log in `gh`) and used by plain `git` over HTTPS. See [GITHUB.md](GITHUB.md).
+6. **GitHub:** the user's own GitHub App (`ghapp`, key on the Mac). Git works over HTTPS with time-limited **git grants** (`gitaccess`: `request_git_access` / `release_git_access`, credential helper `bergfried-mcp git-credential`, installation tokens narrowed per repo); merge, pull requests and CI re-runs are MCP tools executed by the daemon with a per-call token after your approval. Older sandboxes may still hold a personal token. See [GITHUB.md](GITHUB.md).
 7. **Claude works in folders:** a Claude entry is a folder under `~/work` (`main` = `~/work/main`) plus a Claude session. Creating a sandbox creates `main` with Claude stopped; adding a Claude entry only selects an existing folder. Bergfried does **not** create git worktrees or branches.
    The database stores per entry whether Claude should run. Claude is started explicitly, then runs `cd ~/work/<folder> && claude --continue --remote-control '<sandbox>/<window>'` in a tmux window (tmux session `bf`); `COMPOSE_PROJECT_NAME=<sandbox>-<window>` separates Docker stacks.
    The **monitor** polls running VMs (login and installed state, Remote Control status and link per Claude entry, OpenCode installed/running, disk usage), restarts Claude entries after a Claude login,
@@ -87,14 +87,14 @@ only while a grant is active (time window, key, target host key).
 
 ## Data on your Mac
 
-`~/.bergfried` (0700): `bergfried.db`, `blocklist.json`, `hosts.json`, `settings.json` (update channel), `template/` (`bergfried.yaml`, `revision`, `seed.sha256`), `index-ack`, `update/` (staged releases, backups, `update.log`), `skills/` (instructions for the assistants, mounted read-only into every sandbox), `sandboxes/<name>/{shared/{in,out},github-token}`, `admin.sock`, `app.sock`, `daemon.log` (see [DEVELOPMENT.md](DEVELOPMENT.md#logs)).
+`~/.bergfried` (0700): `bergfried.db`, `github-app/` (`app.json`, `private-key.pem`), `blocklist.json`, `hosts.json`, `settings.json` (update channel), `template/` (`bergfried.yaml`, `revision`, `seed.sha256`), `index-ack`, `update/` (staged releases, backups, `update.log`), `skills/` (instructions for the assistants, mounted read-only into every sandbox), `sandboxes/<name>/{shared/{in,out},github-token}`, `admin.sock`, `app.sock`, `daemon.log` (see [DEVELOPMENT.md](DEVELOPMENT.md#logs)).
 Naming: VMs are `bergfried-<sandbox>` (≤ 24 characters, `base` reserved), base VMs `bergfried-base-<hash>`.
 
 ## Code layout
 
 ```
 daemon/cmd/bergfriedd        CLI + serve
-daemon/internal/             access, api (+monitor), broker, ghtoken, github, importer, index, lima, notify, rpc, sandbox, store, update
+daemon/internal/             access, api (+monitor), broker, ghapp, gitaccess, ghtoken (legacy), github, importer, index, lima, notify, rpc, sandbox, store, update
 mcp/cmd/bergfried-mcp        MCP server + ssh-hook (runs in the VM)
 proto/                       protobuf definitions; generated code in proto/gen (checked in)
 app/                         SwiftUI app sources, build.sh, icon

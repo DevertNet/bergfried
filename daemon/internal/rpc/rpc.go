@@ -17,6 +17,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/skills"
@@ -68,8 +69,78 @@ type sandboxServer struct {
 	svc     *access.Service
 	ssh     *broker.Service
 	gh      *ghtoken.Service
+	git     *gitaccess.Service
 	skills  *skills.Service
 	st      *store.Store
+}
+
+var errNoGitApp = status.Error(codes.FailedPrecondition, "GitHub App access is not configured")
+
+func (s *sandboxServer) RequestGitAccess(ctx context.Context, r *pb.GitAccessRequest) (*pb.GitAccessResult, error) {
+	if s.git == nil {
+		return nil, errNoGitApp
+	}
+	g, err := s.git.RequestGrant(ctx, s.sandbox, s.folder(ctx), r.Repo, r.Write, int(r.Minutes), r.Reason)
+	if err != nil {
+		return nil, err
+	}
+	v := pb.Verdict_VERDICT_DENIED
+	switch {
+	case g.Allowed:
+		v = pb.Verdict_VERDICT_ALLOWED
+	case g.Expired:
+		v = pb.Verdict_VERDICT_EXPIRED
+	}
+	res := &pb.GitAccessResult{Verdict: v, Message: g.Message, TaskId: g.TaskID}
+	if !g.Expires.IsZero() { // time.Time{}.Unix() would be a large negative number
+		res.ExpiresUnix = g.Expires.Unix()
+	}
+	return res, nil
+}
+
+func (s *sandboxServer) ReleaseGitAccess(ctx context.Context, r *pb.GitReleaseRequest) (*pb.GitReleaseResult, error) {
+	if s.git == nil {
+		return nil, errNoGitApp
+	}
+	res, err := s.git.Release(ctx, s.sandbox, r.TaskId)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.GitReleaseResult{Released: res.Released, Message: res.Message}, nil
+}
+
+// GitCredential: no credentials is a normal answer (empty username), not an error, so git falls back to its usual message.
+func (s *sandboxServer) GitCredential(ctx context.Context, r *pb.GitCredentialRequest) (*pb.GitCredentialResult, error) {
+	if s.git == nil {
+		return &pb.GitCredentialResult{Message: errNoGitApp.Error()}, nil
+	}
+	u, p, err := s.git.Credential(ctx, s.sandbox, r.Host, r.Path)
+	if errors.Is(err, gitaccess.ErrNoGrant) {
+		return &pb.GitCredentialResult{Message: "Bergfried: no active git access for this repository – call request_git_access first."}, nil
+	}
+	if err != nil {
+		return &pb.GitCredentialResult{Message: "Bergfried: " + err.Error()}, nil
+	}
+	return &pb.GitCredentialResult{Username: u, Password: p}, nil
+}
+
+func (s *sandboxServer) GitHubAction(ctx context.Context, r *pb.GitHubActionRequest) (*pb.GitHubActionResult, error) {
+	if s.git == nil {
+		return nil, errNoGitApp
+	}
+	res, err := s.git.Action(ctx, s.sandbox, s.folder(ctx), gitaccess.ActionReq{Action: r.Action, Repo: r.Repo, Number: int(r.Number), Title: r.Title,
+		Head: r.Head, Base: r.Base, Body: r.Body, Draft: r.Draft, Method: r.Method, Branch: r.Branch, RunID: r.RunId, Reason: r.Reason})
+	if err != nil {
+		return nil, err
+	}
+	v := pb.Verdict_VERDICT_DENIED
+	switch {
+	case res.OK:
+		v = pb.Verdict_VERDICT_ALLOWED
+	case res.Expired:
+		v = pb.Verdict_VERDICT_EXPIRED
+	}
+	return &pb.GitHubActionResult{Verdict: v, Message: res.Message, DataJson: res.DataJSON}, nil
 }
 
 func (s *sandboxServer) SSHAttempt(ctx context.Context, r *pb.SSHAttemptRequest) (*pb.SSHAttemptResult, error) {
@@ -250,6 +321,7 @@ type Daemon struct {
 	Svc       *access.Service
 	SSH       *broker.Service
 	GH        *ghtoken.Service
+	Git       *gitaccess.Service
 	Skills    *skills.Service
 	AdminSock string
 	L         lima.Client
@@ -305,7 +377,7 @@ func (d *Daemon) startSandbox(name, vm string) error {
 		return err
 	}
 	g := grpc.NewServer()
-	pb.RegisterSandboxAPIServer(g, &sandboxServer{sandbox: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, skills: d.Skills, st: d.St})
+	pb.RegisterSandboxAPIServer(g, &sandboxServer{sandbox: name, svc: d.Svc, ssh: d.SSH, gh: d.GH, git: d.Git, skills: d.Skills, st: d.St})
 	go g.Serve(l)
 	asock, err := SSHAgentSocket(vm)
 	if err != nil {
@@ -367,6 +439,9 @@ func (d *Daemon) Reconcile(ctx context.Context) error {
 			g.stop()
 			delete(d.servers, name)
 			_ = d.St.Audit("daemon", "socket.close", name, "", "")
+			if d.Git != nil { // a stopped or deleted sandbox keeps no git access
+				d.Git.EndSandbox(ctx, name)
+			}
 		}
 	}
 	return nil
@@ -387,6 +462,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			fmt.Fprintln(os.Stderr, "Reconcile:", err)
 		}
 		d.SSH.Sweep(ctx)
+		if d.Git != nil {
+			d.Git.Sweep(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			d.mu.Lock()

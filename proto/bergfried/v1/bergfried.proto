@@ -23,6 +23,15 @@ service SandboxAPI {
   // in the app; blocks until the user has decided.
   rpc RequestGitHubToken(GitHubTokenRequest) returns (GitHubTokenResult);
 
+  // GitHub through the user's own GitHub App (docs/GITHUB.md). A git grant is time-limited, like an SSH grant: the user allows it,
+  // the credential helper in the VM then receives a narrow installation token, ReleaseGitAccess ends it.
+  rpc RequestGitAccess(GitAccessRequest) returns (GitAccessResult);
+  rpc ReleaseGitAccess(GitReleaseRequest) returns (GitReleaseResult);
+  // Called by the git credential helper in the VM. Returns no credentials without an active grant for the repository.
+  rpc GitCredential(GitCredentialRequest) returns (GitCredentialResult);
+  // One GitHub API action executed by the daemon (merge, pull request, CI). Changes ask the user every time.
+  rpc GitHubAction(GitHubActionRequest) returns (GitHubActionResult);
+
   // A proposal for the shared, read-only skills folder; blocks until the user has decided.
   rpc ProposeSkillChange(SkillProposalRequest) returns (SkillProposalResult);
 }
@@ -39,6 +48,52 @@ message SkillProposalRequest {
 message SkillProposalResult {
   Verdict verdict = 1;
   string message = 2;
+}
+
+message GitAccessRequest {
+  string repo = 1;       // owner/name
+  bool write = 2;        // false: read only (clone, fetch, pull)
+  int32 minutes = 3;     // only a suggestion (max 60), the user decides
+  string reason = 4;
+}
+message GitAccessResult {
+  Verdict verdict = 1;
+  string message = 2;
+  int64 expires_unix = 3;
+  int64 task_id = 4;     // pass it to ReleaseGitAccess when the task is finished
+}
+message GitReleaseRequest { int64 task_id = 1; }
+message GitReleaseResult {
+  bool released = 1;
+  string message = 2;
+}
+message GitCredentialRequest {
+  string host = 1;
+  string path = 2;       // owner/repo(.git), only with credential.useHttpPath
+}
+message GitCredentialResult {
+  string username = 1;
+  string password = 2;
+  string message = 3;    // why there are no credentials
+}
+message GitHubActionRequest {
+  string action = 1;     // pr_create | pr_merge | ci_rerun | pr_view | ci_status
+  string repo = 2;
+  int64 number = 3;      // pull request number
+  string title = 4;
+  string head = 5;
+  string base = 6;
+  string body = 7;
+  bool draft = 8;
+  string method = 9;     // merge | squash | rebase
+  string branch = 10;    // ci_status filter
+  int64 run_id = 11;
+  string reason = 12;
+}
+message GitHubActionResult {
+  Verdict verdict = 1;
+  string message = 2;
+  string data_json = 3;  // reduced result of the action
 }
 
 message GitHubTokenRequest {

@@ -326,7 +326,7 @@ func (s *Service) DecideSSH(d Decision) (string, error) {
 		return "", errors.New("request no longer open")
 	}
 	g := store.SSHGrant{Sandbox: r.Sandbox, Worktree: r.Worktree, Host: r.Path, KeyFP: keyFP, User: user, HostKeys: p.info.HostKeyFPs,
-		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute)}
+		Expires: s.B.now().Add(time.Duration(d.Minutes) * time.Minute), Reason: r.Reason}
 	gid, err := s.B.St.AddGrant(g)
 	if err != nil {
 		return "", err

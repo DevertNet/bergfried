@@ -47,7 +47,8 @@
     <text x="270" y="272" font-family="Inter" font-size="12.5" fill="#3C3C43">Notifications</text>
     <text x="270" y="310" font-family="Inter" font-size="12.5" fill="#3C3C43">Files &amp; index</text>
     <text x="270" y="348" font-family="Inter" font-size="12.5" fill="#3C3C43">Terminal</text>
-    <text x="270" y="386" font-family="Inter" font-size="12.5" fill="#3C3C43">Advanced</text>
+    <text x="270" y="386" font-family="Inter" font-size="12.5" fill="#3C3C43">GitHub</text>
+    <text x="270" y="424" font-family="Inter" font-size="12.5" fill="#3C3C43">Advanced</text>
 
     <text x="270" y="800" font-family="Inter" font-size="10.5" fill="#8E8E93">Version 0.2.1-dev.27</text>
 

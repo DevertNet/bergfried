@@ -166,7 +166,7 @@ func TestClaudeRemoveKeepsFolder(t *testing.T) {
 
 func TestGuidanceMentionsToolsAndOutDir(t *testing.T) {
 	g := guidance("/Users/x/.bergfried/sandboxes/shop/shared/out")
-	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "release_ssh", "task_id", "once per task", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "gh pr create", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "propose_skill_change", "~/.claude/skills", "without restarting the assistant", "within a few seconds", "Never say \"I have no access"} {
+	for _, want := range []string{"list_files", "search_files", "request_file", "request_folder", "request_ssh", "release_ssh", "task_id", "once per task", "Prefer `request_folder`", "mein Computer", "/shared/out", "chromium --headless", "github_create_pr", "git lfs", "sudo apt-get install", "--dump-dom", "--screenshot", "propose_skill_change", "~/.claude/skills", "without restarting the assistant", "within a few seconds", "Never say \"I have no access"} {
 		if !strings.Contains(strings.ToLower(g), strings.ToLower(want)) {
 			t.Fatalf("guidance text does not contain %q:\n%s", want, g)
 		}
@@ -210,10 +210,26 @@ func TestInstallGitTokenUsesStdinNotArgs(t *testing.T) {
 	}
 }
 
-func TestGuidanceGitHubWithoutPushTool(t *testing.T) {
+func TestGuidanceGitHubUsesGrantsAndNoStandingToken(t *testing.T) {
 	g := guidance("/out")
-	if strings.Contains(g, "request_git_push") || strings.Contains(g, "ci_status") || !strings.Contains(g, "request_github_token") || !strings.Contains(g, "Never print the token") {
-		t.Fatal(g)
+	for _, want := range []string{"request_git_access", "release_git_access", "github_merge_pr", "github_create_pr", "no standing token", "never print or store one"} {
+		if !strings.Contains(g, want) {
+			t.Errorf("guidance misses %q", want)
+		}
+	}
+	// the old token recipes must be gone: the assistant must not look for a token or call gh with one
+	for _, bad := range []string{"request_git_push", "gh auth login", "sed -E 's#https://x-access-token", "Authorization: Bearer $("} {
+		if strings.Contains(g, bad) {
+			t.Errorf("guidance still contains %q", bad)
+		}
+	}
+}
+
+func TestHelperScriptConfiguresTheCredentialHelper(t *testing.T) {
+	for _, want := range []string{"credential.https://github.com.helper", "bergfried-mcp git-credential", "useHttpPath"} {
+		if !strings.Contains(helperScript("x", "Claude", "shop"), want) {
+			t.Errorf("setup script misses %q", want)
+		}
 	}
 }
 

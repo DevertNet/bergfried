@@ -17,7 +17,9 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/access"
 	"github.com/DevertNet/bergfried/daemon/internal/api"
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
+	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
+	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
 	"github.com/DevertNet/bergfried/daemon/internal/github"
 	"github.com/DevertNet/bergfried/daemon/internal/importer"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
@@ -393,7 +395,26 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	m.SaveToken = tokStore.Set
 	m.DropToken = tokStore.Delete
-	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, Skills: skillSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
+	// GitHub App: the user's own app; key and tokens stay on the Mac (see docs/GITHUB.md).
+	appStore := ghapp.Store{Dir: filepath.Join(home, "github-app")}
+	appClient := ghapp.NewClient(appStore)
+	setup := ghapp.NewSetup(appStore)
+	if v := os.Getenv("BERGFRIED_GITHUB_API"); v != "" { // development/tests only: local GitHub stand-in
+		appClient.Base, setup.API = v, v
+	}
+	if v := os.Getenv("BERGFRIED_GITHUB_WEB"); v != "" {
+		setup.Web = v
+	}
+	setup.Log = func(event, detail string) { _ = m.S.Audit("app", event, "", "", detail) }
+	gitSvc := gitaccess.NewService(m.S, appClient)
+	gitSvc.Client = mkClient
+	gitSvc.InstallHint = func() string {
+		if cfg, _, err := appStore.Load(); err == nil {
+			return "Installation page: https://github.com/apps/" + cfg.Slug + "/installations/new"
+		}
+		return ""
+	}
+	d := &rpc.Daemon{St: m.S, Svc: svc, SSH: sshSvc, GH: ghSvc, Git: gitSvc, Skills: skillSvc, AdminSock: filepath.Join(home, "admin.sock"), L: m.L}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	m.Imp = importer.Importer{Home: userHome, BL: ix.Blocklist}
@@ -407,7 +428,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	}
 	upd.Backup = m.S.Backup
 	go upd.Run(ctx)
-	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Skills: skillSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
+	apiSrv := &api.Server{Upd: upd, GH: ghSvc, Git: gitSvc, GitApp: appClient, GitSetup: setup, Skills: skillSvc, Mon: mon, M: &am, Access: svc, SSH: sshSvc, Ix: ix, Gate: gate, Home: home, BlocklistFile: filepath.Join(home, "blocklist.json"), Upstream: upstream}
 	go func() {
 		if err := apiSrv.Serve(ctx, filepath.Join(home, "app.sock")); err != nil {
 			fmt.Fprintln(os.Stderr, "App-Schnittstelle:", err)

@@ -7,6 +7,7 @@ struct RequestsView: View {
     @Local private var sshFor: RequestInfo?
     @Local private var largeFor: RequestInfo?
     @Local private var gitFor: RequestInfo?
+    @Local private var gitGrantFor: RequestInfo?
     @Local private var skillFor: RequestInfo?
     @Local private var denyFor: RequestInfo?
 
@@ -14,7 +15,11 @@ struct RequestsView: View {
         List {
             Section("Open requests") {
                 if model.requests.isEmpty { Text("No open requests.").foregroundStyle(.secondary) }
-                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, reviewSkill: { skillFor = r }, deny: { denyFor = r }) }
+                ForEach(model.requests, id: \.listID) { r in PendingRow(r: r, decideSSH: { sshFor = r }, confirmLarge: { largeFor = r }, decideGit: { gitFor = r }, decideGitGrant: { gitGrantFor = r }, reviewSkill: { skillFor = r }, deny: { denyFor = r }) }
+            }
+            Section("Active git grants") {
+                if model.gitGrants.isEmpty { Text("No active git grants.").foregroundStyle(.secondary) }
+                ForEach(model.gitGrants, id: \.listID) { g in GitGrantRow(g: g) }
             }
             Section("Active SSH grants") {
                 if model.grants.isEmpty { Text("No active grants.").foregroundStyle(.secondary) }
@@ -29,6 +34,7 @@ struct RequestsView: View {
         .onChange(of: model.requests) { _, _ in if showHistory { Task { await loadHistory() } } }
         .sheet(item: $sshFor) { r in SSHDecisionSheet(r: r) }
         .sheet(item: $gitFor) { r in GitHubTokenSheet(r: r) }
+        .sheet(item: $gitGrantFor) { r in GitGrantSheet(r: r) }
         .sheet(item: $skillFor) { r in SkillProposalSheet(r: r) }
         .sheet(item: $denyFor) { r in DenyRequestSheet(r: r, onDeny: { note in Task { await model.deny(r, note: note) } }) }
         .confirmationDialog("Large approval", isPresented: Binding(get: { largeFor != nil }, set: { if !$0 { largeFor = nil } })) {
@@ -53,6 +59,7 @@ struct PendingRow: View {
     let decideSSH: () -> Void
     let confirmLarge: () -> Void
     let decideGit: () -> Void
+    let decideGitGrant: () -> Void
     let reviewSkill: () -> Void
     let deny: () -> Void
 
@@ -61,6 +68,8 @@ struct PendingRow: View {
         case "ssh": return "key.fill"
         case "folder": return "folder"
         case "ghtoken": return "key.horizontal.fill"
+        case "gitgrant": return "arrow.triangle.branch"
+        case "ghaction": return "arrow.triangle.merge"
         case "skill": return "book.closed"
         default: return "doc"
         }
@@ -80,12 +89,26 @@ struct PendingRow: View {
                 else if r.github?.hasToken == true { LT("needs access to the repo **%@** (the sandbox's token does not reach it yet)", r.path) }
                 else { LT("needs a **GitHub token** and access to **%@**", r.path) }
             }
+            else if r.kind == "gitgrant" {
+                if r.git?.write == true { LT("wants **git access (read and write)** to **%@**", r.path) }
+                else { LT("wants **git access (read only)** to **%@**", r.path) }
+            }
+            else if r.kind == "ghaction" {
+                LT("wants to do this on GitHub in **%@**:", r.git?.repo ?? r.path)
+                ForEach(r.git?.summary ?? [], id: \.self) { Text($0).font(.callout.bold()).textSelection(.enabled) }
+            }
             else if r.kind == "skill" { LT("wants to change the shared skill(s) **%@** (%lld file(s))", r.path, r.files) }
             else { LT(r.kind == "folder" ? "wants the folder **~/%@** (%lld file(s), %@)" : "wants the file **~/%@** (%lld file(s), %@)", r.path, r.files, formatBytes(r.bytes)) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             HStack {
                 if r.kind == "ghtoken" {
                     Button("Set up …", action: decideGit).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "gitgrant" {
+                    Button("Decide …", action: decideGitGrant).buttonStyle(.borderedProminent)
+                    Button("Deny", role: .destructive, action: deny)
+                } else if r.kind == "ghaction" {
+                    Button("Allow once") { Task { _ = await model.allowGit(id: r.id, minutes: 0, write: false) } }.buttonStyle(.borderedProminent)
                     Button("Deny", role: .destructive, action: deny)
                 } else if r.kind == "ssh" {
                     Button("Decide …", action: decideSSH).buttonStyle(.borderedProminent)
@@ -108,17 +131,29 @@ struct HistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(.secondary)
+                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "gitgrant": "arrow.triangle.branch", "ghaction": "arrow.triangle.merge", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(.secondary)
                 Text(r.origin)
-                Text(["ssh", "ghtoken", "skill"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
+                Text(["ssh", "ghtoken", "gitgrant", "ghaction", "skill"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Text(LocalizedStringKey(r.status)).foregroundStyle(color)
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .date).font(.caption).foregroundStyle(.secondary)
             }.font(.callout)
+            ForEach(r.git?.summary ?? [], id: \.self) { Text($0).font(.caption.bold()).foregroundStyle(.secondary) }
             if !r.reason.isEmpty {
                 Text(L("Assistant's reason (unchecked): %@", r.reason))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(r.reason)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(4).help(r.reason).textSelection(.enabled)
             }
+        }
+    }
+}
+
+/// The assistant's reason below an active grant (confirmed request), so it stays visible while the grant runs.
+struct GrantReason: View {
+    let reason: String?
+    var body: some View {
+        if let r = reason, !r.isEmpty {
+            Text(L("Assistant's reason (unchecked): %@", r)).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
         }
     }
 }
@@ -133,6 +168,7 @@ struct GrantRow: View {
                 Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder))
                     + (g.perConnection ? " · " + L("every connection individually") : "")).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                GrantReason(reason: g.reason)
             }
             Spacer()
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -407,5 +443,76 @@ struct GitHubTokenSteps: View {
             SecureField("github_pat_…", text: $token).textFieldStyle(.roundedBorder)
             Text("The token is then stored in the VM; the assistant can read it and use it for all git actions and GitHub Actions – within the selected repos and permissions.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+struct GitGrantRow: View {
+    @EnvironmentObject var model: AppModel
+    let g: GitGrantInfo
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(g.repo).font(.headline)
+                Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.write ? L("read and write") : L("read only"))
+                    + (g.folder.isEmpty || g.folder == "unknown" ? "" : " · " + L("Folder %@", g.folder))).font(.caption).foregroundStyle(.secondary)
+                GrantReason(reason: g.reason)
+            }
+            Spacer()
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let left = max(0, Date(timeIntervalSince1970: TimeInterval(g.expiresUnix)).timeIntervalSince(ctx.date))
+                Text(String(format: "%d:%02d:%02d", Int(left) / 3600, Int(left) % 3600 / 60, Int(left) % 60)).monospacedDigit().foregroundStyle(left < 120 ? .red : .primary)
+            }
+            Button("Revoke", role: .destructive) { Task { await model.revokeGit(g) } }
+        }
+    }
+}
+
+/// The user's decision on a git grant: duration and level (never above what the assistant asked for).
+struct GitGrantSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) var dismiss
+    let r: RequestInfo
+    @Local private var minutes = 15
+    @Local private var write = true
+    @Local private var error: String?
+
+    static let steps: [(minutes: Int, label: String)] = [(5, "5 minutes"), (10, "10 minutes"), (15, "15 minutes"), (30, "30 minutes"), (45, "45 minutes"), (60, "1 hour")]
+    var asked: Bool { r.git?.write ?? false }
+    var title: String { r.hasFolder ? L("Git access for %@/%@", r.sandbox, r.folder) : L("Git access for %@", r.sandbox) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            Text(r.path).font(.title3.bold()).textSelection(.enabled)
+            Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
+            Picker("Duration", selection: $minutes) {
+                ForEach(Self.steps.filter { $0.minutes <= (r.git?.maxMinutes ?? 60) }, id: \.minutes) { Text(L($0.label)).tag($0.minutes) }
+            }
+            if asked {
+                Toggle("Allow push (write access)", isOn: $write)
+            } else {
+                Text("Read only: clone, fetch and pull.").font(.callout)
+            }
+            if let others = r.git?.others, !others.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Other active git grants of this sandbox share the same token while they run:").font(.caption).foregroundStyle(.secondary)
+                    ForEach(others, id: \.self) { Text($0).font(.caption) }
+                }
+            }
+            Text("The token lives only for this grant, covers only this repository (and the other granted ones of the same owner) and is revoked on GitHub when the grant ends. Within the time the assistant can push to any branch of the repository, including main, unless GitHub protects it.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Allow") {
+                    Task {
+                        if let e = await model.allowGit(id: r.id, minutes: minutes, write: asked && write) { error = e } else { dismiss() }
+                    }
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 480)
+        .onAppear { minutes = min(max(r.git?.minutes ?? 15, 5), r.git?.maxMinutes ?? 60); write = asked }
     }
 }
