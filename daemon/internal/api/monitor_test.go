@@ -1,8 +1,15 @@
 package api
 
 import (
+	"context"
+	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DevertNet/bergfried/daemon/internal/lima"
+	"github.com/DevertNet/bergfried/daemon/internal/sandbox"
 )
 
 func TestParseProbe(t *testing.T) {
@@ -213,5 +220,159 @@ func TestParseProbeDialog(t *testing.T) {
 	a := st.Worktrees["main"]
 	if !a.Dialog || !a.RC || a.Idle || a.PID != 7 {
 		t.Fatalf("%+v", a)
+	}
+}
+
+func TestPollInterval(t *testing.T) {
+	rc := WorktreeState{Window: true, RC: true, Running: true}
+	noRC := WorktreeState{Window: true, Running: true}
+	settled := &SandboxState{ClaudeLoggedIn: boolPtr(true), Worktrees: map[string]WorktreeState{"a": rc}}
+	loggedOut := &SandboxState{ClaudeLoggedIn: boolPtr(false)}
+	unsettled := &SandboxState{ClaudeLoggedIn: boolPtr(true), Worktrees: map[string]WorktreeState{"a": rc, "b": noRC}}
+	none := &SandboxState{ClaudeLoggedIn: boolPtr(true), Worktrees: map[string]WorktreeState{}}
+	never := func(string) bool { return false }
+	gaveUpB := func(w string) bool { return w == "b" }
+
+	cases := []struct {
+		name            string
+		st              *SandboxState
+		active, failing bool
+		gaveUp          func(string) bool
+		want            time.Duration
+	}{
+		{"never probed", nil, false, false, never, 0},
+		{"app open, settled", settled, true, false, never, intervalCalm},
+		{"app open, logged out", loggedOut, true, false, never, intervalFast},
+		{"app open, unsettled", unsettled, true, false, never, intervalFast},
+		{"app closed, no Claude window", none, false, false, never, intervalIdle},
+		{"app closed, logged out without windows", loggedOut, false, false, never, intervalIdle},
+		{"app closed, settled", settled, false, false, never, intervalCalm},
+		{"app closed, RC still missing", unsettled, false, false, never, intervalFast},
+		{"app closed, automation gave up", unsettled, false, false, gaveUpB, intervalCalm},
+		{"app closed, nil gaveUp", unsettled, false, false, nil, intervalFast},
+		{"probe failing (VM booting)", none, false, true, never, intervalFast},
+	}
+	for _, c := range cases {
+		if got := pollInterval(c.st, c.active, c.failing, c.gaveUp); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestNeedFullProbe(t *testing.T) {
+	now := time.Now()
+	st := &SandboxState{FullChecked: now.Add(-time.Minute)}
+	if !needFullProbe(nil, false, now) || !needFullProbe(&SandboxState{}, false, now) {
+		t.Fatal("the first probe is always full")
+	}
+	if needFullProbe(st, false, now) {
+		t.Fatal("without the app a minute-old full probe is fresh enough")
+	}
+	if !needFullProbe(st, true, now) {
+		t.Fatal("with the app every probe is full")
+	}
+	st.FullChecked = now.Add(-fullProbeIdle)
+	if !needFullProbe(st, false, now) {
+		t.Fatal("an old full probe is refreshed even without the app")
+	}
+}
+
+func TestCheapProbeKeepsExpensiveFields(t *testing.T) {
+	full := time.Now()
+	prev := SandboxState{ClaudeLoggedIn: boolPtr(true), OpenCodeLoggedIn: boolPtr(true), OpenCodeInstalled: true, FullChecked: full}
+	// A cheap probe reports neither login nor the OpenCode version.
+	cheap := parseProbe("inst_claude=true\noc_service=false\ndisk=1 2\nwin=main rc=1 cpid=5\n")
+	got := carryExpensive(cheap, prev)
+	if got.ClaudeLoggedIn == nil || !*got.ClaudeLoggedIn || got.OpenCodeLoggedIn == nil || !*got.OpenCodeLoggedIn || !got.OpenCodeInstalled {
+		t.Fatalf("expensive fields lost: %+v", got)
+	}
+	if !got.FullChecked.Equal(full) {
+		t.Fatal("FullChecked must stay at the last full probe")
+	}
+	if !got.ClaudeInstalled || got.GuestUsed != 1 || got.Worktrees["main"].PID != 5 {
+		t.Fatalf("cheap fields must come from the new probe: %+v", got)
+	}
+}
+
+func TestProbeScriptCheapPartSkipsBinaries(t *testing.T) {
+	cheap := fmt.Sprintf(probeScript, 0)
+	if !strings.Contains(cheap, "if [ 0 = 1 ]") {
+		t.Fatal("cheap probe must gate the expensive part")
+	}
+	// Everything that starts claude/opencode must sit inside the gate.
+	gate := strings.Index(cheap, "if [ 0 = 1 ]")
+	end := strings.Index(cheap, "\nfi\n")
+	for _, s := range []string{"claude auth status", "auth list", "--version"} {
+		i := strings.Index(cheap, s)
+		if i < gate || i > end {
+			t.Fatalf("%q runs outside the full-probe gate", s)
+		}
+	}
+}
+
+func TestMonitorTouchAndVMCache(t *testing.T) {
+	mo := NewMonitor(nil)
+	if mo.activeLocked(time.Now()) {
+		t.Fatal("not active before the first API call")
+	}
+	mo.state["a"] = &SandboxState{Checked: time.Now(), FullChecked: time.Now()}
+	mo.Touch()
+	if !mo.activeLocked(time.Now()) {
+		t.Fatal("active after a call")
+	}
+	if !mo.state["a"].Checked.IsZero() || !mo.state["a"].FullChecked.IsZero() {
+		t.Fatal("the first call after a quiet period makes sandboxes due with a full probe")
+	}
+	mo.state["a"].Checked = time.Now()
+	mo.Touch() // already active: must not reset again
+	if mo.state["a"].Checked.IsZero() {
+		t.Fatal("calls while active must not force probes")
+	}
+	mo.listAt, mo.listVMs = time.Now(), nil
+	mo.InvalidateVMs()
+	if !mo.listAt.IsZero() {
+		t.Fatal("InvalidateVMs")
+	}
+}
+
+// countingRunner answers `limactl list --json` with one VM and counts the calls; hook runs inside
+// the call (used to invalidate the cache while a listing is in flight).
+type countingRunner struct {
+	n    atomic.Int32
+	hook func()
+}
+
+func (r *countingRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	r.n.Add(1)
+	if r.hook != nil {
+		r.hook()
+	}
+	return []byte(`{"name":"vm","status":"Running"}` + "\n"), nil
+}
+
+func TestVMsCacheAndInvalidation(t *testing.T) {
+	r := &countingRunner{}
+	mo := NewMonitor(&sandbox.Manager{L: lima.Client{R: r}})
+	for i := 0; i < 3; i++ {
+		if vms, err := mo.VMs(context.Background()); err != nil || len(vms) != 1 {
+			t.Fatalf("%v %v", vms, err)
+		}
+	}
+	if r.n.Load() != 1 {
+		t.Fatalf("three calls within the TTL must run limactl once, ran %d", r.n.Load())
+	}
+	mo.InvalidateVMs()
+	_, _ = mo.VMs(context.Background())
+	if r.n.Load() != 2 {
+		t.Fatal("an invalidated cache must be refreshed")
+	}
+	// Invalidation while limactl runs: the (possibly outdated) result is returned but not cached.
+	mo.InvalidateVMs()
+	r.hook = func() { mo.InvalidateVMs() }
+	_, _ = mo.VMs(context.Background())
+	r.hook = nil
+	_, _ = mo.VMs(context.Background())
+	if r.n.Load() != 4 {
+		t.Fatalf("a listing that raced with an invalidation must not be cached, runs=%d", r.n.Load())
 	}
 }
