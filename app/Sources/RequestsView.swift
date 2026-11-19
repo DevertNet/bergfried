@@ -478,15 +478,28 @@ struct GitGrantSheet: View {
 
     static let steps: [(minutes: Int, label: String)] = [(5, "5 minutes"), (10, "10 minutes"), (15, "15 minutes"), (30, "30 minutes"), (45, "45 minutes"), (60, "1 hour")]
     var asked: Bool { r.git?.write ?? false }
+    var availableSteps: [(minutes: Int, label: String)] { Self.steps.filter { $0.minutes <= (r.git?.maxMinutes ?? 60) } }
+    /// The preselection must be one of the picker's steps: a tag that matches nothing (the assistant suggests 20 or 25 minutes)
+    /// leaves the Picker empty. Take the smallest step that covers the suggestion, else the longest.
+    var initialMinutes: Int {
+        let want = r.git?.minutes ?? 15
+        let steps = availableSteps.map { $0.minutes }
+        return steps.first(where: { $0 >= want }) ?? steps.last ?? 15
+    }
     var title: String { r.hasFolder ? L("Git access for %@/%@", r.sandbox, r.folder) : L("Git access for %@", r.sandbox) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.headline)
-            Text(r.path).font(.title3.bold()).textSelection(.enabled)
+            if let repos = r.git?.repos, repos.count > 1 {
+                Text(L("%lld repositories, one decision for all:", repos.count)).font(.callout).foregroundStyle(.secondary)
+                ForEach(repos, id: \.self) { Text($0).font(.title3.bold()).textSelection(.enabled) }
+            } else {
+                Text(r.path).font(.title3.bold()).textSelection(.enabled)
+            }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             Picker("Duration", selection: $minutes) {
-                ForEach(Self.steps.filter { $0.minutes <= (r.git?.maxMinutes ?? 60) }, id: \.minutes) { Text(L($0.label)).tag($0.minutes) }
+                ForEach(availableSteps, id: \.minutes) { Text(L($0.label)).tag($0.minutes) }
             }
             if asked {
                 Toggle("Allow push (write access)", isOn: $write)
@@ -513,6 +526,6 @@ struct GitGrantSheet: View {
             }
         }
         .padding(20).frame(width: 480)
-        .onAppear { minutes = min(max(r.git?.minutes ?? 15, 5), r.git?.maxMinutes ?? 60); write = asked }
+        .onAppear { minutes = initialMinutes; write = asked }
     }
 }

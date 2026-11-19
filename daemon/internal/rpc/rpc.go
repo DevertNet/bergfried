@@ -80,7 +80,7 @@ func (s *sandboxServer) RequestGitAccess(ctx context.Context, r *pb.GitAccessReq
 	if s.git == nil {
 		return nil, errNoGitApp
 	}
-	g, err := s.git.RequestGrant(ctx, s.sandbox, s.folder(ctx), r.Repo, r.Write, int(r.Minutes), r.Reason)
+	g, err := s.git.RequestGrant(ctx, s.sandbox, s.folder(ctx), append([]string{r.Repo}, r.Repos...), r.Write, int(r.Minutes), r.Reason)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s *sandboxServer) RequestGitAccess(ctx context.Context, r *pb.GitAccessReq
 	case g.Expired:
 		v = pb.Verdict_VERDICT_EXPIRED
 	}
-	res := &pb.GitAccessResult{Verdict: v, Message: g.Message, TaskId: g.TaskID}
+	res := &pb.GitAccessResult{Verdict: v, Message: g.Message, TaskId: g.TaskID, TaskIds: g.TaskIDs}
 	if !g.Expires.IsZero() { // time.Time{}.Unix() would be a large negative number
 		res.ExpiresUnix = g.Expires.Unix()
 	}
@@ -102,7 +102,11 @@ func (s *sandboxServer) ReleaseGitAccess(ctx context.Context, r *pb.GitReleaseRe
 	if s.git == nil {
 		return nil, errNoGitApp
 	}
-	res, err := s.git.Release(ctx, s.sandbox, r.TaskId)
+	ids := append([]int64(nil), r.TaskIds...)
+	if r.TaskId != 0 || len(ids) == 0 {
+		ids = append([]int64{r.TaskId}, ids...)
+	}
+	res, err := s.git.ReleaseMany(ctx, s.sandbox, ids)
 	if err != nil {
 		return nil, err
 	}

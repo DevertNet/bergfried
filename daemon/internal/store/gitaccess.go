@@ -166,8 +166,10 @@ func (s *Store) ActiveGitToken(sandbox, owner string) (GitToken, bool, error) {
 
 // RetireGitTokens schedules every in-use token of (sandbox, owner) for revocation at "at" (owner "" = all owners of the sandbox).
 func (s *Store) RetireGitTokens(sandbox, owner string, at time.Time) error {
-	q := `UPDATE git_tokens SET revoke_at=? WHERE sandbox=? AND revoke_at=0`
-	args := []any{at.Unix(), sandbox}
+	// A token already retired for later is moved forward (never back): releasing the last grant of an owner must not wait for the
+	// grace time that an earlier release of the same task started.
+	q := `UPDATE git_tokens SET revoke_at=? WHERE sandbox=? AND (revoke_at=0 OR revoke_at>?)`
+	args := []any{at.Unix(), sandbox, at.Unix()}
 	if owner != "" {
 		q += ` AND owner=?`
 		args = append(args, strings.ToLower(owner))

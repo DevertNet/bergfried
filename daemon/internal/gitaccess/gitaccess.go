@@ -29,6 +29,8 @@ import (
 const (
 	DefaultMinutes = 15
 	MaxMinutes     = 60 // GitHub installation tokens live one hour
+	// MaxRepos: repositories in one request (one card, one decision, one grant per repository).
+	MaxRepos = 10
 	// Grace: a token that is replaced because the set of grants changed stays valid this long, so a running git process of
 	// another grant is not cut off in the middle of a push.
 	Grace = 2 * time.Minute
@@ -38,8 +40,9 @@ const (
 
 // Detail is shown in the app (requests.extra).
 type Detail struct {
-	Kind    string   `json:"kind"` // grant | action
-	Repo    string   `json:"repo"`
+	Kind    string   `json:"kind"`            // grant | action
+	Repo    string   `json:"repo"`            // first repository (older apps show only this one)
+	Repos   []string `json:"repos,omitempty"` // all repositories of a grant request
 	Write   bool     `json:"write,omitempty"`
 	Minutes int      `json:"minutes,omitempty"`
 	Action  string   `json:"action,omitempty"`  // pr_create | pr_merge | ci_rerun
@@ -51,7 +54,7 @@ type Detail struct {
 type outcome struct {
 	ok      bool
 	note    string
-	grant   int64
+	grants  []int64 // one grant per repository of the request
 	expires time.Time
 	write   bool
 }
@@ -154,18 +157,57 @@ type GrantResult struct {
 	Allowed bool
 	Expired bool
 	Message string
-	TaskID  int64
+	TaskID  int64   // first grant (the only one for a single repository)
+	TaskIDs []int64 // one per requested repository, in request order
 	Expires time.Time
 }
 
-// RequestGrant asks the user for a time-limited git grant on one repository. Blocks until decided or timed out.
-func (s *Service) RequestGrant(ctx context.Context, sandbox, folder, repo string, write bool, minutes int, reason string) (GrantResult, error) {
-	gr, err := parseRepo(repo)
+// parseRepos parses and de-duplicates the requested repositories (order kept).
+func parseRepos(in []string) ([]github.Repo, error) {
+	var out []github.Repo
+	seen := map[string]bool{}
+	for _, s := range in {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		gr, err := parseRepo(s)
+		if err != nil {
+			return nil, err
+		}
+		if k := strings.ToLower(gr.String()); !seen[k] {
+			seen[k] = true
+			out = append(out, gr)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no repository given (use owner/name)")
+	}
+	if len(out) > MaxRepos {
+		return nil, fmt.Errorf("at most %d repositories per request, got %d: split the task", MaxRepos, len(out))
+	}
+	return out, nil
+}
+
+// RequestGrant asks the user for a time-limited git grant on one or several repositories at once (one card, one decision with one
+// duration and level for all of them; one grant, and so one task_id, per repository). Blocks until decided or timed out.
+func (s *Service) RequestGrant(ctx context.Context, sandbox, folder string, repos []string, write bool, minutes int, reason string) (GrantResult, error) {
+	grs, err := parseRepos(repos)
 	if err != nil {
 		return GrantResult{Message: err.Error()}, nil
 	}
-	if msg := s.notReady(ctx, gr); msg != "" {
-		return GrantResult{Message: msg}, nil
+	var names []string
+	var problems []string
+	for _, gr := range grs {
+		names = append(names, gr.String())
+		if msg := s.notReady(ctx, gr); msg != "" {
+			if len(grs) > 1 {
+				msg = gr.String() + ": " + msg
+			}
+			problems = append(problems, msg)
+		}
+	}
+	if len(problems) > 0 { // nothing is asked until every repository can actually be granted
+		return GrantResult{Message: strings.Join(problems, " ")}, nil
 	}
 	if minutes <= 0 {
 		minutes = DefaultMinutes
@@ -173,13 +215,17 @@ func (s *Service) RequestGrant(ctx context.Context, sandbox, folder, repo string
 	if minutes > MaxMinutes {
 		minutes = MaxMinutes
 	}
-	d := Detail{Kind: "grant", Repo: gr.String(), Write: write, Minutes: minutes, Max: MaxMinutes, Others: s.othersLine(sandbox)}
+	d := Detail{Kind: "grant", Repo: names[0], Write: write, Minutes: minutes, Max: MaxMinutes, Others: s.othersLine(sandbox)}
+	if len(names) > 1 {
+		d.Repos = names
+	}
 	extra, _ := json.Marshal(d)
-	id, err := s.addRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "gitgrant", Path: gr.String(), Reason: clean(reason, 300), Status: "pending", Extra: string(extra)})
+	list := strings.Join(names, ", ")
+	id, err := s.addRequest(store.Request{Sandbox: sandbox, Worktree: folder, Kind: "gitgrant", Path: list, Reason: clean(reason, 300), Status: "pending", Extra: string(extra)})
 	if err != nil {
 		return GrantResult{}, err
 	}
-	s.audit("git.requested", sandbox, folder, fmt.Sprintf("id=%d %s write=%v", id, gr, write))
+	s.audit("git.requested", sandbox, folder, fmt.Sprintf("id=%d %s write=%v", id, list, write))
 	o, err := s.wait(ctx, id, sandbox, folder, "git")
 	if err != nil {
 		return GrantResult{}, err
@@ -198,8 +244,22 @@ func (s *Service) RequestGrant(ctx context.Context, sandbox, folder, repo string
 	if o.write {
 		mode = "read and write"
 	}
-	return GrantResult{Allowed: true, TaskID: o.grant, Expires: o.expires,
-		Message: fmt.Sprintf("Git access to %s granted (%s) until %s. Use plain git now; when the task is finished call release_git_access with task_id %d.", gr, mode, o.expires.Local().Format("15:04"), o.grant)}, nil
+	ids := make([]string, len(o.grants))
+	for i, g := range o.grants {
+		ids[i] = fmt.Sprint(g)
+	}
+	until := o.expires.Local().Format("15:04")
+	var msg string
+	if len(names) == 1 {
+		msg = fmt.Sprintf("Git access to %s granted (%s) until %s. Use plain git now; when the task is finished call release_git_access with task_id %d.", names[0], mode, until, o.grants[0])
+	} else {
+		var per []string
+		for i, n := range names {
+			per = append(per, fmt.Sprintf("%s = task %d", n, o.grants[i]))
+		}
+		msg = fmt.Sprintf("Git access to %d repositories granted (%s) until %s: %s. Use plain git now; when the task is finished call release_git_access with task_ids [%s].", len(names), mode, until, strings.Join(per, ", "), strings.Join(ids, ", "))
+	}
+	return GrantResult{Allowed: true, TaskID: o.grants[0], TaskIDs: o.grants, Expires: o.expires, Message: msg}, nil
 }
 
 // addRequest stores a pending request and registers its waiter in one step (under s.mu), so that Decide never sees a request
@@ -274,19 +334,28 @@ func (s *Service) Decide(ctx context.Context, id int64, allow bool, minutes int,
 			w := d.Write && write
 			o.write = w
 			o.expires = s.Now().Add(time.Duration(minutes) * time.Minute)
-			gid, err := s.S.AddGitGrant(store.GitGrant{Sandbox: r.Sandbox, Worktree: r.Worktree, Repo: d.Repo, Write: w, Reason: r.Reason, Expires: o.expires})
-			if err != nil {
-				return err
+			repos := d.Repos
+			if len(repos) == 0 {
+				repos = []string{d.Repo}
 			}
-			o.grant = gid
+			for _, repo := range repos {
+				gid, err := s.S.AddGitGrant(store.GitGrant{Sandbox: r.Sandbox, Worktree: r.Worktree, Repo: repo, Write: w, Reason: r.Reason, Expires: o.expires})
+				if err != nil {
+					for _, done := range o.grants { // all or nothing
+						_, _ = s.S.EndGitGrant(done, 1)
+					}
+					return err
+				}
+				o.grants = append(o.grants, gid)
+			}
 		}
 	}
 	if ok, _ := s.S.SetRequestStatus(id, status); !ok {
 		return errors.New("request no longer open")
 	}
 	detail := fmt.Sprintf("id=%d %s", id, r.Path)
-	if o.grant != 0 {
-		detail += fmt.Sprintf(" task=%d write=%v until=%s", o.grant, o.write, o.expires.Format(time.RFC3339))
+	if len(o.grants) > 0 {
+		detail += fmt.Sprintf(" tasks=%v write=%v until=%s", o.grants, o.write, o.expires.Format(time.RFC3339))
 	}
 	ev := "git.denied"
 	if allow {
@@ -433,6 +502,27 @@ func (s *Service) Release(ctx context.Context, sandbox string, id int64) (Releas
 	s.afterEnd(sandbox, g.Repo)
 	s.Sweep(ctx)
 	return ReleaseResult{Released: true, Message: fmt.Sprintf("Git access to %s ended.%s", g.Repo, s.activeSummary(sandbox))}, nil
+}
+
+// ReleaseMany ends several grants (the task_ids of one multi-repository request). Each id follows the rules of Release.
+func (s *Service) ReleaseMany(ctx context.Context, sandbox string, ids []int64) (ReleaseResult, error) {
+	if len(ids) == 1 {
+		return s.Release(ctx, sandbox, ids[0])
+	}
+	if len(ids) == 0 {
+		return ReleaseResult{Message: "No task_id given." + s.activeSummary(sandbox)}, nil
+	}
+	released := false
+	var msgs []string
+	for _, id := range ids {
+		r, err := s.Release(ctx, sandbox, id)
+		if err != nil {
+			return ReleaseResult{}, err
+		}
+		released = released || r.Released
+		msgs = append(msgs, r.Message)
+	}
+	return ReleaseResult{Released: released, Message: msgs[len(msgs)-1]}, nil
 }
 
 func (s *Service) activeSummary(sandbox string) string {

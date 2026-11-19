@@ -612,6 +612,7 @@
 "Forget the app" = "App vergessen";
 "Git access for %@" = "Git-Zugriff für %@";
 "Git access for %@/%@" = "Git-Zugriff für %@/%@";
+"%lld repositories, one decision for all:" = "%lld Repositories, eine Entscheidung für alle:";
 "Git request: %@" = "Git-Anfrage: %@";
 "Git request: %@/%@" = "Git-Anfrage: %@/%@";
 "GitHub opened in your browser. Confirm creating the app there, install it, then come back here." = "GitHub wurde im Browser geöffnet. Bestätige dort das Anlegen der App, installiere sie und komm dann hierher zurück.";

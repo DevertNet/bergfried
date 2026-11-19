@@ -363,8 +363,8 @@ func guidance(outDir string) string {
 		"There is no access to private keys and no agent forwarding.\n" +
 		"- **Results for the user:** put them in `" + outDir + "` (they appear on the Mac).\n" +
 		"- **Git/GitHub:** use plain `git` over HTTPS (`git clone https://github.com/owner/repo`, `push`, `pull` …). There is **no standing token** in the VM and no SSH key for GitHub: " +
-		"git gets a short-lived token from Bergfried only while the user allowed it. Call `request_git_access` once per task (`repo=owner/name`, `write=true` only if you must push, reason = one sentence, minutes = estimate) " +
-		"and keep the returned `task_id`; plain `git` works until the grant expires. As soon as the task is finished (all pushes done) call `release_git_access` with the `task_id`: it ends the grant and revokes the token on GitHub. " +
+		"git gets a short-lived token from Bergfried only while the user allowed it. Call `request_git_access` once per task (`repo=owner/name`, `write=true` only if you must push, reason = one sentence, minutes = estimate). If the task touches several repos (for example cloning or pushing four of them), list them all in that one call (`repo` plus `repos=[…]`, max 10): the user decides once instead of once per repo. " +
+		"Keep the returned `task_id` (`task_ids` for several repos); plain `git` works until the grant expires. As soon as the task is finished (all pushes done) call `release_git_access` with the `task_id` / `task_ids`: it ends the grant and revokes the token on GitHub. " +
 		"On `could not read Username`, `403`, `Repository not found` or `Authentication failed` you most likely have no active grant: request one, never look for tokens and never print or store one. " +
 		"Prefer feature branches rather than pushing directly to `main`; you cannot change workflow files (`.github/workflows`). " +
 		"**Pull requests, merges and CI re-runs are not done with git or `gh`:** use `github_create_pr`, `github_merge_pr` and `github_rerun_ci` (the user is asked every time) and `github_pr_view` / `github_ci_status` to read state (they need an active grant). " +
