@@ -91,6 +91,7 @@ struct GitHubDetail: Codable, Hashable {
 struct GitDetail: Codable, Hashable {
     var kind: String
     var repo: String
+    var repos: [String]?   // all repositories of a multi-repo grant request (nil for one)
     var write: Bool?
     var minutes: Int?
     var action: String?

@@ -160,9 +160,14 @@ func (e *env) pending(kind string) store.Request {
 
 func (e *env) grant(sandbox, repo string, write bool, allow bool, minutes int, userWrite bool) GrantResult {
 	e.t.Helper()
+	return e.grantMany(sandbox, []string{repo}, write, allow, minutes, userWrite)
+}
+
+func (e *env) grantMany(sandbox string, repos []string, write bool, allow bool, minutes int, userWrite bool) GrantResult {
+	e.t.Helper()
 	ch := make(chan GrantResult, 1)
 	go func() {
-		r, err := e.s.RequestGrant(context.Background(), sandbox, "work/main", repo, write, 10, "push my branch")
+		r, err := e.s.RequestGrant(context.Background(), sandbox, "work/main", repos, write, 10, "push my branch")
 		if err != nil {
 			e.t.Error(err)
 		}
@@ -332,14 +337,14 @@ func TestDeniedAndNotInstalled(t *testing.T) {
 		t.Fatalf("%+v", g)
 	}
 	e.f.missing["o/gone"] = true
-	r, err := e.s.RequestGrant(context.Background(), "shop", "", "o/gone", true, 5, "x")
+	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/gone"}, true, 5, "x")
 	if err != nil || r.Allowed || !strings.Contains(r.Message, "not installed") {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
 		t.Fatal("no card may be created for a repository the app cannot reach")
 	}
-	if r, _ := e.s.RequestGrant(context.Background(), "shop", "", "not a repo!", true, 5, "x"); r.Allowed || r.Message == "" {
+	if r, _ := e.s.RequestGrant(context.Background(), "shop", "", []string{"not a repo!"}, true, 5, "x"); r.Allowed || r.Message == "" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -347,7 +352,7 @@ func TestDeniedAndNotInstalled(t *testing.T) {
 func TestRequestTimesOut(t *testing.T) {
 	e := newEnv(t)
 	e.s.Timeout = 50 * time.Millisecond
-	r, err := e.s.RequestGrant(context.Background(), "shop", "", "o/r", true, 5, "x")
+	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/r"}, true, 5, "x")
 	if err != nil || !r.Expired {
 		t.Fatalf("%+v %v", r, err)
 	}
@@ -448,5 +453,82 @@ func TestCleanStripsControlCharacters(t *testing.T) {
 	}
 	if got := clean(strings.Repeat("x", 600), 300); len([]rune(got)) != 301 {
 		t.Fatal(len(got))
+	}
+}
+
+// Several repositories in one request: one card, one decision, one grant (task_id) per repository, one token for all of them.
+func TestSeveralReposOneRequestOneDecision(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	g := e.grantMany("shop", []string{"o/a", "https://github.com/o/b", "o/c", "O/A"}, true, true, 30, true) // duplicate (case-insensitive) is dropped
+	if !g.Allowed || len(g.TaskIDs) != 3 || g.TaskID != g.TaskIDs[0] {
+		t.Fatalf("%+v", g)
+	}
+	for _, id := range g.TaskIDs {
+		if !strings.Contains(g.Message, fmt.Sprint(id)) {
+			t.Fatalf("message must name every task id: %s", g.Message)
+		}
+	}
+	if rs, _ := e.st.ListRequests(false, 10); len(rs) != 1 {
+		t.Fatalf("one request for all repositories, got %d", len(rs))
+	}
+	for _, r := range []string{"o/a", "o/b", "o/c"} {
+		if _, _, err := e.s.Credential(ctx, "shop", "github.com", r+".git"); err != nil {
+			t.Fatal(r, err)
+		}
+	}
+	if m, _, _ := e.f.snapshot(); len(m) != 1 || len(m[0].Repos) != 3 || m[0].Perms["contents"] != "write" {
+		t.Fatalf("all repositories must share one narrowed token: %+v", m)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/d"); err != ErrNoGrant {
+		t.Fatal("a repository that was not requested gets nothing")
+	}
+	// release all with the ids of the request; a foreign sandbox cannot
+	if r, _ := e.s.ReleaseMany(ctx, "blog", g.TaskIDs); r.Released {
+		t.Fatalf("%+v", r)
+	}
+	r, err := e.s.ReleaseMany(ctx, "shop", g.TaskIDs)
+	if err != nil || !r.Released {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if gs, _ := e.s.activeGrants("shop"); len(gs) != 0 {
+		t.Fatalf("all grants must be ended: %+v", gs)
+	}
+	if _, rev, _ := e.f.snapshot(); len(rev) != 1 {
+		t.Fatalf("the token must be revoked: %v", rev)
+	}
+}
+
+func TestSeveralReposUserLowersLevelForAll(t *testing.T) {
+	e := newEnv(t)
+	g := e.grantMany("shop", []string{"o/a", "o/b"}, true, true, 5, false)
+	if !g.Allowed {
+		t.Fatal(g)
+	}
+	gs, _ := e.s.activeGrants("shop")
+	if len(gs) != 2 || gs[0].Write || gs[1].Write {
+		t.Fatalf("read only for every repository: %+v", gs)
+	}
+}
+
+func TestSeveralReposRefusedBeforeAskingTheUser(t *testing.T) {
+	e := newEnv(t)
+	e.f.missing["o/b"] = true
+	r, err := e.s.RequestGrant(context.Background(), "shop", "main", []string{"o/a", "o/b"}, false, 5, "x")
+	if err != nil || r.Allowed || !strings.Contains(r.Message, "o/b") || !strings.Contains(r.Message, "not installed") {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if rs, _ := e.st.ListRequests(false, 10); len(rs) != 0 {
+		t.Fatal("the user must not be asked for a request that cannot be granted")
+	}
+	var many []string
+	for i := 0; i <= MaxRepos; i++ {
+		many = append(many, fmt.Sprintf("o/r%d", i))
+	}
+	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", many, false, 5, "x"); r.Allowed || !strings.Contains(r.Message, "at most") {
+		t.Fatalf("%+v", r)
+	}
+	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", []string{" ", ""}, false, 5, "x"); r.Allowed || r.Message == "" {
+		t.Fatalf("%+v", r)
 	}
 }
