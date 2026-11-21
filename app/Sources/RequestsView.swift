@@ -196,6 +196,7 @@ struct SSHDecisionSheet: View {
     @Local private var user = ""
     @Local private var trust = false
     @Local private var passphrase = ""
+    @FocusState private var passphraseFocused: Bool
     @Local private var note = ""
     @Local private var error: String?
 
@@ -274,6 +275,8 @@ struct SSHDecisionSheet: View {
                 if let keyErr { Text(keyErr).foregroundStyle(.red).font(.caption).fixedSize(horizontal: false, vertical: true) }
                 if needsPassphrase {
                     SecureField("Passphrase of this key", text: $passphrase).textFieldStyle(.roundedBorder)
+                        .focused($passphraseFocused)
+                        .onAppear { passphraseFocused = true } // type right away when the field appears
                 }
             }
 
@@ -345,6 +348,7 @@ struct SSHDecisionSheet: View {
             }
         }
         .padding(20).frame(width: 680).frame(maxHeight: 720)
+        .onChange(of: error) { _, e in if e != nil && needsPassphrase { passphraseFocused = true } } // wrong passphrase: the field was cleared
         .task {
             // Precedence: the request's wish, then the host default
             if let ru = r.ssh?.requestedUser, !ru.isEmpty { user = ru } else { user = r.ssh?.defaultUser ?? "claude" }
