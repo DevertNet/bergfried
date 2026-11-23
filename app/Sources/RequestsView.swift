@@ -80,6 +80,7 @@ struct PendingRow: View {
             HStack {
                 Image(systemName: icon)
                 Text(r.origin).font(.headline)
+                if let k = KindStyle(requestKind: r.kind) { KindPill(kind: k) }
                 Spacer()
                 Text(Date(timeIntervalSince1970: TimeInterval(r.createdUnix)), style: .relative).font(.caption).foregroundStyle(.secondary)
             }
@@ -121,7 +122,9 @@ struct PendingRow: View {
                     Button("Deny", role: .destructive, action: deny)
                 }
             }
-        }.padding(.vertical, 4)
+        }
+        .kindCard(KindStyle(requestKind: r.kind))
+        .padding(.vertical, 4)
     }
 }
 
@@ -131,7 +134,8 @@ struct HistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "gitgrant": "arrow.triangle.branch", "ghaction": "arrow.triangle.merge", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(.secondary)
+                Image(systemName: ["ssh": "key", "ghtoken": "key.horizontal", "gitgrant": "arrow.triangle.branch", "ghaction": "arrow.triangle.merge", "skill": "book.closed"][r.kind] ?? "doc").foregroundStyle(KindStyle(requestKind: r.kind)?.strong ?? .secondary)
+                if let k = KindStyle(requestKind: r.kind) { KindPill(kind: k) }
                 Text(r.origin)
                 Text(["ssh", "ghtoken", "gitgrant", "ghaction", "skill"].contains(r.kind) ? r.path : "~/" + r.path).lineLimit(1).truncationMode(.middle)
                 Spacer()
@@ -164,7 +168,7 @@ struct GrantRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(g.user)@\(g.host)").font(.headline)
+                HStack(spacing: 6) { Text("\(g.user)@\(g.host)").font(.headline); KindPill(kind: .ssh) }
                 Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.folder.isEmpty ? L("all folders") : L("Folder %@", g.folder))
                     + (g.perConnection ? " · " + L("every connection individually") : "")).font(.caption).foregroundStyle(.secondary)
                 Text("Key \(g.keyFingerprint)").font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -182,6 +186,7 @@ struct GrantRow: View {
             }.fixedSize()
             Button("Revoke", role: .destructive) { Task { await model.revoke(g) } }
         }
+        .kindCard(.ssh)
     }
 }
 
@@ -302,11 +307,14 @@ struct SSHDecisionSheet: View {
     }
 
     var body: some View {
+        KindFrame(kind: .ssh, title: title) { form }.frame(width: 680).frame(maxHeight: 720)
+    }
+
+    var form: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.title3.bold())
-                    LT("Target: **%@**", r.path).font(.callout).foregroundStyle(.secondary)
+                    LT("Target: **%@**", r.path).font(.title3).foregroundStyle(.primary)
                 }
                 Spacer()
                 if unknownHost {
@@ -347,7 +355,7 @@ struct SSHDecisionSheet: View {
                 }.disabled(!canAllow).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 680).frame(maxHeight: 720)
+        .padding(20)
         .onChange(of: error) { _, e in if e != nil && needsPassphrase { passphraseFocused = true } } // wrong passphrase: the field was cleared
         .task {
             // Precedence: the request's wish, then the host default
@@ -398,8 +406,11 @@ struct GitHubTokenSheet: View {
     var hasToken: Bool { d?.hasToken ?? false }
 
     var body: some View {
+        KindFrame(kind: .github, title: r.hasFolder ? L("GitHub access for %@ / %@", r.sandbox, r.folder) : L("GitHub access for %@", r.sandbox)) { form }.frame(width: 600)
+    }
+
+    var form: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(r.hasFolder ? L("GitHub access for %@ / %@", r.sandbox, r.folder) : L("GitHub access for %@", r.sandbox)).font(.headline)
             if let repo = d?.repo, !repo.isEmpty { LT("Repo: **%@**", repo) }
             Text(L("Assistant's reason (unchecked): %@", r.reason.isEmpty ? "–" : r.reason)).font(.callout).foregroundStyle(.secondary)
             if hasToken {
@@ -429,7 +440,7 @@ struct GitHubTokenSheet: View {
                 }.disabled(busy || (!hasToken && token.trimmingCharacters(in: .whitespaces).isEmpty)).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 600)
+        .padding(20)
     }
 }
 
@@ -456,7 +467,7 @@ struct GitGrantRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(g.repo).font(.headline)
+                HStack(spacing: 6) { Text(g.repo).font(.headline); KindPill(kind: .github) }
                 Text(L("Task %lld · Sandbox %@ · %@", g.id, g.sandbox, g.write ? L("read and write") : L("read only"))
                     + (g.folder.isEmpty || g.folder == "unknown" ? "" : " · " + L("Folder %@", g.folder))).font(.caption).foregroundStyle(.secondary)
                 GrantReason(reason: g.reason)
@@ -468,6 +479,7 @@ struct GitGrantRow: View {
             }
             Button("Revoke", role: .destructive) { Task { await model.revokeGit(g) } }
         }
+        .kindCard(.github)
     }
 }
 
@@ -493,8 +505,12 @@ struct GitGrantSheet: View {
     var title: String { r.hasFolder ? L("Git access for %@/%@", r.sandbox, r.folder) : L("Git access for %@", r.sandbox) }
 
     var body: some View {
+        KindFrame(kind: .github, title: title) { form }.frame(width: 480)
+            .onAppear { minutes = initialMinutes; write = asked }
+    }
+
+    var form: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
             if let repos = r.git?.repos, repos.count > 1 {
                 Text(L("%lld repositories, one decision for all:", repos.count)).font(.callout).foregroundStyle(.secondary)
                 ForEach(repos, id: \.self) { Text($0).font(.title3.bold()).textSelection(.enabled) }
@@ -529,7 +545,6 @@ struct GitGrantSheet: View {
                 }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20).frame(width: 480)
-        .onAppear { minutes = initialMinutes; write = asked }
+        .padding(20)
     }
 }
