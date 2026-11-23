@@ -30,6 +30,7 @@ type fakeGH struct {
 	merged  []int
 	prOpen  bool
 	missing map[string]bool // repos without installation
+	noWF    bool            // the app does not have the workflows permission: minting it is refused
 	srv     *httptest.Server
 }
 
@@ -69,6 +70,10 @@ func (f *fakeGH) handle(w http.ResponseWriter, r *http.Request) {
 			Permissions  map[string]string `json:"permissions"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
+		if _, wf := b.Permissions["workflows"]; wf && f.noWF {
+			js(422, map[string]string{"message": "The permissions requested are not granted to this installation."})
+			return
+		}
 		f.n++
 		tok := fmt.Sprintf("ghs_tok%d", f.n)
 		f.minted = append(f.minted, mint{tok, b.Repositories, b.Permissions})
@@ -167,7 +172,7 @@ func (e *env) grantMany(sandbox string, repos []string, write bool, allow bool, 
 	e.t.Helper()
 	ch := make(chan GrantResult, 1)
 	go func() {
-		r, err := e.s.RequestGrant(context.Background(), sandbox, "work/main", repos, write, 10, "push my branch")
+		r, err := e.s.RequestGrant(context.Background(), sandbox, "work/main", repos, write, false, 10, "push my branch")
 		if err != nil {
 			e.t.Error(err)
 		}
@@ -337,14 +342,14 @@ func TestDeniedAndNotInstalled(t *testing.T) {
 		t.Fatalf("%+v", g)
 	}
 	e.f.missing["o/gone"] = true
-	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/gone"}, true, 5, "x")
+	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/gone"}, true, false, 5, "x")
 	if err != nil || r.Allowed || !strings.Contains(r.Message, "not installed") {
 		t.Fatalf("%+v %v", r, err)
 	}
 	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
 		t.Fatal("no card may be created for a repository the app cannot reach")
 	}
-	if r, _ := e.s.RequestGrant(context.Background(), "shop", "", []string{"not a repo!"}, true, 5, "x"); r.Allowed || r.Message == "" {
+	if r, _ := e.s.RequestGrant(context.Background(), "shop", "", []string{"not a repo!"}, true, false, 5, "x"); r.Allowed || r.Message == "" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -352,7 +357,7 @@ func TestDeniedAndNotInstalled(t *testing.T) {
 func TestRequestTimesOut(t *testing.T) {
 	e := newEnv(t)
 	e.s.Timeout = 50 * time.Millisecond
-	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/r"}, true, 5, "x")
+	r, err := e.s.RequestGrant(context.Background(), "shop", "", []string{"o/r"}, true, false, 5, "x")
 	if err != nil || !r.Expired {
 		t.Fatalf("%+v %v", r, err)
 	}
@@ -514,7 +519,7 @@ func TestSeveralReposUserLowersLevelForAll(t *testing.T) {
 func TestSeveralReposRefusedBeforeAskingTheUser(t *testing.T) {
 	e := newEnv(t)
 	e.f.missing["o/b"] = true
-	r, err := e.s.RequestGrant(context.Background(), "shop", "main", []string{"o/a", "o/b"}, false, 5, "x")
+	r, err := e.s.RequestGrant(context.Background(), "shop", "main", []string{"o/a", "o/b"}, false, false, 5, "x")
 	if err != nil || r.Allowed || !strings.Contains(r.Message, "o/b") || !strings.Contains(r.Message, "not installed") {
 		t.Fatalf("%+v %v", r, err)
 	}
@@ -525,10 +530,509 @@ func TestSeveralReposRefusedBeforeAskingTheUser(t *testing.T) {
 	for i := 0; i <= MaxRepos; i++ {
 		many = append(many, fmt.Sprintf("o/r%d", i))
 	}
-	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", many, false, 5, "x"); r.Allowed || !strings.Contains(r.Message, "at most") {
+	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", many, false, false, 5, "x"); r.Allowed || !strings.Contains(r.Message, "at most") {
 		t.Fatalf("%+v", r)
 	}
-	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", []string{" ", ""}, false, 5, "x"); r.Allowed || r.Message == "" {
+	if r, _ = e.s.RequestGrant(context.Background(), "shop", "main", []string{" ", ""}, false, false, 5, "x"); r.Allowed || r.Message == "" {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// ---- full repo access (windows) ----
+
+func (e *env) action(sandbox string, a ActionReq) ActionRes {
+	e.t.Helper()
+	r, err := e.s.Action(context.Background(), sandbox, "work/main", a)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return r
+}
+
+func TestWindowAllowsPushPRAndCIButNotMergeWithoutAsking(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 120, Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	// push access without any request
+	if _, tok, err := e.s.Credential(ctx, "shop", "github.com", "o/r.git"); err != nil || tok == "" {
+		t.Fatal("window must give credentials:", err)
+	}
+	if m, _, _ := e.f.snapshot(); m[0].Perms["contents"] != "write" {
+		t.Fatalf("a window includes write access: %+v", m)
+	}
+	// a git grant request is answered at once with the window's id and nothing is shown to the user
+	g, err := e.s.RequestGrant(ctx, "shop", "work/main", []string{"o/r"}, false, false, 10, "x")
+	if err != nil || !g.Allowed || g.TaskID == 0 || !strings.Contains(g.Message, "full repo access") {
+		t.Fatalf("%+v %v", g, err)
+	}
+	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
+		t.Fatalf("no request may be created inside a window: %+v", rs)
+	}
+	// CI re-run needs no question
+	if r := e.action("shop", ActionReq{Action: ActCIRerun, Repo: "o/r", RunID: 9}); r.Expired || strings.Contains(r.Message, "declined") {
+		t.Fatalf("%+v", r)
+	}
+	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
+		t.Fatalf("no request for CI re-run inside a window: %+v", rs)
+	}
+	// merge without the tick still asks
+	done := make(chan ActionRes, 1)
+	go func() { done <- e.action("shop", ActionReq{Action: ActPRMerge, Repo: "o/r", Number: 5}) }()
+	r := e.pending("ghaction")
+	if err := e.s.Decide(ctx, r.ID, false, 0, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.OK {
+		t.Fatalf("%+v", res)
+	}
+	if _, _, merged := e.f.snapshot(); len(merged) != 0 {
+		t.Fatal("merge needs approval without the merge tick")
+	}
+}
+
+func TestWindowWithMergeMergesWithoutAsking(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.s.OpenWindow(context.Background(), "shop", "o/r", 60, Opts{Merge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.action("shop", ActionReq{Action: ActPRMerge, Repo: "o/r", Number: 5, Method: "squash"}); !r.OK {
+		t.Fatalf("%+v", r)
+	}
+	if _, _, merged := e.f.snapshot(); len(merged) != 1 {
+		t.Fatal("merge must happen")
+	}
+	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
+		t.Fatal("no request expected")
+	}
+}
+
+func TestWindowIsPerRepoAndPerSandbox(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 60, Opts{Merge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/second", 60, Opts{}); err != nil { // several windows in one sandbox
+		t.Fatal(err)
+	}
+	for _, c := range [][3]string{{"shop", "github.com", "o/r"}, {"shop", "github.com", "o/second"}} {
+		if _, _, err := e.s.Credential(ctx, c[0], c[1], c[2]); err != nil {
+			t.Fatalf("%v: %v", c, err)
+		}
+	}
+	// other repo, other sandbox: nothing
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/third"); err != ErrNoGrant {
+		t.Fatal(err)
+	}
+	if _, _, err := e.s.Credential(ctx, "blog", "github.com", "o/r"); err != ErrNoGrant {
+		t.Fatal(err)
+	}
+	// a request that is only partly covered still asks
+	ch := make(chan GrantResult, 1)
+	go func() {
+		g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r", "o/third"}, true, false, 10, "x")
+		ch <- g
+	}()
+	rq := e.pending("gitgrant")
+	_ = e.s.Decide(ctx, rq.ID, false, 0, false, "")
+	if g := <-ch; g.Allowed {
+		t.Fatal("must have asked")
+	}
+	// opening the same repo again replaces the window (one per repo)
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 30, Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	gs, _ := e.st.ListGitGrants("shop", true, e.clock())
+	for _, g := range gs {
+		if g.Window && g.Repo == "o/r" {
+			n++
+			if g.Merge {
+				t.Fatal("the new window replaced the merge setting")
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("one window per repo, got %d", n)
+	}
+}
+
+func TestWindowEndsAndAssistantCannotRelease(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	w, err := e.s.OpenWindow(ctx, "shop", "o/r", 180, Opts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, _ := e.s.Release(ctx, "shop", w.ID)
+	if rel.Released || !strings.Contains(rel.Message, "only the user") {
+		t.Fatalf("the assistant must not end a window: %+v", rel)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/r"); err != nil {
+		t.Fatal("window must survive the release attempt:", err)
+	}
+	// longer than 60 minutes: the token is replaced on demand, access stays
+	e.advance(100 * time.Minute)
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/r"); err != nil {
+		t.Fatal("window must still work after the first token expired:", err)
+	}
+	if m, _, _ := e.f.snapshot(); len(m) < 2 {
+		t.Fatal("a fresh token must have been minted")
+	}
+	// the user revokes: immediately over
+	if err := e.s.Revoke(ctx, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/r"); err != ErrNoGrant {
+		t.Fatal(err)
+	}
+	// expiry
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 60, Opts{Merge: true}); err != nil {
+		t.Fatal(err)
+	}
+	e.advance(61 * time.Minute)
+	e.s.Sweep(ctx)
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/r"); err != ErrNoGrant {
+		t.Fatal("expired window must give nothing:", err)
+	}
+}
+
+func TestWindowLimitsAndRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	w, err := e.s.OpenWindow(ctx, "shop", "o/r", 100000, Opts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if max := e.clock().Add(MaxWindowMinutes * time.Minute); w.Expires.After(max.Add(time.Second)) {
+		t.Fatalf("a window is limited to 24 hours: %v", w.Expires)
+	}
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 0, Opts{}); err == nil {
+		t.Fatal("a window needs a duration")
+	}
+	e.f.mu.Lock()
+	e.f.missing["o/none"] = true
+	e.f.mu.Unlock()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/none", 60, Opts{}); err == nil {
+		t.Fatal("no window for a repo without the app")
+	}
+	if _, err := e.s.OpenWindow(ctx, "shop", "not a repo", 60, Opts{}); err == nil {
+		t.Fatal("bad repo")
+	}
+}
+
+func TestRequestAllowedAsWindow(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ch := make(chan GrantResult, 1)
+	go func() {
+		g, _ := e.s.RequestGrant(ctx, "shop", "work/main", []string{"o/r", "o/s"}, false, false, 10, "big refactor")
+		ch <- g
+	}()
+	r := e.pending("gitgrant")
+	if err := e.s.DecideWindow(ctx, r.ID, 240, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	g := <-ch
+	if !g.Allowed || len(g.TaskIDs) != 2 {
+		t.Fatalf("%+v", g)
+	}
+	gs, _ := e.st.ListGitGrants("shop", true, e.clock())
+	if len(gs) != 2 {
+		t.Fatal(gs)
+	}
+	for _, x := range gs {
+		if !x.Window || !x.Write || !x.Merge || x.Expires.Before(e.clock().Add(239*time.Minute)) {
+			t.Fatalf("both repos need a 4 hour write window with merge: %+v", x)
+		}
+	}
+	// a single action cannot be turned into a window
+	go func() { _, _ = e.s.Action(ctx, "blog", "", ActionReq{Action: ActCIRerun, Repo: "o/r", RunID: 3}) }()
+	a := e.pending("ghaction")
+	if err := e.s.DecideWindow(ctx, a.ID, 60, false, ""); err == nil {
+		t.Fatal("actions are decided once, not as windows")
+	}
+	_ = e.s.Decide(ctx, a.ID, false, 0, false, "")
+}
+
+func TestExtendGrantAndWindow(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	g := e.grant("shop", "o/r", true, true, 20, true)
+	near := func(d, want time.Duration) bool { return d > want-2*time.Second && d < want+2*time.Second } // the database keeps seconds
+	exp, err := e.s.Extend(ctx, g.TaskID, 15)
+	if err != nil || !near(exp.Sub(g.Expires), 15*time.Minute) {
+		t.Fatalf("%v %v", exp, err)
+	}
+	// a normal grant never ends later than 60 minutes from now
+	exp, err = e.s.Extend(ctx, g.TaskID, 240)
+	if err != nil || exp.After(e.clock().Add(MaxMinutes*time.Minute+time.Second)) {
+		t.Fatalf("grant limited to 60 minutes from now: %v %v", exp, err)
+	}
+	if _, err := e.s.Extend(ctx, g.TaskID, 5); err == nil {
+		t.Fatal("at the maximum: must say so")
+	}
+	// a window can grow up to 24 hours from now
+	w, _ := e.s.OpenWindow(ctx, "shop", "o/w", 60, Opts{})
+	exp, err = e.s.Extend(ctx, w.ID, 480)
+	if err != nil || !near(exp.Sub(w.Expires), 480*time.Minute) {
+		t.Fatalf("%v %v", exp, err)
+	}
+	exp, _ = e.s.Extend(ctx, w.ID, 100000)
+	if exp.After(e.clock().Add(MaxWindowMinutes*time.Minute + time.Second)) {
+		t.Fatal("window limited to 24 hours from now")
+	}
+	// ended or expired grants cannot be extended; bad input is refused
+	if _, err := e.s.Extend(ctx, w.ID, 0); err == nil {
+		t.Fatal("zero minutes")
+	}
+	_ = e.s.Revoke(ctx, w.ID)
+	if _, err := e.s.Extend(ctx, w.ID, 10); err == nil {
+		t.Fatal("revoked grant must not be extendable")
+	}
+	e.advance(61 * time.Minute)
+	if _, err := e.s.Extend(ctx, g.TaskID, 10); err == nil {
+		t.Fatal("expired grant must not be extendable")
+	}
+	if _, err := e.s.Extend(ctx, 9999, 10); err == nil {
+		t.Fatal("unknown id")
+	}
+}
+
+// ---- workflow files ----
+
+func TestWorkflowsOnlyForTheTickedRepoAndWithItsOwnToken(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/ci", 60, Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	e.grant("shop", "o/plain", true, true, 20, true) // same owner, no workflows
+	_, tokCI, err := e.s.Credential(ctx, "shop", "github.com", "o/ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tokPlain, err := e.s.Credential(ctx, "shop", "github.com", "o/plain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokCI == tokPlain {
+		t.Fatal("the workflows permission must not reach the other repo: two tokens")
+	}
+	m, _, _ := e.f.snapshot()
+	if len(m) != 2 {
+		t.Fatalf("%+v", m)
+	}
+	for _, x := range m {
+		isCI := len(x.Repos) == 1 && x.Repos[0] == "ci"
+		_, hasWF := x.Perms["workflows"]
+		if isCI != hasWF || (isCI && x.Perms["workflows"] != "write") || (!isCI && (len(x.Repos) != 1 || x.Repos[0] != "plain")) {
+			t.Fatalf("workflows must be in the token of o/ci only: %+v", x)
+		}
+	}
+	// both are reused
+	if _, again, _ := e.s.Credential(ctx, "shop", "github.com", "o/ci"); again != tokCI {
+		t.Fatal("token of the workflows class must be reused")
+	}
+	// the audit log says so and never shows a token
+	evs, _ := e.st.AuditList(100)
+	seen := false
+	for _, a := range evs {
+		if strings.Contains(a.Detail, "ghs_") {
+			t.Fatal("token in audit log")
+		}
+		if a.Event == "git.token" && strings.Contains(a.Detail, "workflows=write") {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatal("audit must say that a token with workflows was minted")
+	}
+}
+
+func TestWorkflowsNeedWriteAndTheUsersTick(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	// asked write + workflows ticked, user lowers to read only: workflows is dropped with it
+	ch := make(chan GrantResult, 1)
+	go func() { g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, true, false, 10, "x"); ch <- g }()
+	r := e.pending("gitgrant")
+	if err := e.s.DecideOpts(ctx, r.ID, true, 10, false, "", Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	<-ch
+	gs, _ := e.st.ListGitGrants("shop", true, e.clock())
+	if len(gs) != 1 || gs[0].Write || gs[0].Workflows {
+		t.Fatalf("read-only grant must not carry workflows: %+v", gs)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if m, _, _ := e.f.snapshot(); len(m[0].Perms) != 1 {
+		t.Fatalf("contents only: %+v", m[0].Perms)
+	}
+	// without the tick a write grant has no workflows
+	e.grant("shop", "o/w", true, true, 10, true)
+	e.s.Credential(ctx, "shop", "github.com", "o/w")
+	for _, x := range func() []mint { m, _, _ := e.f.snapshot(); return m }() {
+		if _, ok := x.Perms["workflows"]; ok {
+			t.Fatalf("no workflows without the user's tick: %+v", x)
+		}
+	}
+	// ticked on a normal write grant
+	ch2 := make(chan GrantResult, 1)
+	go func() { g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/wf"}, true, false, 10, "x"); ch2 <- g }()
+	r2 := e.pending("gitgrant")
+	if err := e.s.DecideOpts(ctx, r2.ID, true, 10, true, "", Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	<-ch2
+	gs, _ = e.st.ListGitGrants("shop", true, e.clock())
+	found := false
+	for _, g := range gs {
+		if g.Repo == "o/wf" && g.Write && g.Workflows {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the ticked write grant must carry workflows")
+	}
+}
+
+func TestWorkflowsMissingPermissionGivesAHint(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.f.mu.Lock()
+	e.f.noWF = true
+	e.f.mu.Unlock()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/ci", 60, Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := e.s.Credential(ctx, "shop", "github.com", "o/ci")
+	if err == nil || !strings.Contains(err.Error(), "Workflows: Read and write") {
+		t.Fatalf("the user needs to learn which permission is missing: %v", err)
+	}
+	// a repo without the tick is not affected
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/other", 60, Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/other"); err != nil {
+		t.Fatal("repos without workflows must keep working:", err)
+	}
+}
+
+func TestReleasingTheWorkflowsGrantRevokesItsTokenOnly(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	w, _ := e.s.OpenWindow(ctx, "shop", "o/ci", 60, Opts{Workflows: true})
+	e.grant("shop", "o/plain", true, true, 20, true)
+	_, tokCI, _ := e.s.Credential(ctx, "shop", "github.com", "o/ci")
+	_, tokPlain, _ := e.s.Credential(ctx, "shop", "github.com", "o/plain")
+	if err := e.s.Revoke(ctx, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.advance(3 * time.Minute) // grace time
+	e.s.Sweep(ctx)
+	_, rev, _ := e.f.snapshot()
+	revoked := map[string]bool{}
+	for _, r := range rev {
+		revoked[r] = true
+	}
+	if !revoked[tokCI] {
+		t.Fatalf("the workflows token must be revoked: %v", rev)
+	}
+	_ = tokPlain
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/ci"); err != ErrNoGrant {
+		t.Fatal("o/ci must be over:", err)
+	}
+	if _, _, err := e.s.Credential(ctx, "shop", "github.com", "o/plain"); err != nil {
+		t.Fatal("o/plain must keep working:", err)
+	}
+}
+
+// ---- the assistant asks for workflow files ----
+
+func TestAssistantAsksForWorkflowsUserDecides(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ch := make(chan GrantResult, 1)
+	go func() {
+		g, _ := e.s.RequestGrant(ctx, "shop", "work/main", []string{"o/ci"}, true, true, 10, "fix the pipeline")
+		ch <- g
+	}()
+	r := e.pending("gitgrant")
+	var d Detail
+	_ = json.Unmarshal([]byte(r.Extra), &d)
+	if !d.Workflows || !d.Write {
+		t.Fatalf("the card must show that workflow files were asked for: %+v", d)
+	}
+	// nothing is granted until the user decides; the user's answer carries the final choice
+	if gs, _ := e.st.ListGitGrants("shop", true, e.clock()); len(gs) != 0 {
+		t.Fatal("no grant before the decision")
+	}
+	if err := e.s.DecideOpts(ctx, r.ID, true, 10, true, "", Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	if g := <-ch; !g.Allowed {
+		t.Fatalf("%+v", g)
+	}
+	gs, _ := e.st.ListGitGrants("shop", true, e.clock())
+	if len(gs) != 1 || !gs[0].Write || !gs[0].Workflows {
+		t.Fatalf("%+v", gs)
+	}
+	// the user can also refuse the workflow part but allow the push
+	ch2 := make(chan GrantResult, 1)
+	go func() { g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/two"}, true, true, 10, "x"); ch2 <- g }()
+	r2 := e.pending("gitgrant")
+	if err := e.s.DecideOpts(ctx, r2.ID, true, 10, true, "", Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	<-ch2
+	gs, _ = e.st.ListGitGrants("shop", true, e.clock())
+	for _, g := range gs {
+		if g.Repo == "o/two" && (g.Workflows || !g.Write) {
+			t.Fatalf("push yes, workflows no: %+v", g)
+		}
+	}
+}
+
+func TestWorkflowsRequestWithoutWriteIsIgnored(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	go func() { _, _ = e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, false, true, 10, "x") }()
+	r := e.pending("gitgrant")
+	var d Detail
+	_ = json.Unmarshal([]byte(r.Extra), &d)
+	if d.Workflows {
+		t.Fatal("workflow files without push access make no sense and must not be shown as asked")
+	}
+	_ = e.s.Decide(ctx, r.ID, false, 0, false, "")
+}
+
+func TestFullAccessWithoutWorkflowsStillAsksWhenWorkflowsAreWanted(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 60, Opts{}); err != nil {
+		t.Fatal(err)
+	}
+	// plain request: answered by the window; with workflows: the user is asked
+	if g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, true, false, 10, "x"); !g.Allowed {
+		t.Fatal("covered by full repo access")
+	}
+	ch := make(chan GrantResult, 1)
+	go func() { g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, true, true, 10, "x"); ch <- g }()
+	r := e.pending("gitgrant")
+	_ = e.s.Decide(ctx, r.ID, false, 0, false, "")
+	if g := <-ch; g.Allowed {
+		t.Fatal("workflow files need the user's decision even under full repo access")
+	}
+	// a full repo access that already has the tick covers the request
+	if _, err := e.s.OpenWindow(ctx, "shop", "o/r", 60, Opts{Workflows: true}); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, true, true, 10, "x"); !g.Allowed {
+		t.Fatal("full repo access with workflows covers the request")
 	}
 }

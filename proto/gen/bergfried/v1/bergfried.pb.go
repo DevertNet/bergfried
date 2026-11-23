@@ -246,7 +246,8 @@ type GitAccessRequest struct {
 	Write         bool                   `protobuf:"varint,2,opt,name=write,proto3" json:"write,omitempty"`     // false: read only (clone, fetch, pull)
 	Minutes       int32                  `protobuf:"varint,3,opt,name=minutes,proto3" json:"minutes,omitempty"` // only a suggestion (max 60), the user decides
 	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
-	Repos         []string               `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"` // more repositories for the same request (one decision, one grant each); repo is the first
+	Repos         []string               `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`          // more repositories for the same request (one decision, one grant each); repo is the first
+	Workflows     bool                   `protobuf:"varint,6,opt,name=workflows,proto3" json:"workflows,omitempty"` // also change .github/workflows (needs write); only a request, the user decides and sees a warning
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -314,6 +315,13 @@ func (x *GitAccessRequest) GetRepos() []string {
 		return x.Repos
 	}
 	return nil
+}
+
+func (x *GitAccessRequest) GetWorkflows() bool {
+	if x != nil {
+		return x.Workflows
+	}
+	return false
 }
 
 type GitAccessResult struct {
@@ -2515,13 +2523,14 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\achanges\x18\x02 \x03(\v2\x19.bergfried.v1.SkillChangeR\achanges\"`\n" +
 	"\x13SkillProposalResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x84\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xa2\x01\n" +
 	"\x10GitAccessRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05write\x18\x02 \x01(\bR\x05write\x12\x18\n" +
 	"\aminutes\x18\x03 \x01(\x05R\aminutes\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x14\n" +
-	"\x05repos\x18\x05 \x03(\tR\x05repos\"\xb3\x01\n" +
+	"\x05repos\x18\x05 \x03(\tR\x05repos\x12\x1c\n" +
+	"\tworkflows\x18\x06 \x01(\bR\tworkflows\"\xb3\x01\n" +
 	"\x0fGitAccessResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +

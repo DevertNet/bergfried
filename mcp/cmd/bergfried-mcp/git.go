@@ -81,11 +81,12 @@ func gitCredentialCmd(args []string) {
 // ---- tools ----
 
 type gitAccessIn struct {
-	Repo    string   `json:"repo" jsonschema:"Repository as owner/name"`
-	Repos   []string `json:"repos,omitempty" jsonschema:"More repositories (owner/name) for the SAME task, e.g. when you must clone or push several repos: one request, one decision, one task_id per repository (max 10 in total)"`
-	Write   bool     `json:"write,omitempty" jsonschema:"true if you need to push; false (default) for clone, fetch and pull"`
-	Minutes int      `json:"minutes,omitempty" jsonschema:"Estimated duration of the task in minutes (max 60; only a suggestion, the user decides)"`
-	Reason  string   `json:"reason" jsonschema:"One sentence: what you need git access for. Shown to the user."`
+	Repo      string   `json:"repo" jsonschema:"Repository as owner/name"`
+	Repos     []string `json:"repos,omitempty" jsonschema:"More repositories (owner/name) for the SAME task, e.g. when you must clone or push several repos: one request, one decision, one task_id per repository (max 10 in total)"`
+	Write     bool     `json:"write,omitempty" jsonschema:"true if you need to push; false (default) for clone, fetch and pull"`
+	Workflows bool     `json:"workflows,omitempty" jsonschema:"true ONLY if the task must change files under .github/workflows (needs write=true). Without it GitHub rejects such pushes. Workflow code runs with the repo's secrets, so the user is warned: ask for it only when really needed, never as a default"`
+	Minutes   int      `json:"minutes,omitempty" jsonschema:"Estimated duration of the task in minutes (max 60; only a suggestion, the user decides)"`
+	Reason    string   `json:"reason" jsonschema:"One sentence: what you need git access for. Shown to the user."`
 }
 type gitAccessOut struct {
 	Verdict string  `json:"verdict"`
@@ -96,7 +97,7 @@ type gitAccessOut struct {
 }
 
 func (a *app) gitAccess(ctx context.Context, _ *mcp.CallToolRequest, in gitAccessIn) (*mcp.CallToolResult, gitAccessOut, error) {
-	r, err := a.c.RequestGitAccess(a.ctx(ctx), &pb.GitAccessRequest{Repo: in.Repo, Repos: in.Repos, Write: in.Write, Minutes: int32(in.Minutes), Reason: in.Reason})
+	r, err := a.c.RequestGitAccess(a.ctx(ctx), &pb.GitAccessRequest{Repo: in.Repo, Repos: in.Repos, Write: in.Write, Workflows: in.Workflows, Minutes: int32(in.Minutes), Reason: in.Reason})
 	if err != nil {
 		return nil, gitAccessOut{}, err
 	}
@@ -176,7 +177,7 @@ func (a *app) ciStatus(ctx context.Context, _ *mcp.CallToolRequest, in ciStatusI
 }
 
 func registerGitTools(s *mcp.Server, a *app) {
-	mcp.AddTool(s, &mcp.Tool{Name: "request_git_access", Description: "Asks the user for time-limited git access to one or SEVERAL GitHub repositories at once (clone, fetch, pull, and push if write=true): put the first in repo and the others in repos, so the user decides once instead of once per repository. One request belongs to ONE task: ask when you need git for a private repo, not before. Waits for the decision (up to 10 minutes). On approval the result contains task_id (task_ids for several repos) and expiry; plain `git` works until then. As soon as the task is finished call release_git_access with the task_id(s). There is no token in the VM: never look for one."}, a.gitAccess)
+	mcp.AddTool(s, &mcp.Tool{Name: "request_git_access", Description: "Asks the user for time-limited git access to one or SEVERAL GitHub repositories at once (clone, fetch, pull, and push if write=true; workflows=true only when you must change .github/workflows): put the first in repo and the others in repos, so the user decides once instead of once per repository. One request belongs to ONE task: ask when you need git for a private repo, not before. Waits for the decision (up to 10 minutes). On approval the result contains task_id (task_ids for several repos) and expiry; plain `git` works until then. As soon as the task is finished call release_git_access with the task_id(s). There is no token in the VM: never look for one."}, a.gitAccess)
 	mcp.AddTool(s, &mcp.Tool{Name: "release_git_access", Description: "Ends the git access of a finished task (task_id, or task_ids for a multi-repository request, from request_git_access) and revokes its token on GitHub. Call it as soon as the task is done (all pushes finished). Needs no approval. If you lost the task_id, call it with any number: the answer lists your active tasks."}, a.gitRelease)
 	mcp.AddTool(s, &mcp.Tool{Name: "github_create_pr", Description: "Opens a pull request. The user is asked every time. The branch must already be pushed."}, a.prCreate)
 	mcp.AddTool(s, &mcp.Tool{Name: "github_merge_pr", Description: "Merges a pull request. The user is asked every time and sees the title and branches as GitHub reports them."}, a.prMerge)

@@ -14,9 +14,9 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 2. **The VM cannot see your Mac.** Only three folders are shared: `shared/in` (read-only, files you approved), `shared/out` and the `skills` folder (read-only). The `skills` folder holds instructions for the assistants; it is one folder for all sandboxes, read-only in the VM. Change it on the Mac, or let an assistant propose a change that you review in the app with the full diff and then allow or deny. Whether the read-only mount is enforced on the host side still has to be verified with a real Lima VM.
 3. **The assistant asks, you decide.** It calls tools like `request_file` or `request_ssh`; the app shows a notification; every answer is logged. On a denial you can add a short note (e.g. "use the staging host instead") that the assistant sees. Finished requests and active grants keep the assistant's reason, a folder the assistant's tool could not name ("unknown") is not shown at all, and the SSH sheet fits its content (max. height 720 px). SSH access is granted per task: the assistant asks once for a task and releases the grant when it is finished (`release_ssh`); the timer you choose stays as an upper limit.
 
-![Open requests: a file, SSH access, git access and a GitHub action](docs/img/requests.png)
+![Open requests pinned on top: a GitHub action, a file, SSH access and git access, each with the time left](docs/img/requests.png)
 
-![Active git and SSH grants and finished requests, each with the assistant's reason](docs/img/requests-grants.png)
+![Active SSH grants, git grants and full repo access with remaining-time bars, and the collapsed history](docs/img/requests-grants.png)
 
 <sub>Screenshots with made-up data (taken with [tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
@@ -55,7 +55,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Browse your files | Names, sizes and dates only; blocklisted places (`~/.ssh`, `~/Library`, `.env`, keys …) never appear |
 | Get a file or folder | Only a read-only **copy**, after your approval |
 | Use SSH | Only during a **grant** (duration, key, host key); the private key never leaves the Mac. Keys with a passphrase that are not loaded in your ssh-agent work too: you type the passphrase per grant, the key stays in memory until the grant ends |
-| Use GitHub | Only through your GitHub App: a short, narrow token during a git grant you approved; merge, PR and CI actions are executed by the daemon after you allowed each one |
+| Use GitHub | Only through your GitHub App: a short, narrow token during a git grant you approved; merge, PR and CI actions are executed by the daemon after you allowed each one — or, if you open a **full repo access** (1–24 h for one repo), without asking each time (merge only if you tick it) |
 | Anything inside its VM | Yes — install packages (`sudo apt-get install`), run Docker, start servers (reachable on `127.0.0.1` of the Mac). The image has `git`, `gh`, `git-lfs`, `make`, Docker, headless Chromium (screenshots, rendered pages), Claude Code and OpenCode |
 
 Security model, trade-offs and known gaps: [docs/SECURITY.md](docs/SECURITY.md). Short version: the VM is the boundary; during a git grant the assistant holds a short-lived token that can push to any branch of the granted repo (deliberate trade-off).

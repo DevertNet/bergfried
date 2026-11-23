@@ -136,6 +136,10 @@ func (s *Store) migrate() error {
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode_port INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE sandboxes ADD COLUMN opencode INTEGER NOT NULL DEFAULT 0`)
 		_, _ = s.DB.Exec(`ALTER TABLE ssh_grants ADD COLUMN reason TEXT`)
+		_, _ = s.DB.Exec(`ALTER TABLE git_grants ADD COLUMN is_window INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE git_grants ADD COLUMN can_merge INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE git_grants ADD COLUMN can_workflows INTEGER NOT NULL DEFAULT 0`)
+		_, _ = s.DB.Exec(`ALTER TABLE git_tokens ADD COLUMN workflows INTEGER NOT NULL DEFAULT 0`)
 		// Leftovers of the former Mac-push concept (the token now lives in the VM, see docs/GITHUB.md).
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS git_pushes`)
 		_, _ = s.DB.Exec(`DROP TABLE IF EXISTS ci_grants`)

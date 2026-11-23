@@ -127,3 +127,47 @@ func TestNotReadyAndSkipDirs(t *testing.T) {
 		t.Fatal("per Pfad bleibt es freigebbar")
 	}
 }
+
+func TestProtectedFoldersAreScannedFirst(t *testing.T) {
+	home := t.TempDir()
+	mk(t, home, "Apps/a.txt", "Desktop/d.txt", "Documents/x/y.txt", "Downloads/z.zip", "Zeta/last.txt", "Public/p.txt", "Music/m.mp3", "Movies/v.mov", "Pictures/Photos Library.photoslibrary/p.jpg")
+	ix, err := New(home, DefaultBlocklist())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	ix.trace = func(rel string) { order = append(order, rel) }
+	if err := ix.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	top := func(rel string) string { return strings.SplitN(rel, "/", 2)[0] }
+	// the first entries all belong to Desktop, Documents, Downloads (in that order) before anything else is read
+	var seq []string
+	for _, r := range order {
+		if t0 := top(r); len(seq) == 0 || seq[len(seq)-1] != t0 {
+			seq = append(seq, t0)
+		}
+	}
+	want := []string{"Desktop", "Documents", "Downloads", "Music", "Movies", "Pictures"}
+	for i, w := range want {
+		if i >= len(seq) || seq[i] != w {
+			t.Fatalf("scan order %v, want %v first", seq, want)
+		}
+	}
+	// nothing is listed twice, nothing is lost, and the result is still sorted
+	seen := map[string]bool{}
+	for i, e := range ix.entries {
+		if seen[e.Path] {
+			t.Fatalf("%s listed twice", e.Path)
+		}
+		seen[e.Path] = true
+		if i > 0 && ix.entries[i-1].Path > e.Path {
+			t.Fatal("not sorted")
+		}
+	}
+	for _, p := range []string{"Desktop", "Desktop/d.txt", "Documents/x/y.txt", "Downloads/z.zip", "Music/m.mp3", "Movies/v.mov", "Pictures/Photos Library.photoslibrary/p.jpg", "Apps/a.txt", "Zeta/last.txt", "Public/p.txt"} {
+		if !seen[p] {
+			t.Fatalf("%s missing from the index", p)
+		}
+	}
+}

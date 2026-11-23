@@ -190,8 +190,11 @@ func TestManifestFlow(t *testing.T) {
 			t.Fatalf("form misses %q:\n%s", want, hs)
 		}
 	}
-	if strings.Contains(hs, "workflows") || strings.Contains(hs, "administration") {
-		t.Fatal("the manifest must not ask for Workflows or Administration")
+	if strings.Contains(hs, "administration") {
+		t.Fatal("the manifest must not ask for Administration")
+	}
+	if !strings.Contains(hs, `"workflows":"write"`) { // held by the app; tokens only get it when the user ticks it (gitaccess)
+		t.Fatal("the manifest must ask for Workflows")
 	}
 	state := url.QueryEscape(su.active.state)
 	cb := strings.TrimSuffix(start, "/start") + "/callback"
@@ -212,5 +215,36 @@ func TestManifestFlow(t *testing.T) {
 	}
 	if len(events) < 2 || events[len(events)-1] != "githubapp.setup.done" {
 		t.Fatal(events)
+	}
+}
+
+// After the owner adds a permission to the app, the app has it but each installation still has to accept it: both are read
+// separately so Settings can say which of the two steps is missing.
+func TestAppAndInstallationPermissionsAreReadSeparately(t *testing.T) {
+	s, _ := newStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ey") {
+			w.WriteHeader(401)
+			return
+		}
+		switch r.URL.Path {
+		case "/app":
+			io.WriteString(w, `{"permissions":{"contents":"write","workflows":"write"}}`)
+		case "/app/installations":
+			io.WriteString(w, `[{"id":9,"account":{"login":"acme","type":"Organization"},"permissions":{"contents":"write"}}]`)
+		default:
+			w.WriteHeader(500)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient(s)
+	c.Base = srv.URL
+	ap, err := c.AppPermissions(context.Background())
+	if err != nil || ap["workflows"] != "write" {
+		t.Fatalf("%v %v", ap, err)
+	}
+	ins, err := c.Installations(context.Background())
+	if err != nil || len(ins) != 1 || ins[0].ID != 9 || ins[0].AccountType != "Organization" || ins[0].Permissions["workflows"] != "" || ins[0].Permissions["contents"] != "write" {
+		t.Fatalf("the installation has not accepted workflows yet: %+v %v", ins, err)
 	}
 }

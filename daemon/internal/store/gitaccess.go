@@ -16,16 +16,22 @@ type GitGrant struct {
 	Reason                  string
 	Expires, Created        time.Time
 	Ended                   int
+	// Window: full repo access granted by the user (docs/GITHUB.md): write access plus pull requests and CI re-runs without asking;
+	// Merge additionally allows merging pull requests. The assistant cannot release a window.
+	Window, Merge bool
+	// Workflows: the token of this grant may also change .github/workflows (docs/GITHUB.md). Set by the user only.
+	Workflows bool
 }
 
-const gitGrantCols = `id,sandbox,COALESCE(worktree,''),repo,write,COALESCE(reason,''),expires,ended,created`
+const gitGrantCols = `id,sandbox,COALESCE(worktree,''),repo,write,COALESCE(reason,''),expires,ended,created,COALESCE(is_window,0),COALESCE(can_merge,0),COALESCE(can_workflows,0)`
 
 func scanGitGrant(sc interface{ Scan(...any) error }) (GitGrant, error) {
 	var g GitGrant
-	var w int
+	var w, win, mg, wf int
 	var exp, cr int64
-	err := sc.Scan(&g.ID, &g.Sandbox, &g.Worktree, &g.Repo, &w, &g.Reason, &exp, &g.Ended, &cr)
+	err := sc.Scan(&g.ID, &g.Sandbox, &g.Worktree, &g.Repo, &w, &g.Reason, &exp, &g.Ended, &cr, &win, &mg, &wf)
 	g.Write, g.Expires, g.Created = w == 1, time.Unix(exp, 0), time.Unix(cr, 0)
+	g.Window, g.Merge, g.Workflows = win == 1, mg == 1, wf == 1
 	return g, err
 }
 
@@ -34,8 +40,18 @@ func (s *Store) AddGitGrant(g GitGrant) (int64, error) {
 	if g.Write {
 		w = 1
 	}
-	res, err := s.DB.Exec(`INSERT INTO git_grants(sandbox,worktree,repo,write,reason,expires,created) VALUES(?,?,?,?,?,?,?)`,
-		g.Sandbox, g.Worktree, g.Repo, w, g.Reason, g.Expires.Unix(), time.Now().Unix())
+	win, mg, wf := 0, 0, 0
+	if g.Workflows {
+		wf = 1
+	}
+	if g.Window {
+		win = 1
+	}
+	if g.Merge {
+		mg = 1
+	}
+	res, err := s.DB.Exec(`INSERT INTO git_grants(sandbox,worktree,repo,write,reason,expires,created,is_window,can_merge,can_workflows) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		g.Sandbox, g.Worktree, g.Repo, w, g.Reason, g.Expires.Unix(), time.Now().Unix(), win, mg, wf)
 	if err != nil {
 		return 0, err
 	}
@@ -88,6 +104,16 @@ func (s *Store) EndGitGrant(id int64, how int) (bool, error) {
 	return n == 1, nil
 }
 
+// SetGitGrantExpiry moves the end of an open grant; false if the grant is closed.
+func (s *Store) SetGitGrantExpiry(id int64, exp time.Time) (bool, error) {
+	res, err := s.DB.Exec(`UPDATE git_grants SET expires=? WHERE id=? AND ended=0`, exp.Unix(), id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 // ExpireGitGrants closes all open grants whose time has run out and returns them.
 func (s *Store) ExpireGitGrants(now time.Time) ([]GitGrant, error) {
 	rows, err := s.DB.Query(`SELECT `+gitGrantCols+` FROM git_grants WHERE ended=0 AND expires<=?`, now.Unix())
@@ -120,6 +146,7 @@ type GitToken struct {
 	Token          string
 	Repos          []string
 	Write          bool
+	Workflows      bool // token also has the workflows permission (only for repos whose grant says so)
 	Expires        time.Time
 	RevokeAt       time.Time // zero = in use
 }
@@ -129,8 +156,12 @@ func (s *Store) AddGitToken(t GitToken) (int64, error) {
 	if t.Write {
 		w = 1
 	}
-	res, err := s.DB.Exec(`INSERT INTO git_tokens(sandbox,owner,token,repos,write,expires) VALUES(?,?,?,?,?,?)`,
-		t.Sandbox, strings.ToLower(t.Owner), t.Token, strings.Join(t.Repos, ","), w, t.Expires.Unix())
+	wf := 0
+	if t.Workflows {
+		wf = 1
+	}
+	res, err := s.DB.Exec(`INSERT INTO git_tokens(sandbox,owner,token,repos,write,expires,workflows) VALUES(?,?,?,?,?,?,?)`,
+		t.Sandbox, strings.ToLower(t.Owner), t.Token, strings.Join(t.Repos, ","), w, t.Expires.Unix(), wf)
 	if err != nil {
 		return 0, err
 	}
@@ -140,24 +171,29 @@ func (s *Store) AddGitToken(t GitToken) (int64, error) {
 func scanGitToken(sc interface{ Scan(...any) error }) (GitToken, error) {
 	var t GitToken
 	var repos string
-	var w int
+	var w, wf int
 	var exp, rev int64
-	err := sc.Scan(&t.ID, &t.Sandbox, &t.Owner, &t.Token, &repos, &w, &exp, &rev)
+	err := sc.Scan(&t.ID, &t.Sandbox, &t.Owner, &t.Token, &repos, &w, &exp, &rev, &wf)
 	if repos != "" {
 		t.Repos = strings.Split(repos, ",")
 	}
-	t.Write, t.Expires = w == 1, time.Unix(exp, 0)
+	t.Write, t.Workflows, t.Expires = w == 1, wf == 1, time.Unix(exp, 0)
 	if rev > 0 {
 		t.RevokeAt = time.Unix(rev, 0)
 	}
 	return t, err
 }
 
-const gitTokenCols = `id,sandbox,owner,token,repos,write,expires,revoke_at`
+const gitTokenCols = `id,sandbox,owner,token,repos,write,expires,revoke_at,COALESCE(workflows,0)`
 
-// ActiveGitToken returns the token currently in use for (sandbox, owner), if any.
-func (s *Store) ActiveGitToken(sandbox, owner string) (GitToken, bool, error) {
-	t, err := scanGitToken(s.DB.QueryRow(`SELECT `+gitTokenCols+` FROM git_tokens WHERE sandbox=? AND owner=? AND revoke_at=0 ORDER BY id DESC LIMIT 1`, sandbox, strings.ToLower(owner)))
+// ActiveGitToken returns the token currently in use for (sandbox, owner, workflows class), if any. Repos whose grant allows
+// workflow files get their own token, so the workflows permission never reaches other repos of the same owner.
+func (s *Store) ActiveGitToken(sandbox, owner string, workflows bool) (GitToken, bool, error) {
+	wf := 0
+	if workflows {
+		wf = 1
+	}
+	t, err := scanGitToken(s.DB.QueryRow(`SELECT `+gitTokenCols+` FROM git_tokens WHERE sandbox=? AND owner=? AND COALESCE(workflows,0)=? AND revoke_at=0 ORDER BY id DESC LIMIT 1`, sandbox, strings.ToLower(owner), wf))
 	if err == sql.ErrNoRows {
 		return t, false, nil
 	}
@@ -175,6 +211,17 @@ func (s *Store) RetireGitTokens(sandbox, owner string, at time.Time) error {
 		args = append(args, strings.ToLower(owner))
 	}
 	_, err := s.DB.Exec(q, args...)
+	return err
+}
+
+// RetireGitTokensClass is RetireGitTokens for one workflows class only.
+func (s *Store) RetireGitTokensClass(sandbox, owner string, workflows bool, at time.Time) error {
+	wf := 0
+	if workflows {
+		wf = 1
+	}
+	_, err := s.DB.Exec(`UPDATE git_tokens SET revoke_at=? WHERE sandbox=? AND owner=? AND COALESCE(workflows,0)=? AND (revoke_at=0 OR revoke_at>?)`,
+		at.Unix(), sandbox, strings.ToLower(owner), wf, at.Unix())
 	return err
 }
 

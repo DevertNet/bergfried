@@ -21,6 +21,7 @@ type githubAppJ struct {
 	InstallURL    string               `json:"install_url,omitempty"`
 	SettingsURL   string               `json:"settings_url,omitempty"`
 	Installations []ghapp.Installation `json:"installations"`
+	AppPerms      map[string]string    `json:"app_permissions,omitempty"` // what the app has; installations may still lack a new one
 	Error         string               `json:"error,omitempty"`
 }
 
@@ -40,6 +41,9 @@ func (s *Server) githubAppStatus(w http.ResponseWriter, r *http.Request) {
 	out.SettingsURL = "https://github.com/settings/apps/" + url.PathEscape(cfg.Slug)
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
+	if perms, err := s.GitApp.AppPermissions(ctx); err == nil {
+		out.AppPerms = perms
+	}
 	if ins, err := s.GitApp.Installations(ctx); err != nil {
 		out.Error = err.Error()
 	} else if ins != nil {
@@ -86,13 +90,17 @@ func (s *Server) githubAppForget(w http.ResponseWriter, r *http.Request) {
 }
 
 type gitGrantJ struct {
-	ID      int64  `json:"id"`
-	Sandbox string `json:"sandbox"`
-	Folder  string `json:"folder"`
-	Repo    string `json:"repo"`
-	Write   bool   `json:"write"`
-	Reason  string `json:"reason"`
-	Expires int64  `json:"expires_unix"`
+	ID        int64  `json:"id"`
+	Sandbox   string `json:"sandbox"`
+	Folder    string `json:"folder"`
+	Repo      string `json:"repo"`
+	Write     bool   `json:"write"`
+	Reason    string `json:"reason"`
+	Expires   int64  `json:"expires_unix"`
+	Window    bool   `json:"window"`
+	Merge     bool   `json:"merge"`
+	Created   int64  `json:"created_unix"`
+	Workflows bool   `json:"workflows"`
 }
 
 func (s *Server) gitGrants(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +111,7 @@ func (s *Server) gitGrants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, g := range gs {
-		out = append(out, gitGrantJ{g.ID, g.Sandbox, g.Worktree, g.Repo, g.Write, g.Reason, g.Expires.Unix()})
+		out = append(out, gitGrantJ{g.ID, g.Sandbox, g.Worktree, g.Repo, g.Write, g.Reason, g.Expires.Unix(), g.Window, g.Merge, g.Created.Unix(), g.Workflows})
 	}
 	writeJSON(w, 200, out)
 }
@@ -125,21 +133,72 @@ func (s *Server) gitRevoke(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) gitDecide(w http.ResponseWriter, r *http.Request) {
 	var q struct {
-		ID      int64  `json:"id"`
-		Allow   bool   `json:"allow"`
-		Minutes int    `json:"minutes"`
-		Write   bool   `json:"write"`
-		Note    string `json:"note"`
+		ID        int64  `json:"id"`
+		Allow     bool   `json:"allow"`
+		Minutes   int    `json:"minutes"`
+		Write     bool   `json:"write"`
+		Note      string `json:"note"`
+		Window    bool   `json:"window"`    // allow a git grant as full repo access (all its repositories)
+		Merge     bool   `json:"merge"`     // full repo access only: merging pull requests included
+		Workflows bool   `json:"workflows"` // the token may also change .github/workflows (write access only)
 	}
 	if err := decode(r, &q); err != nil || s.Git == nil {
 		fail(w, 400, fmt.Errorf("invalid request"))
 		return
 	}
-	if err := s.Git.Decide(r.Context(), q.ID, q.Allow, q.Minutes, q.Write, q.Note); err != nil {
+	var err error
+	if q.Allow && q.Window {
+		err = s.Git.DecideOpts(r.Context(), q.ID, true, q.Minutes, true, q.Note, gitaccess.Opts{Window: true, Merge: q.Merge, Workflows: q.Workflows})
+	} else {
+		err = s.Git.DecideOpts(r.Context(), q.ID, q.Allow, q.Minutes, q.Write, q.Note, gitaccess.Opts{Workflows: q.Workflows})
+	}
+	if err != nil {
 		fail(w, 409, err)
 		return
 	}
 	writeJSON(w, 200, map[string]string{"message": "ok"})
+}
+
+func (s *Server) gitExtend(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ID      int64 `json:"id"`
+		Minutes int   `json:"minutes"`
+	}
+	if err := decode(r, &q); err != nil || s.Git == nil {
+		fail(w, 400, fmt.Errorf("invalid request"))
+		return
+	}
+	exp, err := s.Git.Extend(r.Context(), q.ID, q.Minutes)
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"message": "extended", "expires_unix": exp.Unix()})
+}
+
+// gitWindow grants full repo access: the user's own offer, made in the app without a request (docs/GITHUB.md).
+func (s *Server) gitWindow(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Sandbox   string `json:"sandbox"`
+		Repo      string `json:"repo"`
+		Minutes   int    `json:"minutes"`
+		Merge     bool   `json:"merge"`
+		Workflows bool   `json:"workflows"`
+	}
+	if err := decode(r, &q); err != nil || s.Git == nil {
+		fail(w, 400, fmt.Errorf("invalid request"))
+		return
+	}
+	if _, err := s.M.S.GetSandbox(q.Sandbox); err != nil {
+		fail(w, 404, err)
+		return
+	}
+	res, err := s.Git.OpenWindow(r.Context(), q.Sandbox, q.Repo, q.Minutes, gitaccess.Opts{Merge: q.Merge, Workflows: q.Workflows})
+	if err != nil {
+		fail(w, 409, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"id": res.ID, "expires_unix": res.Expires.Unix()})
 }
 
 // githubLegacyRemove switches a sandbox from its personal token to the GitHub App: the token is removed from the VM and the Mac.
