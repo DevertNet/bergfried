@@ -140,9 +140,26 @@ final class AppModel: ObservableObject {
     }
 
     /// Allows a git grant (minutes, write level the user chose) or a single GitHub action. Returns the error message.
-    func allowGit(id: Int64, minutes: Int, write: Bool) async -> String? {
-        do { try await api.post("/v1/git/decide", GitDecideBody(id: id, allow: true, minutes: minutes, write: write)); await refresh(); return nil }
+    func allowGit(id: Int64, minutes: Int, write: Bool, workflows: Bool = false) async -> String? {
+        do { try await api.post("/v1/git/decide", GitDecideBody(id: id, allow: true, minutes: minutes, write: write, workflows: workflows)); await refresh(); return nil }
         catch { return error.localizedDescription }
+    }
+
+    /// Allows a git grant request as full repo access for all its repositories (minutes up to 24 h, optionally with merging).
+    func allowGitWindow(id: Int64, minutes: Int, merge: Bool, workflows: Bool) async -> String? {
+        do { try await api.post("/v1/git/decide", GitDecideBody(id: id, allow: true, minutes: minutes, write: true, window: true, merge: merge, workflows: workflows)); await refresh(); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    /// Grants full repo access without a request. Returns the error message.
+    func openGitWindow(sandbox: String, repo: String, minutes: Int, merge: Bool, workflows: Bool) async -> String? {
+        do { try await api.post("/v1/git/window", GitWindowBody(sandbox: sandbox, repo: repo, minutes: minutes, merge: merge, workflows: workflows)); await refresh(); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    func extendGit(_ g: GitGrantInfo, minutes: Int) async {
+        do { try await api.post("/v1/git/extend", ExtendBody(id: g.id, minutes: minutes)) } catch { banner = error.localizedDescription }
+        await refresh()
     }
 
     func revokeGit(_ g: GitGrantInfo) async {

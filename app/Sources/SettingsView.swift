@@ -346,6 +346,18 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("Installed for") { Text(a.installations.map { $0.account }.joined(separator: ", ")) }
                 }
+                ForEach(a.installations.filter { $0.permissions != nil && $0.permissions?["workflows"] != "write" }, id: \.id) { i in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if a.appPermissions?["workflows"] == "write" {
+                            Label(L("Workflow files: the app has the \"Workflows\" permission, but the installation for %@ has not accepted it yet. Open the installation page and review the permission request.", i.account), systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange).font(.callout).fixedSize(horizontal: false, vertical: true)
+                            if let u = i.pageURL { Button("Review permissions …") { NSWorkspace.shared.open(u) }.fixedSize() }
+                        } else {
+                            Label(L("Workflow files: the app has no \"Workflows\" permission for %@ yet. Without it a git grant with workflow files fails. Open the app settings, add Workflows: Read and write, then accept the new permission for the installation.", i.account), systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange).font(.callout).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
                 if let e = a.error { Text(e).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
                 // two rows: four buttons in one row get their labels cut off in the narrow settings pane
                 HStack {

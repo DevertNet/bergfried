@@ -56,6 +56,7 @@ message GitAccessRequest {
   int32 minutes = 3;     // only a suggestion (max 60), the user decides
   string reason = 4;
   repeated string repos = 5; // more repositories for the same request (one decision, one grant each); repo is the first
+  bool workflows = 6;    // also change .github/workflows (needs write); only a request, the user decides and sees a warning
 }
 message GitAccessResult {
   Verdict verdict = 1;

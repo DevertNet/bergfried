@@ -80,7 +80,7 @@ func (s *sandboxServer) RequestGitAccess(ctx context.Context, r *pb.GitAccessReq
 	if s.git == nil {
 		return nil, errNoGitApp
 	}
-	g, err := s.git.RequestGrant(ctx, s.sandbox, s.folder(ctx), append([]string{r.Repo}, r.Repos...), r.Write, int(r.Minutes), r.Reason)
+	g, err := s.git.RequestGrant(ctx, s.sandbox, s.folder(ctx), append([]string{r.Repo}, r.Repos...), r.Write, r.Workflows, int(r.Minutes), r.Reason)
 	if err != nil {
 		return nil, err
 	}

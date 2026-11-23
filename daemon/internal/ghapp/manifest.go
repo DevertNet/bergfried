@@ -15,12 +15,14 @@ import (
 	"time"
 )
 
-// Permissions the app asks for. No Workflows and no Administration permission: the assistant must neither change
-// .github/workflows nor create repositories. Narrower tokens are minted per grant (see gitaccess).
+// Permissions the app asks for. No Administration permission: the assistant must not create repositories. The Workflows permission
+// is held by the app but a token only gets it when the user ticked "workflow files" for that repository (see gitaccess);
+// narrower tokens are minted per grant.
 var DefaultPermissions = map[string]string{
 	"contents":      "write",
 	"pull_requests": "write",
 	"actions":       "write",
+	"workflows":     "write",
 	"metadata":      "read",
 }
 

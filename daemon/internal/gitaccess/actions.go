@@ -111,6 +111,21 @@ func (s *Service) Action(ctx context.Context, sandbox, folder string, a ActionRe
 		return s.run(ctx, sandbox, folder, gr, a, perms)
 	}
 
+	// Running full repo access covers pull requests and CI re-runs, merging only when the user ticked it (docs/GITHUB.md).
+	if w, ok := s.windowFor(sandbox, gr.String()); ok && (a.Action != ActPRMerge || w.Merge) {
+		if a.Action == ActPRCreate && (a.Title == "" || a.Head == "") {
+			return ActionRes{Message: "title and head are required"}, nil
+		}
+		if a.Action == ActPRMerge && a.Number <= 0 {
+			return ActionRes{Message: "number is required"}, nil
+		}
+		if a.Action == ActCIRerun && a.RunID <= 0 {
+			return ActionRes{Message: "run_id is required"}, nil
+		}
+		s.audit("git.action.auto", sandbox, folder, fmt.Sprintf("%s %s %s (full repo access %d)", a.Action, gr, actionRef(a), w.ID))
+		return s.run(ctx, sandbox, folder, gr, a, perms)
+	}
+
 	// Summary lines: facts from GitHub where possible (title of the PR to merge), otherwise the assistant's text (display only).
 	var sum []string
 	switch a.Action {
@@ -175,6 +190,19 @@ func (s *Service) Action(ctx context.Context, sandbox, folder string, a ActionRe
 		return ActionRes{Message: msg}, nil
 	}
 	return s.run(ctx, sandbox, folder, gr, a, perms)
+}
+
+// actionRef names the object of an action for the audit log.
+func actionRef(a ActionReq) string {
+	switch a.Action {
+	case ActPRMerge:
+		return fmt.Sprintf("#%d", a.Number)
+	case ActCIRerun:
+		return fmt.Sprintf("run %d", a.RunID)
+	case ActPRCreate:
+		return clean(a.Head, 80)
+	}
+	return ""
 }
 
 func (s *Service) run(ctx context.Context, sandbox, folder string, gr github.Repo, a ActionReq, perms map[string]string) (ActionRes, error) {

@@ -93,6 +93,7 @@ struct GitDetail: Codable, Hashable {
     var repo: String
     var repos: [String]?   // all repositories of a multi-repo grant request (nil for one)
     var write: Bool?
+    var workflows: Bool?   // the assistant also asks to change .github/workflows
     var minutes: Int?
     var action: String?
     var summary: [String]?
@@ -108,10 +109,20 @@ struct GitGrantInfo: Codable, Identifiable, Hashable {
     var write: Bool
     var reason: String
     var expiresUnix: Int64
+    var window: Bool?   // full repo access granted by the user (push, pull requests and CI re-runs without asking)
+    var merge: Bool?    // window only: merging pull requests included
+    var createdUnix: Int64?
+    var workflows: Bool?   // the token may also change .github/workflows
     var listID: String { "git-\(id)" }
 }
 
-struct GitHubAppInstallation: Codable, Hashable { var id: Int64; var account: String }
+struct GitHubAppInstallation: Codable, Hashable {
+    var id: Int64; var account: String; var permissions: [String: String]?; var accountType: String?
+    /// The installation's page on GitHub, where a new permission of the app is reviewed and accepted.
+    var pageURL: URL? {
+        URL(string: accountType == "Organization" ? "https://github.com/organizations/\(account)/settings/installations/\(id)" : "https://github.com/settings/installations/\(id)")
+    }
+}
 struct GitHubAppStatus: Codable, Hashable {
     var configured: Bool
     var name: String?
@@ -120,10 +131,12 @@ struct GitHubAppStatus: Codable, Hashable {
     var installUrl: String?
     var settingsUrl: String?
     var installations: [GitHubAppInstallation]
+    var appPermissions: [String: String]?   // what the app itself has; an installation may still lack a new permission
     var error: String?
 }
 struct URLResult: Codable { var url: String }
-struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var minutes: Int = 0; var write: Bool = false; var note: String = "" }
+struct GitDecideBody: Encodable { var id: Int64; var allow: Bool; var minutes: Int = 0; var write: Bool = false; var note: String = ""; var window: Bool = false; var merge: Bool = false; var workflows: Bool = false }
+struct GitWindowBody: Encodable { var sandbox: String; var repo: String; var minutes: Int; var merge: Bool; var workflows: Bool }
 
 struct SkillFileDetail: Codable, Hashable {
     var path: String
@@ -140,6 +153,7 @@ struct RequestInfo: Codable, Identifiable, Hashable {
     var reason: String
     var status: String
     var createdUnix: Int64
+    var expiresUnix: Int64?   // pending: when the request lapses without an answer (older daemons: nil)
     var bytes: Int64
     var files: Int64
     var large: Bool
@@ -166,6 +180,7 @@ struct GrantInfo: Codable, Identifiable, Hashable {
     var active: Bool
     var hostKeyFingerprints: [String]
     var reason: String?
+    var createdUnix: Int64?
     var listID: String { "grant-\(id)" }
 }
 
