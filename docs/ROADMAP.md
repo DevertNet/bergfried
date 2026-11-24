@@ -37,6 +37,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [ ] VPS host (Debian, SSH link, KVM check): [design/vps-host.md](design/vps-host.md)
 - [ ] macOS sandboxes / second VM template (postponed; CI builds replace it for now): [design/macos-sandboxes.md](design/macos-sandboxes.md)
 - [ ] Assistant template proposals: [design/template-proposals.md](design/template-proposals.md)
+- [ ] Browser for the assistants (visible Chromium in the VM with noVNC, or agweb on the Mac): analysis in [design/browser.md](design/browser.md), postponed
 - [x] Requests page redesign (Open pinned on top, Active below, one card design, time left, Extend for git grants): [design/requests-redesign.md](design/requests-redesign.md)
 - [ ] Workflow changes with a diff card (a Bergfried tool that shows the full file diff before the daemon commits it; alternative to the workflow tick, see [GITHUB.md](GITHUB.md#workflow-files))
 - [ ] File browser/editor and "open in VS Code"
