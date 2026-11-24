@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,10 +11,13 @@ import (
 
 	"github.com/DevertNet/bergfried/daemon/internal/ghapp"
 	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
+	"github.com/DevertNet/bergfried/daemon/internal/hostaddr"
 	"github.com/DevertNet/bergfried/daemon/internal/skills"
 	"github.com/DevertNet/bergfried/daemon/internal/store"
 	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func TestListenUnixPerms(t *testing.T) {
@@ -197,5 +201,31 @@ func TestRequestGitAccessRefusedHasNoExpiry(t *testing.T) {
 	r, err := (&sandboxServer{sandbox: "shop", git: gs, st: st}).RequestGitAccess(context.Background(), &pb.GitAccessRequest{Repo: "o/r", Write: true})
 	if err != nil || r.Verdict != pb.Verdict_VERDICT_DENIED || r.ExpiresUnix != 0 || r.TaskId != 0 || !strings.Contains(r.Message, "No GitHub App") {
 		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+func TestGetHostAddressAuditedWithoutAddresses(t *testing.T) {
+	s, _, st, _ := skillServer(t)
+	s.hostAddr = func() (hostaddr.Result, error) {
+		return hostaddr.Result{Addresses: []hostaddr.Address{{Interface: "en0", IP: "192.168.1.20"}}, Hostname: "mac.local"}, nil
+	}
+	r, err := s.GetHostAddress(context.Background(), &pb.HostAddressRequest{})
+	if err != nil || r.Hostname != "mac.local" || len(r.Addresses) != 1 || r.Addresses[0].Ip != "192.168.1.20" {
+		t.Fatalf("%v %v", r, err)
+	}
+	var detail string
+	if err := st.DB.QueryRow(`SELECT detail FROM audit WHERE event='host.address'`).Scan(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(detail, "192.168") {
+		t.Fatalf("audit detail leaks the address: %q", detail)
+	}
+}
+
+func TestGetHostAddressError(t *testing.T) {
+	s, _, _, _ := skillServer(t)
+	s.hostAddr = func() (hostaddr.Result, error) { return hostaddr.Result{}, errors.New("boom") }
+	if _, err := s.GetHostAddress(context.Background(), &pb.HostAddressRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("got %v", err)
 	}
 }

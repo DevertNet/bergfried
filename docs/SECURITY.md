@@ -26,6 +26,7 @@ An assistant (or anything it runs, including prompt-injected instructions) misus
 - Assistant-provided text (reason, name, user, host) is display data only: sanitised, never interpolated into shell or AppleScript source; host names and users are validated by regex before they reach `~/.ssh/config` blocks.
 - Releasing an SSH task (`release_ssh`, `Service.Release`) only reduces access: it revokes one grant and needs no approval. It works only for grants of the calling sandbox (identity = socket); an unknown id and an id of another sandbox get the same answer (`No SSH task <id> in this sandbox.` plus the caller's active tasks), so a sandbox cannot probe for foreign ids.
 - All sockets are 0600 in 0700 directories; `~/.bergfried` is 0700.
+- `get_host_address` returns the Mac's LAN IPv4 address(es) and `.local` name to the assistant without asking (every device on your network sees them anyway; no VPN/virtual interfaces). It is audited as `host.address` with the number of addresses only. It does not open any port.
 - Everything is audited (`audit` table; app "Audit log", CSV export with formula protection). Audit failures are not swallowed.
 
 ## SSH keys with a passphrase that are not loaded (deliberate exception)

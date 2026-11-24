@@ -25,6 +25,12 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_files","arguments":{"path":""}}}' | BERGFRIED_FOLDER=shop/work/main ~/.local/bin/bergfried-mcp
 ```
 
+## Host address (`get_host_address`)
+Needs no approval. In a sandbox ask the assistant: "Which LAN address does my Mac have? Use `get_host_address`." Expected: the IPv4 of en0 (compare with `ipconfig getifaddr en0` on the Mac), the `<name>.local` name (compare with `scutil --get LocalHostName`), and a note that VM ports are not reachable from the phone. With Wi-Fi off the result has no IP. The audit log shows `host.address` with the count only. (Real Mac network behaviour not yet verified.)
+
 ## Known limits
 - The folder path in dialogs is claimed from inside the VM (same Linux user) — not proof. The **sandbox** comes from the socket.
 - A request waits up to 10 minutes; whether Claude Code or OpenCode wait that long for an MCP tool is unverified.
+
+## Open the shared folders in Finder
+On a sandbox card, **Files → Open “in” folder / “out” folder in Finder** opens `~/.bergfried/sandboxes/<name>/shared/in` or `.../out` (also while the VM is stopped). Check: after approving a file the `in` folder shows it; a file the assistant puts in `out` appears in the `out` folder. If a folder is missing, a banner names the path.

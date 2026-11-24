@@ -267,7 +267,20 @@ struct SandboxCard: View {
         } else {
             Button("Start") { Task { report(await model.runJob(AppModel.jobKey("start", s.name), L("Starting …"), "/v1/sandboxes/start", NameBody(name: s.name))) } }
         }
+        Menu {
+            Button("Open “in” folder (approved files) in Finder") { openShared("in") }
+            Button("Open “out” folder (files from the assistant) in Finder") { openShared("out") }
+        } label: { Label("Files", systemImage: "folder") }
+            .help(L("The two folders shared with this sandbox: in (read-only for the VM, files you approved) and out (the assistant can write here)."))
         Button(role: .destructive, action: delete) { Image(systemName: "trash") }
+    }
+
+    /// Opens ~/.bergfried/sandboxes/<name>/shared/<in|out> in Finder.
+    func openShared(_ which: String) {
+        let home = ProcessInfo.processInfo.environment["BERGFRIED_HOME"] ?? NSHomeDirectory() + "/.bergfried"
+        let url = URL(fileURLWithPath: home + "/sandboxes/" + s.name + "/shared/" + which, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: url.path) else { model.setBanner(L("The folder %@ does not exist yet.", url.path)); return }
+        NSWorkspace.shared.open(url)
     }
 
     func report(_ e: String?) { if let e { model.setBanner(e) } }

@@ -18,6 +18,7 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/broker"
 	"github.com/DevertNet/bergfried/daemon/internal/ghtoken"
 	"github.com/DevertNet/bergfried/daemon/internal/gitaccess"
+	"github.com/DevertNet/bergfried/daemon/internal/hostaddr"
 	"github.com/DevertNet/bergfried/daemon/internal/index"
 	"github.com/DevertNet/bergfried/daemon/internal/lima"
 	"github.com/DevertNet/bergfried/daemon/internal/skills"
@@ -72,6 +73,8 @@ type sandboxServer struct {
 	git     *gitaccess.Service
 	skills  *skills.Service
 	st      *store.Store
+	// hostAddr is hostaddr.Default unless a test replaces it.
+	hostAddr func() (hostaddr.Result, error)
 }
 
 var errNoGitApp = status.Error(codes.FailedPrecondition, "GitHub App access is not configured")
@@ -185,6 +188,26 @@ func (s *sandboxServer) ProposeSkillChange(ctx context.Context, r *pb.SkillPropo
 		v = pb.Verdict_VERDICT_EXPIRED
 	}
 	return &pb.SkillProposalResult{Verdict: v, Message: res.Message}, nil
+}
+
+// GetHostAddress needs no approval: it reveals only the Mac's LAN address, which every device on that network
+// already sees. It is audited with the number of addresses, not the addresses themselves.
+func (s *sandboxServer) GetHostAddress(ctx context.Context, _ *pb.HostAddressRequest) (*pb.HostAddressResult, error) {
+	lookup := s.hostAddr
+	if lookup == nil {
+		lookup = hostaddr.Default
+	}
+	r, err := lookup()
+	if err != nil {
+		s.audit(ctx, "host.address", "error")
+		return nil, status.Error(codes.Unavailable, "cannot read the host's network interfaces")
+	}
+	s.audit(ctx, "host.address", fmt.Sprintf("%d address(es)", len(r.Addresses)))
+	out := &pb.HostAddressResult{Hostname: r.Hostname}
+	for _, a := range r.Addresses {
+		out.Addresses = append(out.Addresses, &pb.HostAddress{Interface: a.Interface, Ip: a.IP})
+	}
+	return out, nil
 }
 
 func (s *sandboxServer) RequestSSH(ctx context.Context, r *pb.SSHAccessRequest) (*pb.SSHAccessResult, error) {
