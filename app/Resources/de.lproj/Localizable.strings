@@ -686,3 +686,8 @@
 "Duration from now" = "Dauer ab jetzt";
 "Loading repositories …" = "Repositories werden geladen …";
 "Edit" = "Bearbeiten";
+"Open “in” folder (approved files) in Finder" = "„in“-Ordner (freigegebene Dateien) im Finder öffnen";
+"Open “out” folder (files from the assistant) in Finder" = "„out“-Ordner (Dateien vom Assistenten) im Finder öffnen";
+"Files" = "Dateien";
+"The two folders shared with this sandbox: in (read-only for the VM, files you approved) and out (the assistant can write here)." = "Die zwei Ordner, die mit dieser Sandbox geteilt werden: in (für die VM nur lesbar, von dir freigegebene Dateien) und out (hier kann der Assistent schreiben).";
+"The folder %@ does not exist yet." = "Der Ordner %@ existiert noch nicht.";
