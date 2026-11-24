@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	pb "github.com/DevertNet/bergfried/proto/gen/bergfried/v1"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -115,5 +116,22 @@ func TestSkillProposalRequestConvertsChanges(t *testing.T) {
 	}
 	if c := got.Changes[1]; c.Path != "demo/old.txt" || !c.Delete || c.Content != "" {
 		t.Fatalf("change 1 = %+v", c)
+	}
+}
+
+func TestHostAddressResult(t *testing.T) {
+	out := hostAddressResult(&pb.HostAddressResult{
+		Addresses: []*pb.HostAddress{{Interface: "en0", Ip: "192.168.1.20"}, {Interface: "en1", Ip: "10.0.0.7"}},
+		Hostname:  "mac.local",
+	})
+	if out.IP != "192.168.1.20" || len(out.Others) != 1 || out.Others[0] != "10.0.0.7" || out.Hostname != "mac.local" {
+		t.Fatalf("%+v", out)
+	}
+	if !strings.Contains(out.Note, "127.0.0.1") {
+		t.Fatalf("note must explain port reachability: %q", out.Note)
+	}
+	empty := hostAddressResult(&pb.HostAddressResult{})
+	if empty.IP != "" || !strings.Contains(empty.Note, "no LAN address") {
+		t.Fatalf("%+v", empty)
 	}
 }

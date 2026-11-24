@@ -375,6 +375,8 @@ func guidance(outDir string) string {
 		"- **Shared skills:** `~/.claude/skills` also contains skills shared by the user with all sandboxes (read-only links, loaded like local skills; changes to shared skills apply without restarting the assistant (a link for a brand-new skill is created within a few seconds; if a new skill does not show up, restart the assistant)). " +
 		"Skills you create yourself in `~/.claude/skills/<name>` stay local to this VM. To add, change or delete a **shared** skill call `propose_skill_change` " +
 		"(path `<skill-name>/SKILL.md`, complete content, short honest reason), respect a refusal and do not work around it; never write into the shared folder.\n" +
+		"- **Links for the user's phone:** your VM address is internal. To give the user a link they can open on their phone, call `get_host_address` (no approval) for the Mac's LAN IP / `.local` name. " +
+		"A port you serve inside the VM is only reachable on the Mac's `127.0.0.1` (Lima's forward), not from the phone: say so honestly instead of sending a dead link.\n" +
 		"- **Browser (headless, no display):** `chromium` is installed (in older sandboxes it may be missing: install it as described below). Rendered HTML of a page: `chromium --headless --no-sandbox --disable-gpu --dump-dom <url>`. " +
 		"Screenshot: `chromium --headless --no-sandbox --disable-gpu --window-size=1280,900 --screenshot=/tmp/shot.png <url>`, then look at it with your file-reading tool (it shows images). " +
 		"PDF: `--print-to-pdf=/tmp/page.pdf`. Add `--virtual-time-budget=5000` for pages that need time to load scripts. " +

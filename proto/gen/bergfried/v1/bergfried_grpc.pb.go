@@ -32,6 +32,7 @@ const (
 	SandboxAPI_GitCredential_FullMethodName      = "/bergfried.v1.SandboxAPI/GitCredential"
 	SandboxAPI_GitHubAction_FullMethodName       = "/bergfried.v1.SandboxAPI/GitHubAction"
 	SandboxAPI_ProposeSkillChange_FullMethodName = "/bergfried.v1.SandboxAPI/ProposeSkillChange"
+	SandboxAPI_GetHostAddress_FullMethodName     = "/bergfried.v1.SandboxAPI/GetHostAddress"
 )
 
 // SandboxAPIClient is the client API for SandboxAPI service.
@@ -65,6 +66,8 @@ type SandboxAPIClient interface {
 	GitHubAction(ctx context.Context, in *GitHubActionRequest, opts ...grpc.CallOption) (*GitHubActionResult, error)
 	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
 	ProposeSkillChange(ctx context.Context, in *SkillProposalRequest, opts ...grpc.CallOption) (*SkillProposalResult, error)
+	// The LAN address(es) of the host, for links the user opens on their phone. Reveals only that; no approval, audited.
+	GetHostAddress(ctx context.Context, in *HostAddressRequest, opts ...grpc.CallOption) (*HostAddressResult, error)
 }
 
 type sandboxAPIClient struct {
@@ -205,6 +208,16 @@ func (c *sandboxAPIClient) ProposeSkillChange(ctx context.Context, in *SkillProp
 	return out, nil
 }
 
+func (c *sandboxAPIClient) GetHostAddress(ctx context.Context, in *HostAddressRequest, opts ...grpc.CallOption) (*HostAddressResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HostAddressResult)
+	err := c.cc.Invoke(ctx, SandboxAPI_GetHostAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxAPIServer is the server API for SandboxAPI service.
 // All implementations must embed UnimplementedSandboxAPIServer
 // for forward compatibility.
@@ -236,6 +249,8 @@ type SandboxAPIServer interface {
 	GitHubAction(context.Context, *GitHubActionRequest) (*GitHubActionResult, error)
 	// A proposal for the shared, read-only skills folder; blocks until the user has decided.
 	ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error)
+	// The LAN address(es) of the host, for links the user opens on their phone. Reveals only that; no approval, audited.
+	GetHostAddress(context.Context, *HostAddressRequest) (*HostAddressResult, error)
 	mustEmbedUnimplementedSandboxAPIServer()
 }
 
@@ -284,6 +299,9 @@ func (UnimplementedSandboxAPIServer) GitHubAction(context.Context, *GitHubAction
 }
 func (UnimplementedSandboxAPIServer) ProposeSkillChange(context.Context, *SkillProposalRequest) (*SkillProposalResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProposeSkillChange not implemented")
+}
+func (UnimplementedSandboxAPIServer) GetHostAddress(context.Context, *HostAddressRequest) (*HostAddressResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetHostAddress not implemented")
 }
 func (UnimplementedSandboxAPIServer) mustEmbedUnimplementedSandboxAPIServer() {}
 func (UnimplementedSandboxAPIServer) testEmbeddedByValue()                    {}
@@ -540,6 +558,24 @@ func _SandboxAPI_ProposeSkillChange_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxAPI_GetHostAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HostAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxAPIServer).GetHostAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxAPI_GetHostAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxAPIServer).GetHostAddress(ctx, req.(*HostAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxAPI_ServiceDesc is the grpc.ServiceDesc for SandboxAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -598,6 +634,10 @@ var SandboxAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProposeSkillChange",
 			Handler:    _SandboxAPI_ProposeSkillChange_Handler,
+		},
+		{
+			MethodName: "GetHostAddress",
+			Handler:    _SandboxAPI_GetHostAddress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
