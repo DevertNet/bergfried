@@ -32,7 +32,7 @@ flowchart LR
 |---|---|---|
 | `bergfriedd` | Mac (LaunchAgent, started by the app) | One Go binary: SQLite state, file-name index, per-sandbox sockets, SSH broker, monitor, HTTP/JSON API for the app. |
 | `Bergfried.app` | Mac | SwiftUI control app (built with `swiftc`, no Xcode): sandboxes, folders and Claude, requests, SSH grants, audit log, diagnostics (logs), settings, updates (stable/dev channel). |
-| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `release_ssh`, `request_github_token` (legacy), `request_git_access` (one or several repos), `release_git_access`, `github_create_pr`, `github_merge_pr`, `github_rerun_ci`, `github_pr_view`, `github_ci_status`, `propose_skill_change`) plus the `ssh-hook` and `git-credential` (git credential helper) subcommands. |
+| `bergfried-mcp` | inside each VM | MCP server for the assistants (`list_files`, `search_files`, `request_file`, `request_folder`, `request_ssh`, `release_ssh`, `request_github_token` (legacy), `request_git_access` (one or several repos), `release_git_access`, `github_create_pr`, `github_merge_pr`, `github_rerun_ci`, `github_pr_view`, `github_ci_status`, `propose_skill_change`, `get_host_address` (the Mac's LAN IP and `.local` name from the daemon, `daemon/internal/hostaddr`; no approval, audited as `host.address`)) plus the `ssh-hook` and `git-credential` (git credential helper) subcommands. |
 | Lima VM | `~/.lima/bergfried-<name>` | One VM per sandbox, cloned from a base VM named after the hash of the template (seconds instead of minutes). |
 | `tools/fakegithub` | dev only | Fake GitHub (REST + git over HTTP) for tests. |
 

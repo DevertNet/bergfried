@@ -34,6 +34,19 @@ service SandboxAPI {
 
   // A proposal for the shared, read-only skills folder; blocks until the user has decided.
   rpc ProposeSkillChange(SkillProposalRequest) returns (SkillProposalResult);
+
+  // The LAN address(es) of the host, for links the user opens on their phone. Reveals only that; no approval, audited.
+  rpc GetHostAddress(HostAddressRequest) returns (HostAddressResult);
+}
+
+message HostAddressRequest {}
+message HostAddress {
+  string interface = 1; // e.g. en0
+  string ip = 2;        // IPv4
+}
+message HostAddressResult {
+  repeated HostAddress addresses = 1; // preferred first; empty when the host has no LAN address
+  string hostname = 2;                // "<name>.local" or empty
 }
 
 message SkillChange {

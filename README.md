@@ -56,6 +56,7 @@ More: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Get a file or folder | Only a read-only **copy**, after your approval |
 | Use SSH | Only during a **grant** (duration, key, host key); the private key never leaves the Mac. Keys with a passphrase that are not loaded in your ssh-agent work too: you type the passphrase per grant, the key stays in memory until the grant ends |
 | Use GitHub | Only through your GitHub App: a short, narrow token during a git grant you approved; merge, PR and CI actions are executed by the daemon after you allowed each one — or, if you open a **full repo access** (1–24 h for one repo), without asking each time (merge only if you tick it) |
+| Know your Mac's network address | Yes, without asking: `get_host_address` returns the LAN IP and `.local` name (for links to open on your phone; a port served inside the VM is still only on `127.0.0.1` of the Mac, see [docs/ROADMAP.md](docs/ROADMAP.md)) |
 | Anything inside its VM | Yes — install packages (`sudo apt-get install`), run Docker, start servers (reachable on `127.0.0.1` of the Mac). The image has `git`, `gh`, `git-lfs`, `make`, Docker, headless Chromium (screenshots, rendered pages), Claude Code and OpenCode |
 
 Security model, trade-offs and known gaps: [docs/SECURITY.md](docs/SECURITY.md). Short version: the VM is the boundary; during a git grant the assistant holds a short-lived token that can push to any branch of the granted repo (deliberate trade-off).

@@ -273,6 +273,41 @@ func (a *app) proposeSkillChange(ctx context.Context, _ *mcp.CallToolRequest, in
 	return nil, skillProposalOut{Verdict: res(&pb.AccessResult{Verdict: r.Verdict}).Verdict, Message: r.Message}, nil
 }
 
+type hostAddressIn struct{}
+type hostAddressOut struct {
+	IP       string   `json:"ip,omitempty"`
+	Hostname string   `json:"hostname,omitempty"`
+	Others   []string `json:"other_ips,omitempty"`
+	Note     string   `json:"note"`
+}
+
+const hostAddressNote = "These are the host Mac's LAN address and Bonjour name, reachable from the user's phone on the same Wi-Fi/LAN. " +
+	"A service inside this VM is NOT reachable there by default: the VM's own address is internal, and Lima forwards guest ports only to 127.0.0.1 on the Mac. " +
+	"Bergfried cannot forward a port to the LAN yet; tell the user what is needed instead of sending a link that will not open."
+
+func hostAddressResult(r *pb.HostAddressResult) hostAddressOut {
+	out := hostAddressOut{Hostname: r.Hostname, Note: hostAddressNote}
+	for i, a := range r.Addresses {
+		if i == 0 {
+			out.IP = a.Ip
+		} else {
+			out.Others = append(out.Others, a.Ip)
+		}
+	}
+	if out.IP == "" && out.Hostname == "" {
+		out.Note = "The host has no LAN address (not connected to a network?). " + hostAddressNote
+	}
+	return out
+}
+
+func (a *app) hostAddress(ctx context.Context, _ *mcp.CallToolRequest, _ hostAddressIn) (*mcp.CallToolResult, hostAddressOut, error) {
+	r, err := a.c.GetHostAddress(a.ctx(ctx), &pb.HostAddressRequest{})
+	if err != nil {
+		return nil, hostAddressOut{}, err
+	}
+	return nil, hostAddressResult(r), nil
+}
+
 func registerTools(s *mcp.Server, a *app) {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_files", Description: "Lists file names, size and modification date of a folder in the user's home (metadata only, no contents). Blocked areas do not appear."}, a.list)
 	mcp.AddTool(s, &mcp.Tool{Name: "search_files", Description: "Searches file names in the user's home (metadata only)."}, a.search)
@@ -282,6 +317,7 @@ func registerTools(s *mcp.Server, a *app) {
 	mcp.AddTool(s, &mcp.Tool{Name: "release_ssh", Description: "Ends the SSH grant of a finished task (task_id from request_ssh). Call it as soon as the task is done: running ssh connections of that grant are terminated and the host is no longer reachable. Needs no approval. If you lost the task_id, call it with any number: the answer lists your active tasks."}, a.release)
 	mcp.AddTool(s, &mcp.Tool{Name: "request_github_token", Description: "Starts the setup of the GitHub token on the user's side, or extends its access to another repo. Call this when git clone/push/pull fails with permission denied, 403, Repository not found, Authentication failed or could not read Username. Waits for the user (up to 10 minutes). Then repeat the git command."}, a.githubToken)
 	registerGitTools(s, a)
+	mcp.AddTool(s, &mcp.Tool{Name: "get_host_address", Description: "Returns the LAN IP address (and the .local name) of the user's Mac, so you can give the user a link that opens on their phone (http://<ip>:<port>). Needs no approval. Your own VM address is internal and useless for that. A port that a service listens on inside the VM is not reachable from the phone by default; read the note in the result."}, a.hostAddress)
 	mcp.AddTool(s, &mcp.Tool{Name: "propose_skill_change", Description: "Proposes creating, changing or deleting files of the shared, read-only skills (all sandboxes see them). Paths are <skill-name>/SKILL.md or <skill-name>/<other files>; skill names are lowercase letters, digits, - and _. Send the complete new content of every changed file (plain text only, max. 30 files, 128 KB per file, 512 KB in total). The user sees a diff and decides; waits up to 10 minutes. Never try to write into the shared skills folder yourself."}, a.proposeSkillChange)
 }
 

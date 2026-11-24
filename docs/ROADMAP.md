@@ -27,6 +27,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] Documentation refresh; assistants must update README/docs in the same change (rule in `CLAUDE.md`)
 
 ## Next
+- [ ] Make a service in a sandbox reachable from the phone: `get_host_address` (done) gives the Mac's LAN address, but Lima forwards guest ports only to `127.0.0.1`, so a link `http://<lan-ip>:<port>` does not open yet. Options: an approval-gated "expose port N on the LAN" (daemon-side TCP proxy from `0.0.0.0:<port>` to `127.0.0.1:<port>`, time-limited, shown in the app) or Lima `hostIP: 0.0.0.0` per port
 - [ ] Port overview per sandbox ("open shop on localhost:8080") — Lima already forwards guest ports to `127.0.0.1`
 - [ ] Resource limits and idle auto-stop, `caffeinate` option
 - [ ] Update Claude Code in all VMs from the app
