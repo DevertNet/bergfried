@@ -5,7 +5,8 @@ Every Bergfried user sets up **their own GitHub App**. Its private key stays on 
 | What the assistant does | How | Your approval |
 |---|---|---|
 | `git clone/fetch/pull/push` | **Git grant** (like an SSH grant): `request_git_access` → credential helper in the VM → short-lived token → `release_git_access` | once per task, with duration (5–60 min) and level (read / read+write) |
-| open a PR, merge a PR, re-run failed CI jobs | MCP tools `github_create_pr`, `github_merge_pr`, `github_rerun_ci`, executed **by the daemon** | **every single time** (the card shows the PR title and branches as GitHub reports them) |
+| open a PR | MCP tool `github_create_pr`, executed **by the daemon** | **none while the sandbox holds an active git grant with write access for that repository** (audit `git.action.auto`); otherwise a card |
+| merge a PR, re-run failed CI jobs | MCP tools `github_merge_pr`, `github_rerun_ci`, executed **by the daemon** | **every single time** (the card shows the PR title and branches as GitHub reports them) |
 | read a PR / CI runs | `github_pr_view`, `github_ci_status` | none, but an active grant for the repo is required |
 
 Not possible for assistants: creating repositories (the app has no Administration permission). Changing `.github/workflows` is possible **only if you tick "workflow files"** in the git grant or full repo access ([below](#workflow-files)); otherwise GitHub rejects the push.
@@ -29,6 +30,8 @@ Not possible for assistants: creating repositories (the app has no Administratio
 - Releasing is a **rule for the assistant, not a barrier**: if it forgets, the timer ends the grant. A token the assistant copied is dead as soon as it is revoked on GitHub.
 
 ## Full repo access
+*Grant full repo access …* offers the repositories the GitHub App is installed on as a drop-down (read through a Metadata-only token per installation via `GET /v1/githubapp/repos`; if the list cannot be read, the field stays a free text). Besides that dialog (Requests → Active) every active git grant row has an **Allow full access** menu: pick a duration and the same sandbox and repository get full repo access (with merging, without workflow files; use the dialog to change that). The *Grant full repo access* dialog and the decision sheet have *Also merge pull requests* ticked by default. A running full access has an **Edit** button in its row: change the duration (counted from now), merge and workflow files in one dialog; saving replaces the access (a new task id, same sandbox and repository). While the repository list loads, the dialog shows a progress indicator. The grant stays, the new access replaces an older full access of the repository.
+
 For a day of many changes in one repo, approving every grant and every PR or CI call is tedious. **Full repo access** is your own offer for one repository of one sandbox for a fixed time (1, 2, 3, 4, 8 or 24 hours). Internally it is a git grant with a flag (`is_window`, `can_merge`); audit events and code still say "window".
 
 - **Included:** git read and write (the normal git grant; the token is re-minted automatically while the access runs, so it may last longer than 60 minutes), `github_pr_create` and `github_ci_rerun` without a card. **Merging** (`github_pr_merge`) only if you tick *Also merge pull requests*; otherwise it still asks every time.

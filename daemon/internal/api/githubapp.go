@@ -52,6 +52,22 @@ func (s *Server) githubAppStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+// githubAppRepos lists the repositories the GitHub App is installed on (for the repository picker).
+func (s *Server) githubAppRepos(w http.ResponseWriter, r *http.Request) {
+	if s.GitApp == nil || !s.GitApp.Store.Configured() {
+		writeJSON(w, 200, []string{})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	repos, err := s.GitApp.Repositories(ctx)
+	if err != nil {
+		fail(w, 502, err)
+		return
+	}
+	writeJSON(w, 200, repos)
+}
+
 // githubAppSetup starts the manifest flow and returns the loopback URL the app opens in the browser.
 func (s *Server) githubAppSetup(w http.ResponseWriter, r *http.Request) {
 	if s.GitSetup == nil {

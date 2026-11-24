@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -329,4 +330,52 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 		return nil
 	}
 	return err
+}
+
+// Repositories lists the repositories the app can reach (owner/name, sorted). For every installation it mints a short-lived token
+// with the Metadata permission only, reads the repository list (at most 500 per installation) and revokes the token again.
+func (c *Client) Repositories(ctx context.Context) ([]string, error) {
+	ins, err := c.Installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	jwt, err := c.JWT()
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, in := range ins {
+		var t struct {
+			Token string `json:"token"`
+		}
+		body := map[string]any{"permissions": map[string]string{"metadata": "read"}}
+		if err := c.do(ctx, "POST", fmt.Sprintf("/app/installations/%d/access_tokens", in.ID), jwt, body, &t); err != nil {
+			return nil, err
+		}
+		if t.Token == "" {
+			return nil, errors.New("GitHub returned no token")
+		}
+		for page := 1; page <= 5; page++ {
+			var d struct {
+				Repositories []struct {
+					FullName string `json:"full_name"`
+				} `json:"repositories"`
+			}
+			if err = c.do(ctx, "GET", fmt.Sprintf("/installation/repositories?per_page=100&page=%d", page), t.Token, nil, &d); err != nil {
+				break
+			}
+			for _, r := range d.Repositories {
+				out = append(out, r.FullName)
+			}
+			if len(d.Repositories) < 100 {
+				break
+			}
+		}
+		_ = c.Revoke(context.WithoutCancel(ctx), t.Token)
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

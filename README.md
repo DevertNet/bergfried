@@ -21,7 +21,7 @@ see nothing of your Mac until you say so: files, SSH access and GitHub access ar
 <sub>Screenshots with made-up data (taken with [tools/demoapi](tools/demoapi/demoapi.py)).</sub>
 
 4. **SSH keys never leave the Mac.** Bergfried signs *upstream with your real ssh-agent*, only during a grant you created (time window, key, target host key).
-5. **GitHub works through your own GitHub App.** The key stays on your Mac; for git an assistant asks for a time-limited grant per task, and merging, pull requests and CI re-runs are asked every single time. Plain `git push`/`pull` works during a grant.
+5. **GitHub works through your own GitHub App.** The key stays on your Mac; for git an assistant asks for a time-limited grant per task, and merging and CI re-runs are asked every single time (opening a pull request needs no question while a git grant with write access is active). Plain `git push`/`pull` works during a grant.
 6. **Claude and OpenCode are separate.** Each Claude entry is a folder with a Claude session (and Remote Control). OpenCode is one service for the whole sandbox, controlled from the desktop app; both can use the same folder, but not at the same time on the same files.
 
 ```mermaid
