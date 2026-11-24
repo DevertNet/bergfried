@@ -28,6 +28,7 @@ type fakeGH struct {
 	minted  []mint
 	revoked []string
 	merged  []int
+	created []string // heads of opened pull requests
 	prOpen  bool
 	missing map[string]bool // repos without installation
 	noWF    bool            // the app does not have the workflows permission: minting it is refused
@@ -88,6 +89,12 @@ func (f *fakeGH) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		js(200, map[string]any{"number": 5, "title": "Add feature", "state": st, "html_url": "https://github.com/o/r/pull/5",
 			"head": map[string]string{"ref": "feature"}, "base": map[string]string{"ref": "main"}})
+	case strings.HasSuffix(p, "/pulls") && r.Method == "POST":
+		var b struct{ Head string }
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		f.created = append(f.created, b.Head)
+		js(201, map[string]any{"number": 6, "title": "New", "state": "open", "html_url": "https://github.com/o/r/pull/6",
+			"head": map[string]string{"ref": b.Head}, "base": map[string]string{"ref": "main"}})
 	case strings.HasSuffix(p, "/pulls/5/merge") && r.Method == "PUT":
 		f.merged = append(f.merged, 5)
 		js(200, map[string]any{"merged": true, "message": "Pull Request successfully merged"})
@@ -1034,5 +1041,62 @@ func TestFullAccessWithoutWorkflowsStillAsksWhenWorkflowsAreWanted(t *testing.T)
 	}
 	if g, _ := e.s.RequestGrant(ctx, "shop", "", []string{"o/r"}, true, true, 10, "x"); !g.Allowed {
 		t.Fatal("full repo access with workflows covers the request")
+	}
+}
+
+func (f *fakeGH) createdPRs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.created...)
+}
+
+// A git grant with write access is enough to open a pull request without a card; read-only grants and no grant still ask.
+func TestPRCreateNeedsNoCardWithWriteGrant(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	req := ActionReq{Action: ActPRCreate, Repo: "o/r", Title: "New", Head: "feature", Base: "main"}
+
+	e.grant("shop", "o/r", true, true, 30, true)
+	r, err := e.s.Action(ctx, "shop", "work/main", req)
+	if err != nil || !r.OK || !strings.Contains(r.Message, "#6") {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if rs, _ := e.st.ListRequests(true, 10); len(rs) != 0 {
+		t.Fatalf("no card may be created: %+v", rs)
+	}
+	if got := e.f.createdPRs(); len(got) != 1 || got[0] != "feature" {
+		t.Fatalf("%v", got)
+	}
+	if r, _ := e.s.Action(ctx, "shop", "", ActionReq{Action: ActPRCreate, Repo: "o/r", Head: "x"}); r.OK {
+		t.Fatal("title is required")
+	}
+	// another sandbox has no grant: it is asked
+	done := make(chan ActionRes, 1)
+	go func() { done <- e.action("other", req) }()
+	c := e.pending("ghaction")
+	if err := e.s.Decide(ctx, c.ID, false, 0, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.OK {
+		t.Fatalf("%+v", res)
+	}
+	if len(e.f.createdPRs()) != 1 {
+		t.Fatal("a sandbox without a grant must be asked")
+	}
+}
+
+func TestPRCreateWithReadOnlyGrantStillAsks(t *testing.T) {
+	e := newEnv(t)
+	e.grant("shop", "o/r", false, true, 30, false)
+	done := make(chan ActionRes, 1)
+	go func() {
+		done <- e.action("shop", ActionReq{Action: ActPRCreate, Repo: "o/r", Title: "New", Head: "feature", Base: "main"})
+	}()
+	c := e.pending("ghaction")
+	if err := e.s.Decide(context.Background(), c.ID, false, 0, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.OK || len(e.f.createdPRs()) != 0 {
+		t.Fatalf("%+v", res)
 	}
 }

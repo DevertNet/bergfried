@@ -254,6 +254,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
 	mux.HandleFunc("GET /v1/githubapp", s.githubAppStatus)
+	mux.HandleFunc("GET /v1/githubapp/repos", s.githubAppRepos)
 	mux.HandleFunc("POST /v1/githubapp/setup", s.githubAppSetup)
 	mux.HandleFunc("POST /v1/githubapp/forget", s.githubAppForget)
 	mux.HandleFunc("POST /v1/github/legacy/remove", s.githubLegacyRemove)

@@ -436,6 +436,7 @@ struct GrantRow: View {
 /// Git grant or full repo access.
 struct GitGrantRow: View {
     @EnvironmentObject var model: AppModel
+    @Local private var editing = false
     let g: GitGrantInfo
     var badge: String {
         var parts = [g.window == true ? L("FULL ACCESS") : (g.write ? L("READ + WRITE") : L("READ ONLY"))]
@@ -447,15 +448,29 @@ struct GitGrantRow: View {
         ActiveRow(kind: .github, icon: "arrow.triangle.branch", title: g.repo, badge: badge, sandbox: g.sandbox,
                   meta: L("Task %lld", g.id) + (g.folder.isEmpty || g.folder == "unknown" ? "" : " · " + g.folder),
                   reason: g.reason, createdUnix: g.createdUnix, expiresUnix: g.expiresUnix,
-                  extend: Menu("Extend") {
-                      Button("+ 15 minutes") { Task { await model.extendGit(g, minutes: 15) } }
-                      Button("+ 1 hour") { Task { await model.extendGit(g, minutes: 60) } }
-                      if g.window == true {
-                          Button("+ 4 hours") { Task { await model.extendGit(g, minutes: 240) } }
-                          Button("+ 8 hours") { Task { await model.extendGit(g, minutes: 480) } }
+                  extend: HStack(spacing: 8) {
+                      if g.window != true {
+                          // Upgrade this grant to full repo access including merging (no workflow files; use "Grant full repo access" for those).
+                          Menu("Allow full access") {
+                              ForEach(GitGrantSheet.windowSteps, id: \.minutes) { step in
+                                  Button(L(step.label)) { Task { if let e = await model.openGitWindow(sandbox: g.sandbox, repo: g.repo, minutes: step.minutes, merge: true, workflows: false) { model.banner = e } } }
+                              }
+                          }.fixedSize()
                       }
-                  }.fixedSize(),
+                      if g.window == true {
+                          Button("Edit") { editing = true }
+                      }
+                      Menu("Extend") {
+                          Button("+ 15 minutes") { Task { await model.extendGit(g, minutes: 15) } }
+                          Button("+ 1 hour") { Task { await model.extendGit(g, minutes: 60) } }
+                          if g.window == true {
+                              Button("+ 4 hours") { Task { await model.extendGit(g, minutes: 240) } }
+                              Button("+ 8 hours") { Task { await model.extendGit(g, minutes: 480) } }
+                          }
+                      }.fixedSize()
+                  },
                   revoke: { Task { await model.revokeGit(g) } })
+        .sheet(isPresented: $editing) { GitWindowSheet(edit: g) }
     }
 }
 
@@ -738,7 +753,7 @@ struct GitGrantSheet: View {
     @Local private var minutes = 15
     @Local private var write = true
     @Local private var window = false
-    @Local private var merge = false
+    @Local private var merge = true
     @Local private var workflows = false
     @Local private var windowMinutes = 120
     @Local private var error: String?
@@ -824,26 +839,66 @@ struct GitGrantSheet: View {
 struct GitWindowSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    /// Set when an existing full access is edited: sandbox and repository are fixed, saving replaces the access.
+    var edit: GitGrantInfo? = nil
     @Local private var sandbox = ""
     @Local private var repo = ""
+    @Local private var repos: [String] = []
     @Local private var minutes = 120
-    @Local private var merge = false
+    @Local private var merge = true
     @Local private var workflows = false
     @Local private var error: String?
     @Local private var busy = false
+    @Local private var loadingRepos = false
 
     var body: some View {
-        KindFrame(kind: .github, title: L("Grant full repo access")) { form }.frame(width: 480)
-            .onAppear { if sandbox.isEmpty { sandbox = model.sandboxes.first(where: { $0.status == "running" })?.name ?? model.sandboxes.first?.name ?? "" } }
+        KindFrame(kind: .github, title: edit == nil ? L("Grant full repo access") : L("Edit full repo access")) { form }.frame(width: 480)
+            .onAppear {
+                if let e = edit {
+                    sandbox = e.sandbox; repo = e.repo; merge = e.merge == true; workflows = e.workflows == true
+                    let left = Int((Double(e.expiresUnix) - Date().timeIntervalSince1970) / 60)
+                    minutes = GitGrantSheet.windowSteps.first(where: { $0.minutes >= left })?.minutes ?? GitGrantSheet.windowSteps.last!.minutes
+                } else if sandbox.isEmpty { sandbox = model.sandboxes.first(where: { $0.status == "running" })?.name ?? model.sandboxes.first?.name ?? "" }
+            }
+            .task {
+                guard edit == nil else { return }
+                // Repositories the GitHub App is installed on; on failure the text field stays.
+                loadingRepos = true
+                if let list: [String] = try? await model.api.get("/v1/githubapp/repos"), !list.isEmpty {
+                    repos = list
+                    if !list.contains(repo) { repo = list[0] }
+                }
+                loadingRepos = false
+            }
     }
 
     var form: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Sandbox", selection: $sandbox) {
-                ForEach(model.sandboxes, id: \.name) { Text($0.name).tag($0.name) }
+            if edit != nil {
+                LabeledContent("Sandbox") { Text(sandbox) }
+                LabeledContent("Repository") { Text(repo).textSelection(.enabled) }
+            } else {
+                Picker("Sandbox", selection: $sandbox) {
+                    ForEach(model.sandboxes, id: \.name) { Text($0.name).tag($0.name) }
+                }
             }
-            TextField("Repository (owner/name)", text: $repo).textFieldStyle(.roundedBorder).autocorrectionDisabled()
-            Picker("Duration", selection: $minutes) {
+            if edit != nil {
+                EmptyView()
+            } else if loadingRepos {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading repositories …").foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if repos.isEmpty {
+                // List not available: fall back to typing the name.
+                TextField("Repository (owner/name)", text: $repo).textFieldStyle(.roundedBorder).autocorrectionDisabled()
+            } else {
+                Picker("Repository", selection: $repo) {
+                    ForEach(repos, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            Picker(edit == nil ? "Duration" : "Duration from now", selection: $minutes) {
                 ForEach(GitGrantSheet.windowSteps, id: \.minutes) { Text(L($0.label)).tag($0.minutes) }
             }
             Toggle("Also merge pull requests", isOn: $merge)
@@ -858,12 +913,12 @@ struct GitWindowSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                Button("Open window") {
+                Button(edit == nil ? "Open window" : "Save") {
                     busy = true
                     Task {
                         if let e = await model.openGitWindow(sandbox: sandbox, repo: repo.trimmingCharacters(in: .whitespaces), minutes: minutes, merge: merge, workflows: workflows) { error = e; busy = false } else { dismiss() }
                     }
-                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(busy || sandbox.isEmpty || repo.trimmingCharacters(in: .whitespaces).isEmpty)
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(busy || loadingRepos || sandbox.isEmpty || repo.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)

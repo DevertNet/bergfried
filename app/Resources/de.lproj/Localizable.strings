@@ -95,6 +95,7 @@
 "Error %lld" = "Fehler %lld";
 "Event" = "Ereignis";
 "Export CSV …" = "CSV exportieren …";
+"Allow full access" = "Vollen Zugriff erlauben";
 "Extend" = "Verlängern";
 "Failed" = "Fehlgeschlagen";
 "File request: %@" = "Datei-Anfrage: %@";
@@ -603,7 +604,7 @@
 "Allow once" = "Einmal erlauben";
 "Allow push (write access)" = "Push erlauben (Schreibzugriff)";
 "App" = "App";
-"Bergfried uses a GitHub App that belongs to you. Its private key stays on this Mac, never in a VM. For git an assistant asks for a time-limited grant per task; merging, opening pull requests and re-running CI are asked every single time." = "Bergfried nutzt eine GitHub App, die dir gehört. Ihr privater Schlüssel bleibt auf diesem Mac und kommt nie in eine VM. Für Git fragt ein Assistent pro Aufgabe nach einer zeitlich begrenzten Freigabe; Mergen, Pull Requests öffnen und CI neu starten werden jedes Mal einzeln gefragt.";
+"Bergfried uses a GitHub App that belongs to you. Its private key stays on this Mac, never in a VM. For git an assistant asks for a time-limited grant per task; merging and re-running CI are asked every single time; opening a pull request needs no question while a git grant with write access is active." = "Bergfried nutzt eine GitHub App, die dir gehört. Ihr privater Schlüssel bleibt auf diesem Mac und kommt nie in eine VM. Für Git fragt ein Assistent pro Aufgabe nach einer zeitlich begrenzten Freigabe; Mergen und CI neu starten werden jedes Mal einzeln gefragt; einen Pull Request zu öffnen braucht keine Rückfrage, solange eine Git-Freigabe mit Schreibrechten aktiv ist.";
 "Check again" = "Erneut prüfen";
 "Choose \"Only select repositories\" when installing: the app can only ever reach the repositories you select there." = "Wähle bei der Installation „Only select repositories“: Die App erreicht immer nur die Repositories, die du dort auswählst.";
 "Forget and end all git grants" = "Vergessen und alle Git-Freigaben beenden";
@@ -679,3 +680,9 @@
 "Review permissions …" = "Berechtigungen prüfen …";
 "wants **git access (read and write, incl. workflow files)** to **%@**" = "will **Git-Zugriff (Lesen und Schreiben, inkl. Workflow-Dateien)** auf **%@**";
 "Workflow files run code on GitHub with the repository's secrets. Check the reason carefully." = "Workflow-Dateien führen Code bei GitHub mit den Secrets des Repos aus. Prüfe die Begründung sorgfältig.";
+"Showing the last %lld lines; %lld earlier lines are hidden (Copy all and Show in Finder have everything)." = "Angezeigt werden die letzten %lld Zeilen; %lld frühere Zeilen sind ausgeblendet („Alles kopieren“ und „Im Finder zeigen“ enthalten alles).";
+"Allow merging" = "Mergen erlauben";
+"Edit full repo access" = "Vollen Repo-Zugriff bearbeiten";
+"Duration from now" = "Dauer ab jetzt";
+"Loading repositories …" = "Repositories werden geladen …";
+"Edit" = "Bearbeiten";

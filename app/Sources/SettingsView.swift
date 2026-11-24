@@ -337,7 +337,7 @@ struct SettingsView: View {
 
     @ViewBuilder var githubPage: some View {
         SettingsCard("Your GitHub App") {
-            Text("Bergfried uses a GitHub App that belongs to you. Its private key stays on this Mac, never in a VM. For git an assistant asks for a time-limited grant per task; merging, opening pull requests and re-running CI are asked every single time.")
+            Text("Bergfried uses a GitHub App that belongs to you. Its private key stays on this Mac, never in a VM. For git an assistant asks for a time-limited grant per task; merging and re-running CI are asked every single time; opening a pull request needs no question while a git grant with write access is active.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let a = ghApp, a.configured {
                 LabeledContent("App") { Text(a.name ?? a.slug ?? "") }

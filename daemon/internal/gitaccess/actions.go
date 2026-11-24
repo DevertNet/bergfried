@@ -78,6 +78,20 @@ func failMsg(err error) string {
 	return err.Error()
 }
 
+// hasWriteGrant reports whether the sandbox holds an active git grant with write access for the repository.
+func (s *Service) hasWriteGrant(sandbox, repo string) bool {
+	gs, err := s.activeGrants(sandbox)
+	if err != nil {
+		return false
+	}
+	for _, g := range gs {
+		if g.Write && strings.EqualFold(g.Repo, repo) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) hasGrant(sandbox, repo string) bool {
 	gs, err := s.activeGrants(sandbox)
 	if err != nil {
@@ -123,6 +137,16 @@ func (s *Service) Action(ctx context.Context, sandbox, folder string, a ActionRe
 			return ActionRes{Message: "run_id is required"}, nil
 		}
 		s.audit("git.action.auto", sandbox, folder, fmt.Sprintf("%s %s %s (full repo access %d)", a.Action, gr, actionRef(a), w.ID))
+		return s.run(ctx, sandbox, folder, gr, a, perms)
+	}
+
+	// Opening a pull request needs no card while the sandbox holds a git grant with write access for the repository (the branch it
+	// opens from had to be pushed under that grant). Merging and CI re-runs still ask.
+	if a.Action == ActPRCreate && s.hasWriteGrant(sandbox, gr.String()) {
+		if a.Title == "" || a.Head == "" {
+			return ActionRes{Message: "title and head are required"}, nil
+		}
+		s.audit("git.action.auto", sandbox, folder, fmt.Sprintf("%s %s %s (write grant)", a.Action, gr, actionRef(a)))
 		return s.run(ctx, sandbox, folder, gr, a, perms)
 	}
 
