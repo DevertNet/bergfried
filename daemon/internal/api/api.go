@@ -32,6 +32,9 @@ import (
 	"github.com/DevertNet/bergfried/daemon/internal/update"
 )
 
+// RequestTimeout: how long an open request waits for an answer (every service uses 10 minutes); shown as time left in the app.
+const RequestTimeout = 10 * time.Minute
+
 // Version is set at build time (-ldflags "-X github.com/DevertNet/bergfried/daemon/internal/api.Version=1.2.3").
 var Version = "0.0.0-dev"
 
@@ -109,6 +112,8 @@ func (s *Server) jobFor(kind, sess string, f func(ctx context.Context) error) *J
 		}
 		if sess != "" && s.Mon != nil {
 			s.Mon.Release(sess)
+		} else if s.Mon != nil {
+			s.Mon.InvalidateVMs() // the job may have created, started or deleted VMs
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -191,6 +196,7 @@ type requestJ struct {
 	Reason  string              `json:"reason"`
 	Status  string              `json:"status"`
 	Created int64               `json:"created_unix"`
+	Expires int64               `json:"expires_unix"` // pending: when the request lapses without an answer
 	Bytes   int64               `json:"bytes"`
 	Files   int64               `json:"files"`
 	Large   bool                `json:"large"`
@@ -212,6 +218,7 @@ type grantJ struct {
 	Active     bool     `json:"active"`
 	HostKeyFPs []string `json:"host_key_fingerprints"`
 	Reason     string   `json:"reason"`
+	Created    int64    `json:"created_unix"` // the app draws the remaining time against the whole length
 }
 type auditJ struct {
 	TS      int64  `json:"ts_unix"`
@@ -247,12 +254,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/opencode/stop", s.simple("opencode.stop", func(ctx context.Context, n string, _ bool) error { return s.M.OpenCodeStop(ctx, n) }))
 	mux.HandleFunc("POST /v1/github/decide", s.githubDecide)
 	mux.HandleFunc("GET /v1/githubapp", s.githubAppStatus)
+	mux.HandleFunc("GET /v1/githubapp/repos", s.githubAppRepos)
 	mux.HandleFunc("POST /v1/githubapp/setup", s.githubAppSetup)
 	mux.HandleFunc("POST /v1/githubapp/forget", s.githubAppForget)
 	mux.HandleFunc("POST /v1/github/legacy/remove", s.githubLegacyRemove)
 	mux.HandleFunc("GET /v1/git/grants", s.gitGrants)
 	mux.HandleFunc("POST /v1/git/revoke", s.gitRevoke)
 	mux.HandleFunc("POST /v1/git/decide", s.gitDecide)
+	mux.HandleFunc("POST /v1/git/window", s.gitWindow)
+	mux.HandleFunc("POST /v1/git/extend", s.gitExtend)
 	mux.HandleFunc("POST /v1/skills/decide", s.skillsDecide)
 	mux.HandleFunc("POST /v1/index/start", s.indexStart)
 	mux.HandleFunc("GET /v1/log", s.logTail)
@@ -277,7 +287,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/audit.csv", s.auditCSV)
 	mux.HandleFunc("GET /v1/blocklist", s.getBlocklist)
 	mux.HandleFunc("PUT /v1/blocklist", s.putBlocklist)
-	return mux
+	if s.Mon == nil {
+		return mux
+	}
+	// Every API call comes from the app: the monitor polls faster while the app is connected.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.Mon.Touch()
+		mux.ServeHTTP(w, r)
+	})
+}
+
+// vmList is `limactl list`, taken from the monitor's short-lived cache when there is one.
+func (s *Server) vmList(ctx context.Context) ([]lima.Instance, error) {
+	if s.Mon != nil {
+		return s.Mon.VMs(ctx)
+	}
+	return s.M.L.List(ctx)
 }
 
 // Serve listens on the unix socket (directory 0700, socket 0600).
@@ -303,7 +328,7 @@ func (s *Server) Serve(ctx context.Context, sock string) error {
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	vms, err := s.M.L.List(r.Context())
+	vms, err := s.vmList(r.Context())
 	if err != nil {
 		fail(w, 500, err)
 		return
@@ -351,7 +376,7 @@ func (s *Server) sandboxes(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
-	vms, err := s.M.L.List(r.Context())
+	vms, err := s.vmList(r.Context())
 	if err != nil {
 		fail(w, 500, err)
 		return
@@ -867,7 +892,7 @@ func (s *Server) templateState(r *http.Request, warnings []string) (templateJ, e
 	if err != nil {
 		return templateJ{}, err
 	}
-	vms, _ := s.M.L.List(r.Context())
+	vms, _ := s.vmList(r.Context())
 	ready := false
 	for _, v := range vms {
 		if v.Name == s.M.BaseName() {
@@ -942,7 +967,7 @@ func (s *Server) requests(w http.ResponseWriter, r *http.Request) {
 	out := []requestJ{}
 	for _, q := range rs {
 		j := requestJ{ID: q.ID, Sandbox: q.Sandbox, Folder: q.Worktree, Kind: q.Kind, Path: q.Path, Reason: q.Reason, Status: q.Status,
-			Created: q.Created.Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
+			Created: q.Created.Unix(), Expires: q.Created.Add(RequestTimeout).Unix(), Bytes: q.Bytes, Files: q.Files, Large: access.Large(q)}
 		switch q.Kind {
 		case "ghtoken":
 			var d ghtoken.Detail
@@ -1022,7 +1047,7 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	for _, g := range gs {
 		out = append(out, grantJ{g.ID, g.Sandbox, g.Worktree, g.Host, g.KeyFP, g.User, g.Expires.Unix(), g.PerConn, g.Revoked,
-			!g.Revoked && g.Expires.After(now), g.HostKeys, g.Reason})
+			!g.Revoked && g.Expires.After(now), g.HostKeys, g.Reason, g.Created.Unix()})
 	}
 	writeJSON(w, 200, out)
 }

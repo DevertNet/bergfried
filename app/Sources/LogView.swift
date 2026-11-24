@@ -7,6 +7,10 @@ struct LogView: View {
     @Local private var source = "daemon"
     @Local private var info: LogInfo?
     @Local private var failed: String?
+    // A selectable SwiftUI Text with hundreds of KB is very slow to lay out: only the end of the log is shown (Copy all copies everything).
+    @Local private var shown = ""
+    @Local private var hiddenLines = 0
+    static let shownLines = 300
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,15 +30,16 @@ struct LogView: View {
                 Spacer()
             }.padding(8)
             if let f = failed { Text(f).foregroundStyle(.orange).padding(.horizontal, 8) }
+            if hiddenLines > 0 { Text(L("Showing the last %lld lines; %lld earlier lines are hidden (Copy all and Show in Finder have everything).", Self.shownLines, hiddenLines)).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8) }
             if let p = info?.path { Text(p).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8) }
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text((info?.text ?? "").isEmpty ? L("(the log is empty or does not exist yet)") : info!.text)
+                    Text(shown.isEmpty ? L("(the log is empty or does not exist yet)") : shown)
                         .font(.caption.monospaced()).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                     Color.clear.frame(height: 1).id("end")
                 }
-                .onChange(of: info?.text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: shown) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
             }
         }
         .task { await load() }
@@ -49,6 +54,12 @@ struct LogView: View {
         } else {
             c.queryItems = [URLQueryItem(name: "source", value: source)]
         }
-        do { info = try await model.api.get(c.string ?? "/v1/log") } catch { failed = error.localizedDescription }
+        do {
+            let i: LogInfo = try await model.api.get(c.string ?? "/v1/log")
+            let lines = i.text.split(separator: "\n", omittingEmptySubsequences: false)
+            hiddenLines = max(0, lines.count - Self.shownLines)
+            shown = hiddenLines > 0 ? lines.suffix(Self.shownLines).joined(separator: "\n") : i.text
+            info = i
+        } catch { failed = error.localizedDescription }
     }
 }

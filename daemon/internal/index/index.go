@@ -28,6 +28,7 @@ type Index struct {
 	mu      sync.RWMutex
 	entries []Entry
 	ready   atomic.Bool
+	trace   func(rel string) // tests: called for every entry in the order it is visited
 }
 
 // New creates the index without scanning; Refresh builds it (e.g. in a goroutine).
@@ -67,6 +68,11 @@ var ErrNotReady = errors.New("index is still being built")
 var SkipDirs = map[string]bool{"node_modules": true, ".git": true, ".cache": true, ".npm": true,
 	".gradle": true, ".Trash": true, ".cocoapods": true, "DerivedData": true, ".cargo": true, ".rustup": true}
 
+// ProtectedFirst: the folders for which macOS asks the user for access (Desktop, Documents, Downloads, plus Music, Movies and Pictures, which hold the media libraries that macOS asks about separately). Refresh scans them before
+// everything else, so that after the app's explanation all prompts come right away one after the other instead of being spread
+// over the whole scan (docs/ARCHITECTURE.md).
+var ProtectedFirst = []string{"Desktop", "Documents", "Downloads", "Music", "Movies", "Pictures"}
+
 // Build scans the home. Symlinks are neither listed nor followed.
 func Build(home string, bl Blocklist) (*Index, error) {
 	real, err := filepath.EvalSymlinks(home)
@@ -79,7 +85,8 @@ func Build(home string, bl Blocklist) (*Index, error) {
 
 func (ix *Index) Refresh() error {
 	var out []Entry
-	err := filepath.WalkDir(ix.home, func(p string, d fs.DirEntry, err error) error {
+	skip := map[string]bool{} // folders already scanned in the first pass
+	visit := func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
@@ -91,6 +98,9 @@ func (ix *Index) Refresh() error {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
+		if d.IsDir() && skip[rel] {
+			return fs.SkipDir
+		}
 		if ix.blocklist().BlockedRel(rel) {
 			if d.IsDir() {
 				return fs.SkipDir
@@ -107,10 +117,24 @@ func (ix *Index) Refresh() error {
 		if ierr != nil {
 			return nil
 		}
+		if ix.trace != nil {
+			ix.trace(rel)
+		}
 		out = append(out, Entry{Path: rel, IsDir: d.IsDir(), Size: info.Size(), MTime: info.ModTime().Unix()})
 		return nil
-	})
-	if err != nil {
+	}
+	// First pass: the folders macOS asks about. Walking them one after the other makes the prompts appear one after the other.
+	for _, name := range ProtectedFirst {
+		root := filepath.Join(ix.home, name)
+		if fi, err := os.Lstat(root); err != nil || !fi.IsDir() {
+			continue
+		}
+		if err := filepath.WalkDir(root, visit); err != nil {
+			return err
+		}
+		skip[name] = true
+	}
+	if err := filepath.WalkDir(ix.home, visit); err != nil {
 		return err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })

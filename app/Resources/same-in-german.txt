@@ -17,3 +17,7 @@ github_pat_…
 Name
 Base VM
 Shell / SSH
+Sandbox
+MERGE
+WORKFLOWS
+Repository

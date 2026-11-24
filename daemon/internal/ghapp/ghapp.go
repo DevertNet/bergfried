@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -216,8 +217,10 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, body, out 
 
 // Installation is one place the app is installed (a user or an organisation).
 type Installation struct {
-	ID      int64  `json:"id"`
-	Account string `json:"account"`
+	ID          int64             `json:"id"`
+	Account     string            `json:"account"`
+	Permissions map[string]string `json:"permissions,omitempty"`  // as accepted for this installation (e.g. workflows: write)
+	AccountType string            `json:"account_type,omitempty"` // User or Organization (decides the link to the installation's page)
 }
 
 // Installations lists where the app is installed (GET /app/installations, as the app).
@@ -230,16 +233,34 @@ func (c *Client) Installations(ctx context.Context) ([]Installation, error) {
 		ID      int64 `json:"id"`
 		Account struct {
 			Login string `json:"login"`
+			Type  string `json:"type"`
 		} `json:"account"`
+		Permissions map[string]string `json:"permissions"`
 	}
 	if err := c.do(ctx, "GET", "/app/installations?per_page=100", jwt, nil, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]Installation, 0, len(raw))
 	for _, r := range raw {
-		out = append(out, Installation{r.ID, r.Account.Login})
+		out = append(out, Installation{r.ID, r.Account.Login, r.Permissions, r.Account.Type})
 	}
 	return out, nil
+}
+
+// AppPermissions returns the permissions the app itself has (GET /app, as the app). They can be ahead of an installation's:
+// after the owner adds a permission to the app, every installation has to accept it once.
+func (c *Client) AppPermissions(ctx context.Context) (map[string]string, error) {
+	jwt, err := c.JWT()
+	if err != nil {
+		return nil, err
+	}
+	var d struct {
+		Permissions map[string]string `json:"permissions"`
+	}
+	if err := c.do(ctx, "GET", "/app", jwt, nil, &d); err != nil {
+		return nil, err
+	}
+	return d.Permissions, nil
 }
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
@@ -309,4 +330,52 @@ func (c *Client) Revoke(ctx context.Context, token string) error {
 		return nil
 	}
 	return err
+}
+
+// Repositories lists the repositories the app can reach (owner/name, sorted). For every installation it mints a short-lived token
+// with the Metadata permission only, reads the repository list (at most 500 per installation) and revokes the token again.
+func (c *Client) Repositories(ctx context.Context) ([]string, error) {
+	ins, err := c.Installations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	jwt, err := c.JWT()
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, in := range ins {
+		var t struct {
+			Token string `json:"token"`
+		}
+		body := map[string]any{"permissions": map[string]string{"metadata": "read"}}
+		if err := c.do(ctx, "POST", fmt.Sprintf("/app/installations/%d/access_tokens", in.ID), jwt, body, &t); err != nil {
+			return nil, err
+		}
+		if t.Token == "" {
+			return nil, errors.New("GitHub returned no token")
+		}
+		for page := 1; page <= 5; page++ {
+			var d struct {
+				Repositories []struct {
+					FullName string `json:"full_name"`
+				} `json:"repositories"`
+			}
+			if err = c.do(ctx, "GET", fmt.Sprintf("/installation/repositories?per_page=100&page=%d", page), t.Token, nil, &d); err != nil {
+				break
+			}
+			for _, r := range d.Repositories {
+				out = append(out, r.FullName)
+			}
+			if len(d.Repositories) < 100 {
+				break
+			}
+		}
+		_ = c.Revoke(context.WithoutCancel(ctx), t.Token)
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

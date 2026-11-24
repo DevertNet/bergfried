@@ -55,14 +55,20 @@ message GitAccessRequest {
   bool write = 2;        // false: read only (clone, fetch, pull)
   int32 minutes = 3;     // only a suggestion (max 60), the user decides
   string reason = 4;
+  repeated string repos = 5; // more repositories for the same request (one decision, one grant each); repo is the first
+  bool workflows = 6;    // also change .github/workflows (needs write); only a request, the user decides and sees a warning
 }
 message GitAccessResult {
   Verdict verdict = 1;
   string message = 2;
   int64 expires_unix = 3;
   int64 task_id = 4;     // pass it to ReleaseGitAccess when the task is finished
+  repeated int64 task_ids = 5; // one per repository (task_id is the first)
 }
-message GitReleaseRequest { int64 task_id = 1; }
+message GitReleaseRequest {
+  int64 task_id = 1;
+  repeated int64 task_ids = 2;
+}
 message GitReleaseResult {
   bool released = 1;
   string message = 2;

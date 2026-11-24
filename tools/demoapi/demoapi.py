@@ -44,7 +44,7 @@ SANDBOXES = [
 
 def req(i, sb, wt, kind, path, reason, **kw):
     r = {"id": i, "sandbox": sb, "folder": wt, "kind": kind, "path": path, "reason": reason, "status": "pending",
-         "created_unix": now - 40 * i, "bytes": 0, "files": 0, "large": False}
+         "created_unix": now - 40 * i, "expires_unix": now - 40 * i + 600, "bytes": 0, "files": 0, "large": False}
     r.update(kw)
     return r
 
@@ -74,14 +74,23 @@ HISTORY = [
          git={"kind": "action", "repo": "acme/shop", "action": "pr_create",
               "summary": ["Open a pull request: Add PayPal checkout", "feature/paypal \u2192 main"]}),
     done(10, "webshop", "work/main", "ssh", "build.example.com", "Run the nightly build script on the build server.", "allowed"),
+    done(8, "webshop", "work/docs", "gitgrant", "acme/shop-docs", "Fix the typos in the API docs.", "allowed",
+         git={"kind": "grant", "repo": "acme/shop-docs", "write": True, "minutes": 15, "max_minutes": 60}),
+    done(7, "blog", "work/main", "ssh", "blog.example.com", "Publish the new post.", "allowed"),
     done(9, "blog", "work/main", "file", "Documents/Invoices/2024-Q2.pdf", "I need the invoice layout to build the PDF export.", "denied", files=1, bytes=170_000),
 ]
 
 GRANTS = [{"id": 1, "sandbox": "webshop", "folder": "work/main", "host": "build.example.com", "key_fingerprint": KEY, "user": "deploy",
            "expires_unix": now + 22 * 60, "per_connection": False, "revoked": False, "active": True, "host_key_fingerprints": [FP],
-           "reason": "Run the nightly build script on the build server."}]
+           "reason": "Run the nightly build script on the build server.", "created_unix": now - 9 * 60},
+          {"id": 2, "sandbox": "blog", "folder": "work/main", "host": "blog.example.com", "key_fingerprint": KEY, "user": "admin",
+           "expires_unix": now + 51 * 60, "per_connection": False, "revoked": False, "active": True, "host_key_fingerprints": [FP],
+           "reason": "Publish the new post.", "created_unix": now - 9 * 60}]
 GIT_GRANTS = [{"id": 7, "sandbox": "webshop", "folder": "work/main", "repo": "acme/shop", "write": True,
-               "reason": "Push the feature branch for the PayPal checkout.", "expires_unix": now + 11 * 60}]
+               "reason": "Push the feature branch for the PayPal checkout.", "expires_unix": now + 11 * 60,
+               "created_unix": now - 4 * 60, "window": False, "merge": False},
+              {"id": 8, "sandbox": "webshop", "folder": "work/docs", "repo": "acme/shop-docs", "write": True,
+               "reason": "", "expires_unix": now + 3 * 3600 + 12 * 60, "created_unix": now - 48 * 60, "window": True, "merge": True}]
 GITHUB_APP = {"configured": True, "name": "Bergfried-3fa9c1", "slug": "bergfried-3fa9c1", "app_id": 1234567,
               "install_url": "https://github.com/apps/bergfried-3fa9c1/installations/new",
               "settings_url": "https://github.com/settings/apps/bergfried-3fa9c1",

@@ -421,6 +421,7 @@ func serve(ctx context.Context, m *sandbox.Manager, home, userHome string, noDia
 	am := *m
 	am.Actor = "app"
 	mon := api.NewMonitor(&am)
+	d.VMs = mon.VMs // Reconcile (every 5 s) shares the monitor's cached `limactl list`
 	go mon.Run(ctx)
 	upd := update.New(getenv("BERGFRIED_UPDATE_REPO", "DevertNet/bergfried"), api.Version, home)
 	if v := os.Getenv("BERGFRIED_UPDATE_API"); v != "" { // development/tests only

@@ -190,8 +190,11 @@ func TestManifestFlow(t *testing.T) {
 			t.Fatalf("form misses %q:\n%s", want, hs)
 		}
 	}
-	if strings.Contains(hs, "workflows") || strings.Contains(hs, "administration") {
-		t.Fatal("the manifest must not ask for Workflows or Administration")
+	if strings.Contains(hs, "administration") {
+		t.Fatal("the manifest must not ask for Administration")
+	}
+	if !strings.Contains(hs, `"workflows":"write"`) { // held by the app; tokens only get it when the user ticks it (gitaccess)
+		t.Fatal("the manifest must ask for Workflows")
 	}
 	state := url.QueryEscape(su.active.state)
 	cb := strings.TrimSuffix(start, "/start") + "/callback"
@@ -212,5 +215,82 @@ func TestManifestFlow(t *testing.T) {
 	}
 	if len(events) < 2 || events[len(events)-1] != "githubapp.setup.done" {
 		t.Fatal(events)
+	}
+}
+
+// After the owner adds a permission to the app, the app has it but each installation still has to accept it: both are read
+// separately so Settings can say which of the two steps is missing.
+func TestAppAndInstallationPermissionsAreReadSeparately(t *testing.T) {
+	s, _ := newStore(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ey") {
+			w.WriteHeader(401)
+			return
+		}
+		switch r.URL.Path {
+		case "/app":
+			io.WriteString(w, `{"permissions":{"contents":"write","workflows":"write"}}`)
+		case "/app/installations":
+			io.WriteString(w, `[{"id":9,"account":{"login":"acme","type":"Organization"},"permissions":{"contents":"write"}}]`)
+		default:
+			w.WriteHeader(500)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient(s)
+	c.Base = srv.URL
+	ap, err := c.AppPermissions(context.Background())
+	if err != nil || ap["workflows"] != "write" {
+		t.Fatalf("%v %v", ap, err)
+	}
+	ins, err := c.Installations(context.Background())
+	if err != nil || len(ins) != 1 || ins[0].ID != 9 || ins[0].AccountType != "Organization" || ins[0].Permissions["workflows"] != "" || ins[0].Permissions["contents"] != "write" {
+		t.Fatalf("the installation has not accepted workflows yet: %+v %v", ins, err)
+	}
+}
+
+// The repository list uses a Metadata-only token per installation and revokes it afterwards.
+func TestRepositoriesListsAcrossInstallationsAndRevokes(t *testing.T) {
+	s, _ := newStore(t)
+	var revoked []string
+	var minted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/app/installations":
+			io.WriteString(w, `[{"id":1,"account":{"login":"b","type":"User"}},{"id":2,"account":{"login":"a","type":"Organization"}}]`)
+		case strings.HasSuffix(r.URL.Path, "/access_tokens") && r.Method == "POST":
+			var b struct {
+				Repositories []string          `json:"repositories"`
+				Permissions  map[string]string `json:"permissions"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			if len(b.Repositories) != 0 || len(b.Permissions) != 1 || b.Permissions["metadata"] != "read" {
+				t.Errorf("token must be metadata-only: %+v", b)
+			}
+			tok := "tok" + strings.Split(r.URL.Path, "/")[3]
+			minted = append(minted, tok)
+			io.WriteString(w, `{"token":"`+tok+`","expires_at":"2099-01-01T00:00:00Z"}`)
+		case r.URL.Path == "/installation/repositories":
+			if r.Header.Get("Authorization") == "Bearer tok1" {
+				io.WriteString(w, `{"repositories":[{"full_name":"b/zeta"},{"full_name":"b/alpha"}]}`)
+			} else {
+				io.WriteString(w, `{"repositories":[{"full_name":"a/shop"}]}`)
+			}
+		case r.URL.Path == "/installation/token" && r.Method == "DELETE":
+			revoked = append(revoked, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			w.WriteHeader(204)
+		default:
+			w.WriteHeader(500)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient(s)
+	c.Base = srv.URL
+	got, err := c.Repositories(context.Background())
+	if err != nil || strings.Join(got, ",") != "a/shop,b/alpha,b/zeta" {
+		t.Fatalf("%v %v", got, err)
+	}
+	if len(revoked) != 2 || len(minted) != 2 {
+		t.Fatalf("every token must be revoked: minted %v revoked %v", minted, revoked)
 	}
 }

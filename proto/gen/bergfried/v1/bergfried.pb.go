@@ -246,6 +246,8 @@ type GitAccessRequest struct {
 	Write         bool                   `protobuf:"varint,2,opt,name=write,proto3" json:"write,omitempty"`     // false: read only (clone, fetch, pull)
 	Minutes       int32                  `protobuf:"varint,3,opt,name=minutes,proto3" json:"minutes,omitempty"` // only a suggestion (max 60), the user decides
 	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	Repos         []string               `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`          // more repositories for the same request (one decision, one grant each); repo is the first
+	Workflows     bool                   `protobuf:"varint,6,opt,name=workflows,proto3" json:"workflows,omitempty"` // also change .github/workflows (needs write); only a request, the user decides and sees a warning
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -308,12 +310,27 @@ func (x *GitAccessRequest) GetReason() string {
 	return ""
 }
 
+func (x *GitAccessRequest) GetRepos() []string {
+	if x != nil {
+		return x.Repos
+	}
+	return nil
+}
+
+func (x *GitAccessRequest) GetWorkflows() bool {
+	if x != nil {
+		return x.Workflows
+	}
+	return false
+}
+
 type GitAccessResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Verdict       Verdict                `protobuf:"varint,1,opt,name=verdict,proto3,enum=bergfried.v1.Verdict" json:"verdict,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	ExpiresUnix   int64                  `protobuf:"varint,3,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
-	TaskId        int64                  `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"` // pass it to ReleaseGitAccess when the task is finished
+	TaskId        int64                  `protobuf:"varint,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`           // pass it to ReleaseGitAccess when the task is finished
+	TaskIds       []int64                `protobuf:"varint,5,rep,packed,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"` // one per repository (task_id is the first)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,9 +393,17 @@ func (x *GitAccessResult) GetTaskId() int64 {
 	return 0
 }
 
+func (x *GitAccessResult) GetTaskIds() []int64 {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
+}
+
 type GitReleaseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        int64                  `protobuf:"varint,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskIds       []int64                `protobuf:"varint,2,rep,packed,name=task_ids,json=taskIds,proto3" json:"task_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -418,6 +443,13 @@ func (x *GitReleaseRequest) GetTaskId() int64 {
 		return x.TaskId
 	}
 	return 0
+}
+
+func (x *GitReleaseRequest) GetTaskIds() []int64 {
+	if x != nil {
+		return x.TaskIds
+	}
+	return nil
 }
 
 type GitReleaseResult struct {
@@ -2491,19 +2523,23 @@ const file_bergfried_v1_bergfried_proto_rawDesc = "" +
 	"\achanges\x18\x02 \x03(\v2\x19.bergfried.v1.SkillChangeR\achanges\"`\n" +
 	"\x13SkillProposalResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"n\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xa2\x01\n" +
 	"\x10GitAccessRequest\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05write\x18\x02 \x01(\bR\x05write\x12\x18\n" +
 	"\aminutes\x18\x03 \x01(\x05R\aminutes\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x98\x01\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x14\n" +
+	"\x05repos\x18\x05 \x03(\tR\x05repos\x12\x1c\n" +
+	"\tworkflows\x18\x06 \x01(\bR\tworkflows\"\xb3\x01\n" +
 	"\x0fGitAccessResult\x12/\n" +
 	"\averdict\x18\x01 \x01(\x0e2\x15.bergfried.v1.VerdictR\averdict\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
 	"\fexpires_unix\x18\x03 \x01(\x03R\vexpiresUnix\x12\x17\n" +
-	"\atask_id\x18\x04 \x01(\x03R\x06taskId\",\n" +
+	"\atask_id\x18\x04 \x01(\x03R\x06taskId\x12\x19\n" +
+	"\btask_ids\x18\x05 \x03(\x03R\ataskIds\"G\n" +
 	"\x11GitReleaseRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\x03R\x06taskId\"H\n" +
+	"\atask_id\x18\x01 \x01(\x03R\x06taskId\x12\x19\n" +
+	"\btask_ids\x18\x02 \x03(\x03R\ataskIds\"H\n" +
 	"\x10GitReleaseResult\x12\x1a\n" +
 	"\breleased\x18\x01 \x01(\bR\breleased\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\">\n" +

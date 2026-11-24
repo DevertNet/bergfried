@@ -9,6 +9,7 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [x] macOS control app (SwiftUI, no Xcode): sandboxes, Claude folders, requests, grants, audit log, VM template editor, notifications, menu bar
 - [x] Claude entries per sandbox (folder + session), Remote Control monitor/automation
 - [x] GitHub: one fine-grained token per sandbox in the VM, guided creation, `request_github_token` (legacy since the GitHub App)
+- [x] Full repo access: allow everything for one repo for 1–24 h (merge optional), several per sandbox ([GITHUB.md](GITHUB.md))
 - [x] GitHub App per user: manifest setup, time-limited git grants with a credential helper, merge/PR/CI actions executed by the daemon per approval (not yet verified against real GitHub)
 - [x] Shared skills: one folder for all sandboxes, read-only in the VM, links into `~/.claude/skills`; assistants can propose changes (`propose_skill_change`) that the user approves with a diff
 - [x] Rename "session" → "sandbox" everywhere, migration of existing installs
@@ -36,6 +37,8 @@ Living to-do list. `[x]` done, `[ ]` open. Order inside a section is rough prior
 - [ ] VPS host (Debian, SSH link, KVM check): [design/vps-host.md](design/vps-host.md)
 - [ ] macOS sandboxes / second VM template (postponed; CI builds replace it for now): [design/macos-sandboxes.md](design/macos-sandboxes.md)
 - [ ] Assistant template proposals: [design/template-proposals.md](design/template-proposals.md)
+- [x] Requests page redesign (Open pinned on top, Active below, one card design, time left, Extend for git grants): [design/requests-redesign.md](design/requests-redesign.md)
+- [ ] Workflow changes with a diff card (a Bergfried tool that shows the full file diff before the daemon commits it; alternative to the workflow tick, see [GITHUB.md](GITHUB.md#workflow-files))
 - [ ] File browser/editor and "open in VS Code"
 - [ ] Verify the GitHub App flow against real GitHub ([GITHUB.md](GITHUB.md) "Verified and open", [testing/github.md](testing/github.md))
 - [ ] Per-push approval with the real diff (git remote helper), once the grant model proves too coarse
